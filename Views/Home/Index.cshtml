@@ -1,0 +1,18 @@
+@{ ViewData["Title"] = "Bảng điều khiển"; var d = (WmsDash)ViewBag.Dash; }
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Kho</div><div class="stat-num">@d.Warehouses</div></div></div></div>
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Mặt hàng</div><div class="stat-num">@d.Products</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Tổng tồn</div><div class="stat-num" style="color:#0891b2">@d.TotalOnHand.ToString("N0")</div></div></div></div>
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Phiếu ghi sổ</div><div class="stat-num">@d.PostedDocs</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Dưới định mức</div><div class="stat-num text-danger">@d.LowStock</div></div></div></div>
+</div>
+<div class="card"><div class="card-body">
+    <h6 class="fw-bold mb-3">Tác vụ nhanh</h6>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/Doc/Create?type=0" class="btn btn-outline-primary"><i class="bi bi-box-arrow-in-down me-1"></i>Nhập kho</a>
+        <a href="/Doc/Create?type=1" class="btn btn-outline-primary"><i class="bi bi-box-arrow-up me-1"></i>Xuất kho</a>
+        <a href="/Doc/Create?type=2" class="btn btn-outline-primary"><i class="bi bi-arrow-left-right me-1"></i>Chuyển kho</a>
+        <a href="/Inventory" class="btn btn-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
+    </div>
+    @if (d.DraftDocs > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.DraftDocs</b> phiếu Nháp chưa ghi sổ.</div> }
+</div></div>

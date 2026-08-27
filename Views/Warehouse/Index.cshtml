@@ -1,0 +1,19 @@
+@model List<Warehouse>
+@{ ViewData["Title"] = "Kho"; }
+<div class="row g-3">
+    <div class="col-lg-4"><div class="card"><div class="card-body">
+        <h6 class="fw-bold mb-3">Thêm kho</h6>
+        <form asp-action="Create" method="post">@Html.AntiForgeryToken()
+            <div class="mb-2"><input name="name" class="form-control" placeholder="Tên kho *" required /></div>
+            <div class="mb-2"><input name="code" class="form-control" placeholder="Mã (tự sinh)" /></div>
+            <div class="mb-3"><input name="address" class="form-control" placeholder="Địa chỉ" /></div>
+            <button class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Tạo kho</button>
+        </form>
+    </div></div></div>
+    <div class="col-lg-8"><div class="card"><div class="card-body">
+        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên kho</th><th>Địa chỉ</th></tr></thead><tbody>
+        @foreach (var w in Model) { <tr><td class="fw-semibold">@w.Code</td><td>@w.Name</td><td class="small text-muted">@w.Address</td></tr> }
+        @if (Model.Count == 0) { <tr><td colspan="3" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
+        </tbody></table>
+    </div></div></div>
+</div>
