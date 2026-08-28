@@ -19,17 +19,24 @@ public class AppDbContext : DbContext
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
         b.Entity<Warehouse>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
-        b.Entity<Product>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<Product>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.Property(x => x.CostPrice).HasPrecision(18, 2); e.Property(x => x.SalePrice).HasPrecision(18, 2);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
         b.Entity<StockDoc>(e =>
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
-            e.Ignore(x => x.TotalQty);
+            e.Ignore(x => x.TotalQty); e.Ignore(x => x.TotalValue);
             e.HasOne(x => x.FromWarehouse).WithMany().HasForeignKey(x => x.FromWarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.ToWarehouse).WithMany().HasForeignKey(x => x.ToWarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<StockDocLine>(e =>
         {
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Ignore(x => x.LineValue);
             e.HasOne(x => x.Doc).WithMany(x => x.Lines).HasForeignKey(x => x.DocId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasQueryFilter(x => x.OrgId == _orgId);

@@ -4,8 +4,8 @@ using MiniWMS.Models;
 
 namespace MiniWMS.Services;
 
-public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock);
+public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock, decimal CostPrice, decimal Value);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, decimal InventoryValue);
 
 public interface IWmsService
 {
@@ -15,7 +15,7 @@ public interface IWmsService
     Task<int> CreateProductAsync(Product p);
     Task<List<StockDoc>> DocsAsync(DocType? type, DocStatus? status);
     Task<StockDoc?> GetDocAsync(int id);
-    Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty)> lines);
+    Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty, decimal unitPrice, string? lot)> lines);
     Task<(bool ok, string msg)> PostDocAsync(int id);
     Task CancelDocAsync(int id);
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
@@ -51,12 +51,12 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Docs.Include(d => d.FromWarehouse).Include(d => d.ToWarehouse).Include(d => d.Lines).ThenInclude(l => l.Product)
           .FirstOrDefaultAsync(d => d.Id == id);
 
-    public async Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty)> lines)
+    public async Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty, decimal unitPrice, string? lot)> lines)
     {
         doc.Code = $"{Prefix(doc.Type)}{DateTime.Now:yyMMdd}-{await db.Docs.CountAsync() + 1:D3}";
         doc.Status = DocStatus.Draft;
-        foreach (var (pid, qty) in lines.Where(l => l.productId > 0 && l.qty != 0))
-            doc.Lines.Add(new StockDocLine { ProductId = pid, Quantity = qty });
+        foreach (var (pid, qty, price, lot) in lines.Where(l => l.productId > 0 && l.qty != 0))
+            doc.Lines.Add(new StockDocLine { ProductId = pid, Quantity = qty, UnitPrice = price, LotNo = lot });
         db.Docs.Add(doc);
         await db.SaveChangesAsync();
         return doc.Id;
@@ -116,7 +116,7 @@ public class WmsService(AppDbContext db) : IWmsService
             if (warehouseId.HasValue && wh != warehouseId.Value) continue;
             if (qty == 0) continue;
             if (!whs.TryGetValue(wh, out var w) || !products.TryGetValue(pid, out var p)) continue;
-            rows.Add(new BalanceRow(wh, w.Name, pid, p.Code, p.Name, p.Uom, qty, p.MinStock));
+            rows.Add(new BalanceRow(wh, w.Name, pid, p.Code, p.Name, p.Uom, qty, p.MinStock, p.CostPrice, qty * p.CostPrice));
         }
         return rows.OrderBy(r => r.Warehouse).ThenBy(r => r.ProductCode).ToList();
     }
@@ -130,7 +130,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.Docs.CountAsync(d => d.Status == DocStatus.Posted),
             await db.Docs.CountAsync(d => d.Status == DocStatus.Draft),
             balances.Sum(b => b.Qty),
-            balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock));
+            balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock),
+            balances.Sum(b => b.Value));
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

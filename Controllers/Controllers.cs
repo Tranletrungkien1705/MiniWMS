@@ -6,9 +6,15 @@ using MiniWMS.Services;
 
 namespace MiniWMS.Controllers;
 
-public class HomeController(IWmsService svc) : Controller
+public class HomeController : Controller
 {
-    public async Task<IActionResult> Index() { ViewBag.Dash = await svc.DashboardAsync(); return View(); }
+    // SPA React mặc định ở "/" (client-side); Razor cũ giữ ở /Legacy để đối chiếu.
+    public IActionResult Index() => Redirect("/index.html");
+}
+
+public class LegacyController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index() { ViewBag.Dash = await svc.DashboardAsync(); return View("~/Views/Home/Index.cshtml"); }
 }
 
 public class WarehouseController(IWmsService svc) : Controller
@@ -58,9 +64,9 @@ public class DocController(IWmsService svc) : Controller
         int[]? productId, int[]? qty)
     {
         var doc = new StockDoc { Type = type, FromWarehouseId = fromWarehouseId, ToWarehouseId = toWarehouseId, Note = note, RefNo = refNo, CreatedBy = "web" };
-        var lines = new List<(int, int)>();
+        var lines = new List<(int, int, decimal, string?)>();
         for (int i = 0; productId != null && i < productId.Length; i++)
-            lines.Add((productId[i], i < (qty?.Length ?? 0) ? qty![i] : 0));
+            lines.Add((productId[i], i < (qty?.Length ?? 0) ? qty![i] : 0, 0m, null));
         if (!lines.Any(l => l.Item1 > 0 && l.Item2 != 0)) { TempData["Error"] = "Cần ít nhất 1 dòng hàng."; return RedirectToAction(nameof(Create), new { type }); }
         var id = await svc.CreateDocAsync(doc, lines);
         TempData["Success"] = "Đã tạo phiếu (Nháp). Bấm Ghi sổ để cập nhật tồn.";
