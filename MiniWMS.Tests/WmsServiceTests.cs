@@ -20,7 +20,18 @@ public class WmsServiceTests
         var opt = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(conn).Options;
         var db = new AppDbContext(opt, new TenantContext { OrgId = TenantContext.DefaultOrgId });
         db.Database.EnsureCreated();
-        return (db, new WmsService(db), conn);
+        return (db, new WmsService(db, new StubHttpFactory()), conn);
+    }
+
+    // Ghi sự kiện truy xuất (MiniTrace) khi ghi sổ là best-effort → test không chạm mạng.
+    private sealed class StubHttpFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(new FailHandler());
+        private sealed class FailHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken c)
+                => throw new HttpRequestException("stub: no network in tests");
+        }
     }
 
     private static async Task<(int wh1, int wh2, int p1, int p2)> Seed(IWmsService svc)

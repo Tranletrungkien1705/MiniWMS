@@ -54,6 +54,7 @@ public class StockDoc : IOrgOwned
     public string CreatedBy { get; set; } = "";
     public DocStatus Status { get; set; } = DocStatus.Draft;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? TraceCode { get; set; }      // mã truy xuất lô hàng (tích hợp MiniTrace) khi ghi sổ
 
     public Warehouse? FromWarehouse { get; set; }
     public Warehouse? ToWarehouse { get; set; }

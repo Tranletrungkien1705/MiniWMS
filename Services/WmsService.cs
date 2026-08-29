@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using MiniWMS.Data;
 using MiniWMS.Models;
@@ -22,8 +23,35 @@ public interface IWmsService
     Task<WmsDash> DashboardAsync();
 }
 
-public class WmsService(AppDbContext db) : IWmsService
+public class WmsService(AppDbContext db, IHttpClientFactory httpFactory) : IWmsService
 {
+    private static string TraceUrl => Environment.GetEnvironmentVariable("TRACE_URL") ?? "https://minitrace.onrender.com";
+
+    // Ghi sổ phiếu → ghi sự kiện truy xuất (MiniTrace): Nhập kho→Warehoused(3), Xuất/Chuyển→Shipped(4). Best-effort.
+    private async Task RecordTraceAsync(StockDoc doc)
+    {
+        var line = doc.Lines.FirstOrDefault();
+        if (line?.Product == null) return;
+        var stage = doc.Type == DocType.In ? 3 : 4;   // Warehoused / Shipped
+        var wh = (doc.Type == DocType.In ? doc.ToWarehouse : doc.FromWarehouse)?.Name ?? "Kho";
+        var note = $"{Ui.DocTypeBadge(doc.Type).text} · {doc.TotalQty} đơn vị" + (doc.Lines.Count > 1 ? $" · {doc.Lines.Count} mặt hàng" : "");
+        try
+        {
+            var http = httpFactory.CreateClient(); http.Timeout = TimeSpan.FromSeconds(12);
+            var res = await http.PostAsJsonAsync($"{TraceUrl}/api/ext/wh-event", new
+            {
+                product = line.Product.Name, lotNo = doc.Code, stage, location = wh, note
+            });
+            if (res.IsSuccessStatusCode)
+            {
+                var body = await res.Content.ReadFromJsonAsync<TraceEventResult>();
+                if (body?.code is { } c) { doc.TraceCode = c; await db.SaveChangesAsync(); }
+            }
+        }
+        catch { /* best-effort */ }
+    }
+    private sealed record TraceEventResult(string code, bool ok, string msg, string? traceUrl);
+
     public Task<List<Warehouse>> WarehousesAsync() => db.Warehouses.OrderBy(w => w.Code).ToListAsync();
     public Task<List<Product>> ProductsAsync() => db.Products.OrderBy(p => p.Code).ToListAsync();
 
@@ -81,6 +109,7 @@ public class WmsService(AppDbContext db) : IWmsService
         }
         doc.Status = DocStatus.Posted;
         await db.SaveChangesAsync();
+        await RecordTraceAsync(doc);   // tích hợp: ghi sự kiện truy xuất nguồn gốc (best-effort)
         return (true, $"Đã ghi sổ phiếu {doc.Code}.");
     }
 

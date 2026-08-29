@@ -134,6 +134,7 @@ function DocDetail({ id, onClose, onChanged }) {
         <dt>Đối tác</dt><dd>{h.partnerName || '—'}</dd>
         <dt>Chứng từ gốc</dt><dd>{h.refNo || '—'}</dd>
         <dt>Ghi chú</dt><dd>{h.note || '—'}</dd>
+        {h.traceCode && <><dt>Truy xuất</dt><dd><a href={'https://minitrace.onrender.com/Trace?code=' + h.traceCode} target="_blank" rel="noopener">{h.traceCode} ↗</a> <span className="pill" style={{ flex: 'none', fontSize: 11 }}>MiniTrace</span></dd></>}
       </dl>
       <div className="section-t">Dòng hàng</div>
       <table>

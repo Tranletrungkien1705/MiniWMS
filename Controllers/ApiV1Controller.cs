@@ -120,14 +120,14 @@ public class ApiV1Controller(IWmsService svc, ICache cache, ITenantContext tenan
         d.FromWarehouseId, d.FromWarehouse?.Name, d.ToWarehouseId, d.ToWarehouse?.Name,
         d.Date, d.RefNo, d.PartnerName, d.Note, d.CreatedBy,
         (int)d.Status, Ui.StatusBadge(d.Status).text, Ui.StatusBadge(d.Status).css,
-        d.Lines.Count, d.TotalQty, d.TotalValue, d.CreatedAt);
+        d.Lines.Count, d.TotalQty, d.TotalValue, d.CreatedAt, d.TraceCode);
 }
 
 // ── DTOs ──
 public record DocDto(int Id, string Code, int Type, string TypeText, string TypeCss,
     int? FromWarehouseId, string? FromWarehouse, int? ToWarehouseId, string? ToWarehouse,
     DateTime Date, string? RefNo, string? PartnerName, string? Note, string CreatedBy,
-    int Status, string StatusText, string StatusCss, int LineCount, int TotalQty, decimal TotalValue, DateTime CreatedAt);
+    int Status, string StatusText, string StatusCss, int LineCount, int TotalQty, decimal TotalValue, DateTime CreatedAt, string? TraceCode);
 public record DocLineDto(int ProductId, string ProductCode, string ProductName, string Uom, int Quantity, decimal UnitPrice, decimal LineValue, string? LotNo);
 public record DocDetailDto(DocDto Doc, List<DocLineDto> Lines);
 

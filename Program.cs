@@ -20,6 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(o =>
 });
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<IWmsService, WmsService>();
+builder.Services.AddHttpClient();   // gọi MiniTrace khi ghi sổ phiếu
 builder.Services.AddFleetObs();
 builder.Services.AddControllersWithViews();
 
