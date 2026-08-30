@@ -44,6 +44,19 @@ public class ApiV1Controller(IWmsService svc, ICache cache, ITenantContext tenan
     public async Task<IActionResult> Products()
         => Ok((await svc.ProductsAsync()).Select(ToProductDto));
 
+    /// <summary>Đồng bộ danh mục hàng hóa từ MiniPIM (nguồn master data chuẩn) — upsert theo mã.</summary>
+    [HttpPost("products/import-pim")]
+    public async Task<IActionResult> ImportFromPim()
+    {
+        try
+        {
+            var (added, updated, total) = await svc.ImportFromPimAsync();
+            await cache.RemoveByPrefixAsync("wms:");
+            return Ok(new { ok = true, added, updated, total, msg = $"Đồng bộ từ PIM: +{added} mới, {updated} cập nhật ({total} mặt hàng)." });
+        }
+        catch (Exception ex) { return BadRequest(new { ok = false, error = "Không kết nối được MiniPIM: " + ex.Message }); }
+    }
+
     [HttpPost("products")]
     public async Task<IActionResult> CreateProduct([FromBody] ProductReq r)
     {

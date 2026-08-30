@@ -14,6 +14,7 @@ public interface IWmsService
     Task<List<Product>> ProductsAsync();
     Task<int> CreateWarehouseAsync(Warehouse w);
     Task<int> CreateProductAsync(Product p);
+    Task<(int added, int updated, int total)> ImportFromPimAsync();   // đồng bộ danh mục chuẩn từ MiniPIM
     Task<List<StockDoc>> DocsAsync(DocType? type, DocStatus? status);
     Task<StockDoc?> GetDocAsync(int id);
     Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty, decimal unitPrice, string? lot)> lines);
@@ -78,6 +79,28 @@ public class WmsService(AppDbContext db, IHttpClientFactory httpFactory) : IWmsS
 
     public Task<List<Warehouse>> WarehousesAsync() => db.Warehouses.OrderBy(w => w.Code).ToListAsync();
     public Task<List<Product>> ProductsAsync() => db.Products.OrderBy(p => p.Code).ToListAsync();
+
+    // Đồng bộ danh mục từ MiniPIM (nguồn master data) — upsert theo Code.
+    public async Task<(int added, int updated, int total)> ImportFromPimAsync()
+    {
+        var pimUrl = (Environment.GetEnvironmentVariable("PIM_URL") ?? "https://minipim.onrender.com").TrimEnd('/');
+        var http = httpFactory.CreateClient(); http.Timeout = TimeSpan.FromSeconds(20);
+        var items = await http.GetFromJsonAsync<List<PimProduct>>($"{pimUrl}/api/products") ?? [];
+        int added = 0, updated = 0;
+        foreach (var it in items)
+        {
+            if (string.IsNullOrWhiteSpace(it.code)) continue;
+            var p = await db.Products.FirstOrDefaultAsync(x => x.Code == it.code);
+            if (p == null) { p = new Product { Code = it.code.Trim() }; db.Products.Add(p); added++; }
+            else updated++;
+            p.Name = it.name ?? p.Name; p.Uom = string.IsNullOrWhiteSpace(it.uom) ? p.Uom : it.uom;
+            p.Category = it.group ?? p.Category; p.Barcode = it.barcode ?? p.Barcode;
+            p.CostPrice = it.costPrice; p.SalePrice = it.salePrice;
+        }
+        await db.SaveChangesAsync();
+        return (added, updated, added + updated);
+    }
+    private sealed record PimProduct(string code, string? name, string? group, string? uom, string? barcode, decimal costPrice, decimal salePrice);
 
     public async Task<int> CreateWarehouseAsync(Warehouse w)
     {

@@ -20,6 +20,7 @@ export const api = {
   createWarehouse: (b) => req('/warehouses', { method: 'POST', body: b }),
   products: () => req('/products'),
   createProduct: (b) => req('/products', { method: 'POST', body: b }),
+  importPim: () => req('/products/import-pim', { method: 'POST' }),
   docs: (type, status) => req(`/docs?${type != null ? `type=${type}&` : ''}${status != null ? `status=${status}` : ''}`),
   doc: (id) => req(`/docs/${id}`),
   createDoc: (b) => req('/docs', { method: 'POST', body: b }),

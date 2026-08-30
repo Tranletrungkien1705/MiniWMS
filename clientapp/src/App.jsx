@@ -211,13 +211,20 @@ function DocForm({ onClose, onSaved }) {
 }
 
 function Products() {
-  const [rows, setRows] = useState([]); const [show, setShow] = useState(false)
+  const [rows, setRows] = useState([]); const [show, setShow] = useState(false); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(null)
   const load = () => api.products().then(r => setRows(r.data))
   useEffect(() => { load() }, [])
+  const syncPim = async () => {
+    setBusy(true); setMsg(null)
+    try { const r = await api.importPim(); setMsg({ ok: true, text: r.data.msg }); load() }
+    catch (e) { setMsg({ ok: false, text: e.message }) } finally { setBusy(false) }
+  }
   return (
     <>
       <div className="toolbar"><h1 style={{ margin: 0, flex: 1 }}>Sản phẩm / Vật tư</h1>
+        <button className="btn gray sm" style={{ flex: 'none' }} disabled={busy} onClick={syncPim}>{busy ? 'Đang đồng bộ…' : '⭳ Đồng bộ từ PIM'}</button>
         <button className="btn sm" style={{ flex: 'none' }} onClick={() => setShow(true)}>+ Thêm</button></div>
+      {msg && <div className="card" style={{ padding: '10px 14px', marginBottom: 10, color: msg.ok ? '#166534' : '#b91c1c', fontSize: 13 }}>{msg.text} <span className="muted">— danh mục chuẩn từ MiniPIM</span></div>}
       <div className="card" style={{ padding: 0, overflow: 'auto' }}>
         <table>
           <thead><tr><th>Mã</th><th>Tên</th><th>Nhóm</th><th>ĐVT</th><th className="right">Giá vốn</th><th className="right">Giá bán</th><th className="right">Tồn min/max</th></tr></thead>
