@@ -135,6 +135,7 @@ function DocDetail({ id, onClose, onChanged }) {
         <dt>Chứng từ gốc</dt><dd>{h.refNo || '—'}</dd>
         <dt>Ghi chú</dt><dd>{h.note || '—'}</dd>
         {h.traceCode && <><dt>Truy xuất</dt><dd><a href={'https://minitrace.onrender.com/Trace?code=' + h.traceCode} target="_blank" rel="noopener">{h.traceCode} ↗</a> <span className="pill" style={{ flex: 'none', fontSize: 11 }}>MiniTrace</span></dd></>}
+        {h.stampBatchCode && <><dt>Lô tem</dt><dd>{h.stampBatchCode} · {fmtNum(h.totalQty)} tem {h.stampSampleQr && <a href={'https://ministamp.onrender.com/Verify?code=' + h.stampSampleQr} target="_blank" rel="noopener">· quét thử ↗</a>} <span className="pill" style={{ flex: 'none', fontSize: 11 }}>MiniStamp</span></dd></>}
       </dl>
       <div className="section-t">Dòng hàng</div>
       <table>

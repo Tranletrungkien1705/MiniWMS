@@ -55,6 +55,8 @@ public class StockDoc : IOrgOwned
     public DocStatus Status { get; set; } = DocStatus.Draft;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public string? TraceCode { get; set; }      // mã truy xuất lô hàng (tích hợp MiniTrace) khi ghi sổ
+    public string? StampBatchCode { get; set; } // mã lô tem chính hãng (tích hợp MiniStamp) khi nhập kho
+    public string? StampSampleQr { get; set; }  // 1 mã QR mẫu để quét thử
 
     public Warehouse? FromWarehouse { get; set; }
     public Warehouse? ToWarehouse { get; set; }

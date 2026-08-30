@@ -26,6 +26,30 @@ public interface IWmsService
 public class WmsService(AppDbContext db, IHttpClientFactory httpFactory) : IWmsService
 {
     private static string TraceUrl => Environment.GetEnvironmentVariable("TRACE_URL") ?? "https://minitrace.onrender.com";
+    private static string StampUrl => Environment.GetEnvironmentVariable("STAMP_URL") ?? "https://ministamp.onrender.com";
+
+    // Nhập kho → phát nguyên lô tem chính hãng cho từng mặt hàng (MiniStamp). Best-effort.
+    private async Task IssueStampsAsync(StockDoc doc)
+    {
+        if (doc.Type != DocType.In) return;
+        var line = doc.Lines.FirstOrDefault();
+        if (line?.Product == null || line.Quantity <= 0) return;
+        try
+        {
+            var http = httpFactory.CreateClient(); http.Timeout = TimeSpan.FromSeconds(15);
+            var res = await http.PostAsJsonAsync($"{StampUrl}/api/ext/wh-batch", new
+            {
+                product = line.Product.Name, lotNo = doc.Code, quantity = line.Quantity, manufacturer = doc.PartnerName
+            });
+            if (res.IsSuccessStatusCode)
+            {
+                var body = await res.Content.ReadFromJsonAsync<WhBatchResult>();
+                if (body?.batchCode is { } bc) { doc.StampBatchCode = bc; doc.StampSampleQr = body.firstQrId; await db.SaveChangesAsync(); }
+            }
+        }
+        catch { /* best-effort */ }
+    }
+    private sealed record WhBatchResult(string batchCode, int quantity, string product, string? firstQrId, string? sampleVerifyUrl);
 
     // Ghi sổ phiếu → ghi sự kiện truy xuất (MiniTrace): Nhập kho→Warehoused(3), Xuất/Chuyển→Shipped(4). Best-effort.
     private async Task RecordTraceAsync(StockDoc doc)
@@ -110,6 +134,7 @@ public class WmsService(AppDbContext db, IHttpClientFactory httpFactory) : IWmsS
         doc.Status = DocStatus.Posted;
         await db.SaveChangesAsync();
         await RecordTraceAsync(doc);   // tích hợp: ghi sự kiện truy xuất nguồn gốc (best-effort)
+        await IssueStampsAsync(doc);   // tích hợp: nhập kho → phát lô tem chính hãng (best-effort)
         return (true, $"Đã ghi sổ phiếu {doc.Code}.");
     }
 

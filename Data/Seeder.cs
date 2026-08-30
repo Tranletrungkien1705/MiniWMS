@@ -106,6 +106,7 @@ public static class Seeder
         Add("Products", "CostPrice", "numeric(18,2) NOT NULL DEFAULT 0"); Add("Products", "SalePrice", "numeric(18,2) NOT NULL DEFAULT 0");
         Add("Products", "MaxStock", "integer NOT NULL DEFAULT 0");
         Add("Docs", "PartnerName", "text"); Add("Docs", "TraceCode", "text");   // tích hợp MiniTrace
+        Add("Docs", "StampBatchCode", "text"); Add("Docs", "StampSampleQr", "text");   // tích hợp MiniStamp
         Add("DocLines", "UnitPrice", "numeric(18,2) NOT NULL DEFAULT 0"); Add("DocLines", "LotNo", "text");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
