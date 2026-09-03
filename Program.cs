@@ -109,9 +109,54 @@ app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
     return Results.Ok(new { orgId = org.Id, apiKey = org.ApiKey });
 });
 
+// Import kho thật từ DB nguồn (dedupe theo Code)
+app.MapPost("/api/import/warehouses", async (List<ImportWhDto> rows, AppDbContext db, ITenantContext tc) =>
+{
+    if (rows == null || rows.Count == 0) return Results.BadRequest(new { error = "Không có dữ liệu." });
+    int added = 0, skipped = 0;
+    var orgId = tc.OrgId;
+    var existCodes = db.Warehouses.Where(w => w.OrgId == orgId).Select(w => w.Code).ToHashSet();
+    foreach (var row in rows)
+    {
+        if (string.IsNullOrWhiteSpace(row.Code)) { skipped++; continue; }
+        if (existCodes.Contains(row.Code.Trim())) { skipped++; continue; }
+        db.Warehouses.Add(new Warehouse { OrgId = orgId, Code = row.Code.Trim(), Name = row.Name?.Trim() ?? row.Code.Trim(), Address = row.Address, Keeper = row.Keeper });
+        existCodes.Add(row.Code.Trim()); added++;
+    }
+    await db.SaveChangesAsync();
+    return Results.Ok(new { added, skipped, total = added + skipped });
+});
+
+// Import vật tư/phụ tùng thật từ DB nguồn (dedupe theo Code)
+app.MapPost("/api/import/products", async (List<ImportProductDto> rows, AppDbContext db, ITenantContext tc) =>
+{
+    if (rows == null || rows.Count == 0) return Results.BadRequest(new { error = "Không có dữ liệu." });
+    int added = 0, skipped = 0;
+    var orgId = tc.OrgId;
+    var existCodes = db.Products.Where(p => p.OrgId == orgId).Select(p => p.Code).ToHashSet();
+    foreach (var row in rows)
+    {
+        if (string.IsNullOrWhiteSpace(row.Code)) { skipped++; continue; }
+        var code = row.Code.Trim();
+        if (existCodes.Contains(code)) { skipped++; continue; }
+        db.Products.Add(new Product
+        {
+            OrgId = orgId, Code = code, Name = row.Name?.Trim() ?? code,
+            Uom = row.Uom?.Trim() ?? "cái", Category = row.Category,
+            CostPrice = row.CostPrice, SalePrice = row.SalePrice,
+            MinStock = row.MinStock, MaxStock = row.MaxStock
+        });
+        existCodes.Add(code); added++;
+    }
+    await db.SaveChangesAsync();
+    return Results.Ok(new { added, skipped, total = added + skipped });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
 record RegisterOrgDto(string Name);
 record IssueDto(string? RefNo, string? PartnerName, List<IssueLine>? Lines);
 record IssueLine(string Code, int Qty);
+record ImportWhDto(string? Code, string? Name, string? Address, string? Keeper);
+record ImportProductDto(string? Code, string? Name, string? Uom, string? Category, decimal CostPrice, decimal SalePrice, int MinStock, int MaxStock);
