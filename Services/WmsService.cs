@@ -130,7 +130,7 @@ public class WmsService(AppDbContext db, IHttpClientFactory httpFactory) : IWmsS
     {
         doc.Code = $"{Prefix(doc.Type)}{DateTime.Now:yyMMdd}-{await db.Docs.CountAsync() + 1:D3}";
         doc.Status = DocStatus.Draft;
-        foreach (var (pid, qty, price, lot) in lines.Where(l => l.productId > 0 && l.qty != 0))
+        foreach (var (pid, qty, price, lot) in lines.Where(l => l.productId > 0 && l.qty > 0))
             doc.Lines.Add(new StockDocLine { ProductId = pid, Quantity = qty, UnitPrice = price, LotNo = lot });
         db.Docs.Add(doc);
         await db.SaveChangesAsync();

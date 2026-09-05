@@ -87,7 +87,7 @@ public class ApiV1Controller(IWmsService svc, ICache cache, ITenantContext tenan
     [HttpPost("docs")]
     public async Task<IActionResult> CreateDoc([FromBody] DocReq r)
     {
-        var lines = (r.Lines ?? new()).Where(l => l.ProductId > 0 && l.Quantity != 0)
+        var lines = (r.Lines ?? new()).Where(l => l.ProductId > 0 && l.Quantity > 0)
             .Select(l => (l.ProductId, l.Quantity, l.UnitPrice, l.LotNo)).ToList();
         if (lines.Count == 0) return BadRequest(new { error = "Cần ít nhất 1 dòng hàng." });
         var doc = new StockDoc
