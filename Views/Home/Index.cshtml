@@ -16,7 +16,8 @@
         <a href="/ReturnSup" class="btn btn-outline-primary"><i class="bi bi-arrow-counterclockwise me-1"></i>Trả hàng NCC</a>
         <a href="/CustomerReturn" class="btn btn-outline-primary"><i class="bi bi-arrow-return-left me-1"></i>Khách trả hàng</a>
         <a href="/Audit" class="btn btn-outline-primary"><i class="bi bi-clipboard-check me-1"></i>Kiểm kê kho</a>
-        <a href="/Inventory" class="btn btn-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
+        <a href="/Inventory" class="btn btn-outline-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
+        <a href="/InventoryInOut" class="btn btn-primary"><i class="bi bi-graph-up-arrow me-1"></i>Báo cáo NXT</a>
     </div>
     @if (d.DraftDocs > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.DraftDocs</b> phiếu Nháp chưa ghi sổ.</div> }
     @if (d.PendingAudits > 0) { <div class="alert alert-info mt-2 mb-0 small"><i class="bi bi-clipboard-check me-1"></i>Có <b>@d.PendingAudits</b> phiếu kiểm kê đang chờ xử lý / cân bằng kho. <a href="/Audit?status=0" class="fw-semibold">Xem ngay</a></div> }

@@ -75,6 +75,16 @@ app.MapGet("/api/warehouse-card", async (int productId, int? warehouseId, DateTi
     }
 });
 
+// API Báo cáo Nhập Xuất Tồn (Inventory In-Out-Balance - port từ Rpt_Inventory_In_Out_Inv Skycic)
+app.MapGet("/api/reports/in-out-inventory", async (int? warehouseId, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var defFrom = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    var defTo = toDate ?? DateTime.Today;
+    var report = await svc.InventoryInOutReportAsync(warehouseId, defFrom, defTo, q);
+    return Results.Ok(report);
+});
+
+
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>
     Results.Ok((await svc.MoveOrdersAsync(fromWhId, toWhId, status)).Select(m => new

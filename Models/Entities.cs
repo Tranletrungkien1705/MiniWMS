@@ -270,4 +270,32 @@ public class CustomerReturnLine : IOrgOwned
     public decimal Amount => Quantity * UnitPrice;
 }
 
+/// <summary>Dòng chi tiết Báo cáo Nhập Xuất Tồn theo kỳ (port từ Rpt_Inventory_In_Out_Inv Skycic).</summary>
+public record InventoryInOutRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int OpeningQty,     // Tồn đầu kỳ (BeginPeriod_Inv_QtyBase)
+    int InQty,          // Nhập trong kỳ (InPeriod_In_QtyBase)
+    int OutQty,         // Xuất trong kỳ (InPeriod_Out_QtyBase)
+    int ClosingQty      // Tồn cuối kỳ (EndPeriod_Inv_QtyBase)
+);
+
+/// <summary>Báo cáo Nhập Xuất Tồn tổng hợp theo kỳ (port từ Rpt_Inventory_In_Out_Inv Skycic).</summary>
+public record InventoryInOutReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime FromDate,
+    DateTime ToDate,
+    string? Keyword,
+    int TotalOpeningQty,
+    int TotalInQty,
+    int TotalOutQty,
+    int TotalClosingQty,
+    List<InventoryInOutRow> Rows
+);
+
 
