@@ -15,20 +15,25 @@
         </div>
     </div>
     <table class="table table-hover align-middle">
-        <thead><tr><th>Số phiếu</th><th>Loại</th><th>Từ kho</th><th>Đến kho</th><th class="text-end">SL</th><th>Ngày</th><th>TT</th></tr></thead>
+        <thead><tr><th>Số phiếu</th><th>Loại</th><th>Từ kho</th><th>Đến kho</th><th>Đối tác (KH/NCC)</th><th class="text-end">SL</th><th>Ngày</th><th>TT</th></tr></thead>
         <tbody>
         @foreach (var d in Model)
         {
             var (tt, tcss) = Ui.DocTypeBadge(d.Type);
             var (st, scss) = Ui.StatusBadge(d.Status);
             <tr style="cursor:pointer" onclick="location.href='/Doc/Detail/@d.Id'">
-                <td class="fw-semibold">@d.Code</td><td><span class="badge bg-@tcss">@tt</span></td>
+                <td class="fw-semibold font-monospace">@d.Code</td><td><span class="badge bg-@tcss">@tt</span></td>
                 <td class="small">@(d.FromWarehouse?.Name ?? "—")</td><td class="small">@(d.ToWarehouse?.Name ?? "—")</td>
-                <td class="text-end">@d.TotalQty</td><td class="small text-muted">@d.Date.ToString("dd/MM/yyyy")</td>
+                <td class="small">
+                    @if (!string.IsNullOrEmpty(d.CustomerName)) { <span class="text-primary fw-semibold"><i class="bi bi-person me-1"></i>@d.CustomerName</span> }
+                    else if (!string.IsNullOrEmpty(d.SupplierName)) { <span class="text-dark"><i class="bi bi-building me-1"></i>@d.SupplierName</span> }
+                    else { <span class="text-muted">—</span> }
+                </td>
+                <td class="text-end fw-bold">@d.TotalQty</td><td class="small text-muted">@d.Date.ToString("dd/MM/yyyy")</td>
                 <td><span class="badge bg-@scss">@st</span></td>
             </tr>
         }
-        @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Không có phiếu.</td></tr> }
+        @if (Model.Count == 0) { <tr><td colspan="8" class="text-center text-muted py-4">Không có phiếu.</td></tr> }
         </tbody>
     </table>
 </div></div>

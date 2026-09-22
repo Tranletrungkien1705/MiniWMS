@@ -36,6 +36,18 @@
                     <input type="hidden" name="supplierName" id="supplierNameInput" />
                 </div>
             }
+            @if (type == DocType.Out)
+            {
+                var custs = (List<Customer>?)ViewBag.Customers ?? new List<Customer>();
+                <div class="col-md-4">
+                    <label class="form-label small text-muted">Khách hàng / Đại lý nhận</label>
+                    <select name="customerCode" class="form-select" onchange="onCustomerChange(this)">
+                        <option value="">— Chọn khách hàng / đại lý —</option>
+                        @foreach (var c in custs) { <option value="@c.Code" data-name="@c.Name">@c.Code — @c.Name (@c.CustomerType)</option> }
+                    </select>
+                    <input type="hidden" name="customerName" id="customerNameInput" />
+                </div>
+            }
             <div class="col-md-4"><label class="form-label small text-muted">Số tham chiếu</label><input name="refNo" class="form-control" placeholder="Đơn hàng / chứng từ" /></div>
             <div class="col-12"><label class="form-label small text-muted">Ghi chú</label><input name="note" class="form-control" /></div>
         </div>
@@ -60,5 +72,6 @@
 var opts = `<option value="">— Chọn hàng —</option>@foreach (var p in products) {<text><option value="@p.Id">@p.Code — @p.Name</option></text>}`;
 function addLine(){document.getElementById('lines').insertAdjacentHTML('beforeend','<tr><td><select name="productId" class="form-select form-select-sm">'+opts+'</select></td><td><input name="qty" type="number" min="1" value="1" class="form-control form-control-sm" style="max-width:120px"/></td></tr>');}
 function onSupplierChange(sel){var opt=sel.options[sel.selectedIndex];document.getElementById('supplierNameInput').value=opt?(opt.getAttribute('data-name')||''):'';}
+function onCustomerChange(sel){var opt=sel.options[sel.selectedIndex];document.getElementById('customerNameInput').value=opt?(opt.getAttribute('data-name')||''):'';}
 </script>
 }

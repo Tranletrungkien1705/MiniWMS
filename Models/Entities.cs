@@ -48,6 +48,8 @@ public class StockDoc : IOrgOwned
     public int? ToWarehouseId { get; set; }     // In/Transfer
     public string? SupplierCode { get; set; }   // Mã nhà cung cấp (khi nhập kho mua hàng)
     public string? SupplierName { get; set; }   // Tên nhà cung cấp (khi nhập kho mua hàng)
+    public string? CustomerCode { get; set; }   // Mã khách hàng (khi xuất kho bán hàng / giao đại lý)
+    public string? CustomerName { get; set; }   // Tên khách hàng (khi xuất kho bán hàng / giao đại lý)
     public DateTime Date { get; set; } = DateTime.Now;
     public string? Note { get; set; }
     public string? RefNo { get; set; }
@@ -203,6 +205,26 @@ public class Supplier : IOrgOwned
     public string? TaxCode { get; set; }
     public bool IsActive { get; set; } = true;
     public string? Note { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Danh mục Khách hàng, Đại lý phân phối & Điểm nhận hàng xuất kho (port từ Mst_Customer Skycic).</summary>
+public class Customer : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã khách hàng (CustomerCode: KH-001, DL-MB01...)
+    public string Name { get; set; } = "";             // Tên khách hàng / Đại lý / Tổ chức (CustomerName)
+    public string CustomerType { get; set; } = "Đại lý phân phối"; // Loại khách hàng (CustomerType: Đại lý phân phối, Bán buôn B2B, Dự án, Khách lẻ)
+    public string? Phone { get; set; }                 // Điện thoại (CustomerPhoneNo / CustomerMobilePhone)
+    public string? Email { get; set; }                 // Email (CustomerEmail)
+    public string? Address { get; set; }               // Địa chỉ nhận hàng / giao hàng (CustomerAddress)
+    public string? Province { get; set; }              // Tỉnh / Thành phố (ProvinceCode)
+    public string? ContactName { get; set; }           // Người đại diện / liên hệ (ContactName)
+    public string? ContactPhone { get; set; }          // Điện thoại người liên hệ (ContactPhone)
+    public string? TaxCode { get; set; }               // Mã số thuế (TaxCode)
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive)
+    public string? Note { get; set; }                  // Ghi chú / Hạn mức công nợ (Remark)
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
 
@@ -1656,6 +1678,16 @@ public record InventoryValuationReport(
     int ClassCCount,             // Số mặt hàng nhóm C
     decimal ClassCValue,         // Giá trị tồn nhóm C
     List<InventoryValuationRow> Rows
+);
+
+/// <summary>Chi tiết hồ sơ khách hàng & Lịch sử giao dịch kho (port từ Mst_Customer Skycic).</summary>
+public record CustomerDetailDto(
+    Customer Customer,
+    List<StockDoc> OutDocs,
+    List<InventoryOutFG> OutFGDocs,
+    List<CustomerReturn> Returns,
+    int TotalOutQty,
+    int TotalReturnQty
 );
 
 

@@ -20,19 +20,32 @@
                 </select>
                 <div class="form-text">Hàng trả lại sẽ được nhập vào kho này sau khi duyệt.</div>
             </div>
+            @{
+                var custList = (List<Customer>?)ViewBag.Customers ?? new List<Customer>();
+            }
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Chọn từ danh mục KH</label>
+                <select class="form-select" onchange="onSelectCustomer(this)">
+                    <option value="">— Khách hàng trong danh mục —</option>
+                    @foreach (var c in custList)
+                    {
+                        <option value="@c.Code" data-name="@c.Name">@c.Code — @c.Name</option>
+                    }
+                </select>
+            </div>
             <div class="col-md-3">
                 <label class="form-label small fw-semibold text-muted">Tên khách hàng *</label>
-                <input name="customerName" class="form-control" placeholder="Ví dụ: Đại lý Thời trang An Phát..." required />
+                <input name="customerName" id="txtCustomerName" class="form-control" placeholder="Tên khách hàng trả..." required />
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small fw-semibold text-muted">Mã khách hàng</label>
-                <input name="customerCode" class="form-control" placeholder="KH-001..." />
+                <input name="customerCode" id="txtCustomerCode" class="form-control" placeholder="KH-001..." />
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6">
                 <label class="form-label small fw-semibold text-muted">Hóa đơn bán gốc</label>
                 <input name="invoiceNo" class="form-control" placeholder="HD-2026-..." />
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6">
                 <label class="form-label small fw-semibold text-muted">Đơn hàng / Phiếu xuất</label>
                 <input name="refOrderNo" class="form-control" placeholder="PX260330-001..." />
             </div>
@@ -115,6 +128,14 @@
 
 @section Scripts {
 <script>
+    function onSelectCustomer(sel) {
+        var opt = sel.options[sel.selectedIndex];
+        if (opt && opt.value) {
+            document.getElementById('txtCustomerCode').value = opt.value;
+            document.getElementById('txtCustomerName').value = opt.getAttribute('data-name') || '';
+        }
+    }
+
     function onProdChange(sel) {
         const row = sel.closest('tr');
         const opt = sel.selectedOptions[0];

@@ -61,18 +61,31 @@
                             </select>
                         </div>
 
+                        @{
+                            var fgCusts = (List<Customer>?)ViewBag.Customers ?? new List<Customer>();
+                        }
+                        <div class="col-md-12">
+                            <label class="form-label fw-semibold small text-muted">Chọn từ danh mục Khách hàng / Đại lý</label>
+                            <select class="form-select form-select-sm" onchange="onSelectFGCustomer(this)">
+                                <option value="">— Chọn khách hàng / đại lý có sẵn —</option>
+                                @foreach (var c in fgCusts)
+                                {
+                                    <option value="@c.Code" data-name="@c.Name" data-address="@c.Address">@c.Code — @c.Name (@c.CustomerType)</option>
+                                }
+                            </select>
+                        </div>
                         <div class="col-md-8">
                             <label class="form-label fw-semibold small text-muted">Khách hàng / Đại lý nhận <span class="text-danger">*</span></label>
-                            <input type="text" name="customerName" class="form-control form-control-sm" placeholder="Tên công ty / Tên đại lý / Khách nhận..." required />
+                            <input type="text" name="customerName" id="fgCustomerName" class="form-control form-control-sm" placeholder="Tên công ty / Tên đại lý / Khách nhận..." required />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold small text-muted">Mã đại lý / MST</label>
-                            <input type="text" name="agentCode" class="form-control form-control-sm" placeholder="vd: DL-HN-001" />
+                            <input type="text" name="agentCode" id="fgAgentCode" class="form-control form-control-sm" placeholder="vd: DL-HN-001" />
                         </div>
 
                         <div class="col-12">
                             <label class="form-label fw-semibold small text-muted">Địa chỉ nhận hàng / Công trình</label>
-                            <input type="text" name="deliveryAddress" class="form-control form-control-sm" placeholder="Địa chỉ giao hàng chi tiết..." />
+                            <input type="text" name="deliveryAddress" id="fgDeliveryAddress" class="form-control form-control-sm" placeholder="Địa chỉ giao hàng chi tiết..." />
                         </div>
 
                         <div class="col-md-6">
@@ -279,6 +292,15 @@
 
 @section Scripts {
 <script>
+    function onSelectFGCustomer(sel) {
+        var opt = sel.options[sel.selectedIndex];
+        if (opt && opt.value) {
+            document.getElementById('fgAgentCode').value = opt.value;
+            document.getElementById('fgCustomerName').value = opt.getAttribute('data-name') || '';
+            document.getElementById('fgDeliveryAddress').value = opt.getAttribute('data-address') || '';
+        }
+    }
+
     function updateIndices() {
         document.querySelectorAll('#itemsBody .item-row').forEach((tr, i) => {
             tr.querySelector('.row-idx').textContent = i + 1;

@@ -1343,6 +1343,105 @@ app.MapPost("/api/suppliers/{id:int}/toggle", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Danh mục Khách hàng & Đại lý phân phối (port từ Mst_Customer Skycic)
+app.MapGet("/api/customers", async (string? q, string? customerType, bool? activeOnly, IWmsService svc) =>
+{
+    var list = await svc.CustomersAsync(q, customerType, activeOnly);
+    return Results.Ok(list.Select(c => new
+    {
+        c.Id,
+        c.Code,
+        c.Name,
+        c.CustomerType,
+        c.ContactName,
+        c.ContactPhone,
+        c.Phone,
+        c.Email,
+        c.Address,
+        c.Province,
+        c.TaxCode,
+        c.IsActive,
+        c.Note,
+        c.CreatedAt
+    }));
+});
+
+app.MapGet("/api/customers/{id:int}", async (int id, IWmsService svc) =>
+{
+    var c = await svc.GetCustomerAsync(id);
+    if (c == null) return Results.NotFound(new { error = "Không tìm thấy khách hàng." });
+    return Results.Ok(c);
+});
+
+app.MapGet("/api/customers/{id:int}/history", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetCustomerDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy khách hàng." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/customers", async (CreateCustomerDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên khách hàng." });
+    try
+    {
+        var cust = new Customer
+        {
+            Code = dto.Code?.Trim() ?? "",
+            Name = dto.Name.Trim(),
+            CustomerType = string.IsNullOrWhiteSpace(dto.CustomerType) ? "Đại lý phân phối" : dto.CustomerType.Trim(),
+            ContactName = dto.ContactName?.Trim(),
+            ContactPhone = dto.ContactPhone?.Trim(),
+            Phone = dto.Phone?.Trim(),
+            Email = dto.Email?.Trim(),
+            Address = dto.Address?.Trim(),
+            Province = dto.Province?.Trim(),
+            TaxCode = dto.TaxCode?.Trim(),
+            Note = dto.Note?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateCustomerAsync(cust);
+        return Results.Ok(new { id, code = cust.Code, name = cust.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/customers/{id:int}", async (int id, UpdateCustomerDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên khách hàng." });
+    var cust = new Customer
+    {
+        Name = dto.Name.Trim(),
+        CustomerType = string.IsNullOrWhiteSpace(dto.CustomerType) ? "Đại lý phân phối" : dto.CustomerType.Trim(),
+        ContactName = dto.ContactName?.Trim(),
+        ContactPhone = dto.ContactPhone?.Trim(),
+        Phone = dto.Phone?.Trim(),
+        Email = dto.Email?.Trim(),
+        Address = dto.Address?.Trim(),
+        Province = dto.Province?.Trim(),
+        TaxCode = dto.TaxCode?.Trim(),
+        Note = dto.Note?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateCustomerAsync(id, cust);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/customers/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleCustomerStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/customers/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteCustomerAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -1472,3 +1571,5 @@ record InventoryOutFGLineDto(int ProductId, int Qty, decimal UnitPrice, decimal 
 record InventoryOutFGSerialDto(int ProductId, string SerialNo, string? Note);
 record CreateSupplierDto(string? Code, string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);
 record UpdateSupplierDto(string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);
+record CreateCustomerDto(string? Code, string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? TaxCode, string? Note, bool? IsActive);
+record UpdateCustomerDto(string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? TaxCode, string? Note, bool? IsActive);

@@ -113,6 +113,14 @@ public interface IWmsService
     Task<int> CreateSupplierAsync(Supplier supplier);
     Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier);
     Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id);
+    Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null);
+    Task<Customer?> GetCustomerAsync(int id);
+    Task<Customer?> GetCustomerByCodeAsync(string code);
+    Task<int> CreateCustomerAsync(Customer customer);
+    Task<(bool ok, string msg)> UpdateCustomerAsync(int id, Customer customer);
+    Task<(bool ok, string msg)> ToggleCustomerStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteCustomerAsync(int id);
+    Task<CustomerDetailDto?> GetCustomerDetailAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -3757,6 +3765,121 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
         return (true, existing.IsActive ? "Đã kích hoạt nhà cung cấp." : "Đã tạm dừng nhà cung cấp.");
+    }
+
+    /// <summary>Danh sách Danh mục Khách hàng, Đại lý phân phối (port từ Mst_Customer Skycic).</summary>
+    public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null)
+    {
+        var query = db.Customers.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(customerType)) query = query.Where(c => c.CustomerType == customerType.Trim());
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) ||
+                                     c.Name.ToLower().Contains(kw) ||
+                                     (c.Phone != null && c.Phone.Contains(kw)) ||
+                                     (c.Email != null && c.Email.ToLower().Contains(kw)) ||
+                                     (c.ContactName != null && c.ContactName.ToLower().Contains(kw)) ||
+                                     (c.Province != null && c.Province.ToLower().Contains(kw)));
+        }
+        return await query.OrderBy(c => c.Code).ToListAsync();
+    }
+
+    public Task<Customer?> GetCustomerAsync(int id) => db.Customers.FirstOrDefaultAsync(c => c.Id == id);
+
+    public Task<Customer?> GetCustomerByCodeAsync(string code) =>
+        db.Customers.FirstOrDefaultAsync(c => c.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<int> CreateCustomerAsync(Customer customer)
+    {
+        if (string.IsNullOrWhiteSpace(customer.Code))
+            customer.Code = $"KH{await db.Customers.CountAsync() + 1:D3}";
+        customer.CreatedAt = DateTime.Now;
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+        return customer.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCustomerAsync(int id, Customer customer)
+    {
+        var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+        existing.Name = customer.Name.Trim();
+        existing.CustomerType = string.IsNullOrWhiteSpace(customer.CustomerType) ? "Đại lý phân phối" : customer.CustomerType.Trim();
+        existing.ContactName = customer.ContactName?.Trim();
+        existing.ContactPhone = customer.ContactPhone?.Trim();
+        existing.Phone = customer.Phone?.Trim();
+        existing.Email = customer.Email?.Trim();
+        existing.Address = customer.Address?.Trim();
+        existing.Province = customer.Province?.Trim();
+        existing.TaxCode = customer.TaxCode?.Trim();
+        existing.Note = customer.Note?.Trim();
+        existing.IsActive = customer.IsActive;
+        await db.SaveChangesAsync();
+        return (true, "Đã cập nhật thông tin khách hàng.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleCustomerStatusAsync(int id)
+    {
+        var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? "Đã kích hoạt khách hàng." : "Đã tạm dừng giao dịch với khách hàng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCustomerAsync(int id)
+    {
+        var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+
+        bool hasStockDoc = await db.Docs.AnyAsync(d => d.CustomerCode == existing.Code);
+        bool hasOutFG = await db.InventoryOutFGs.AnyAsync(f => f.AgentCode == existing.Code || f.CustomerName == existing.Name);
+        bool hasCusReturn = await db.CustomerReturns.AnyAsync(r => r.CustomerCode == existing.Code || r.CustomerName == existing.Name);
+
+        if (hasStockDoc || hasOutFG || hasCusReturn)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, "Khách hàng đã có lịch sử giao dịch kho nên được chuyển sang trạng thái Tạm dừng thay vì xóa hẳn.");
+        }
+
+        db.Customers.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, "Đã xóa khách hàng.");
+    }
+
+    public async Task<CustomerDetailDto?> GetCustomerDetailAsync(int id)
+    {
+        var customer = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
+        if (customer == null) return null;
+
+        var outDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && (d.CustomerCode == customer.Code || d.CustomerName == customer.Name))
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.Lines).ThenInclude(l => l.Product)
+            .OrderByDescending(d => d.Date)
+            .ToListAsync();
+
+        var outFGDocs = await db.InventoryOutFGs
+            .Where(f => f.AgentCode == customer.Code || f.CustomerName == customer.Name)
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .OrderByDescending(f => f.Date)
+            .ToListAsync();
+
+        var returns = await db.CustomerReturns
+            .Where(r => r.CustomerCode == customer.Code || r.CustomerName == customer.Name)
+            .Include(r => r.Warehouse)
+            .Include(r => r.Lines).ThenInclude(l => l.Product)
+            .OrderByDescending(r => r.Date)
+            .ToListAsync();
+
+        int totalOutQty = outDocs.Sum(d => d.TotalQty) + outFGDocs.Sum(f => f.TotalQty);
+        int totalReturnQty = returns.Sum(r => r.TotalQty);
+
+        return new CustomerDetailDto(customer, outDocs, outFGDocs, returns, totalOutQty, totalReturnQty);
     }
 
     /// <summary>Báo cáo tổng hợp xuất kho chi tiết (port từ Rpt_InvF_InventoryOutDtl Skycic).</summary>

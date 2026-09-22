@@ -1,0 +1,635 @@
+@model List<Customer>
+@{
+    ViewData["Title"] = "Danh mục Khách hàng & Đại lý";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var selectedType = (string)(ViewBag.CustomerType ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+
+    int totalCount = Model.Count;
+    int agentCount = Model.Count(c => c.CustomerType == "Đại lý phân phối");
+    int activeCount = Model.Count(c => c.IsActive);
+    int inactiveCount = totalCount - activeCount;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-person-badge text-primary me-2"></i>Danh mục Khách hàng & Đại lý</h5>
+        <div class="text-muted small">Port từ <code>Mst_Customer</code> (Skycic) — Quản lý hồ sơ khách hàng, đại lý phân phối, liên kết xuất bán hàng và nhập hàng khách trả lại</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Customer/ExportCsv?q=@keyword&customerType=@selectedType&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/Doc?type=1" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-arrow-up me-1"></i> Phiếu xuất kho
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createCustomerModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Khách hàng
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG KHÁCH HÀNG</span>
+                    <i class="bi bi-people text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@totalCount</div>
+                <div class="small text-muted">Hồ sơ đối tác mua & nhận hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐẠI LÝ PHÂN PHỐI</span>
+                    <i class="bi bi-shop text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@agentCount</div>
+                <div class="small text-muted">Kênh bán buôn / phân phối trọng điểm</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG HOẠT ĐỘNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@activeCount</div>
+                <div class="small text-muted">Khả dụng cho phiếu xuất & trả hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TẠM DỪNG GIAO DỊCH</span>
+                    <i class="bi bi-pause-circle text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@inactiveCount</div>
+                <div class="small text-muted">Tạm ngưng xuất kho giao dịch</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm theo mã, tên, SĐT, email, tỉnh thành..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="customerType" class="form-select form-select-sm">
+                    <option value="">— Tất cả loại khách hàng —</option>
+                    <option value="Đại lý phân phối" selected="@(selectedType == "Đại lý phân phối")">Đại lý phân phối</option>
+                    <option value="Bán buôn B2B" selected="@(selectedType == "Bán buôn B2B")">Bán buôn B2B</option>
+                    <option value="Dự án / Công trình" selected="@(selectedType == "Dự án / Công trình")">Dự án / Công trình</option>
+                    <option value="Khách lẻ" selected="@(selectedType == "Khách lẻ")">Khách lẻ</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="true" selected="@(activeOnly == true)">Đang hoạt động</option>
+                    <option value="false" selected="@(activeOnly == false)">Tạm dừng giao dịch</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(selectedType) || activeOnly.HasValue)
+                {
+                    <a href="/Customer" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Khách hàng -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 50px;">STT</th>
+                    <th style="width: 110px;">Mã KH</th>
+                    <th>Tên Khách hàng & Phân loại</th>
+                    <th>Người liên hệ & SĐT</th>
+                    <th>Email & MST</th>
+                    <th>Địa chỉ / Khu vực</th>
+                    <th class="text-center" style="width: 130px;">Trạng thái</th>
+                    <th class="text-end" style="width: 170px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var c in Model)
+                {
+                    string typeBadgeClass = c.CustomerType switch
+                    {
+                        "Đại lý phân phối" => "bg-primary-subtle text-primary border border-primary-subtle",
+                        "Bán buôn B2B" => "bg-info-subtle text-info-emphasis border border-info-subtle",
+                        "Dự án / Công trình" => "bg-warning-subtle text-warning-emphasis border border-warning-subtle",
+                        _ => "bg-success-subtle text-success border border-success-subtle"
+                    };
+
+                    <tr>
+                        <td class="text-center text-muted small">@idx</td>
+                        <td>
+                            <span class="badge bg-light text-dark border font-monospace">@c.Code</span>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-dark">@c.Name</div>
+                            <span class="badge @typeBadgeClass mt-1 small" style="font-size: 11px;">@c.CustomerType</span>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(c.ContactName))
+                            {
+                                <div class="small fw-semibold text-dark"><i class="bi bi-person me-1 text-muted"></i>@c.ContactName</div>
+                            }
+                            @if (!string.IsNullOrEmpty(c.Phone) || !string.IsNullOrEmpty(c.ContactPhone))
+                            {
+                                <div class="small text-muted"><i class="bi bi-telephone me-1 text-muted"></i>@(c.Phone ?? c.ContactPhone)</div>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(c.Email))
+                            {
+                                <div class="small text-truncate" style="max-width: 180px;"><i class="bi bi-envelope me-1 text-muted"></i>@c.Email</div>
+                            }
+                            @if (!string.IsNullOrEmpty(c.TaxCode))
+                            {
+                                <div class="small text-muted font-monospace"><i class="bi bi-receipt me-1 text-muted"></i>MST: @c.TaxCode</div>
+                            }
+                            @if (string.IsNullOrEmpty(c.Email) && string.IsNullOrEmpty(c.TaxCode))
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-truncate" style="max-width: 220px;" title="@c.Address">
+                                @(c.Address ?? "—")
+                            </div>
+                            @if (!string.IsNullOrEmpty(c.Province))
+                            {
+                                <div class="small text-muted"><i class="bi bi-geo-alt me-1 text-muted"></i>@c.Province</div>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (c.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="bi bi-check-circle me-1"></i>Hoạt động
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" title="Xem hồ sơ & Lịch sử xuất hàng" onclick="openDetailModal(@c.Id)">
+                                    <i class="bi bi-clock-history"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form asp-action="Toggle" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@c.Id" />
+                                    <button type="submit" class="btn @(c.IsActive ? "btn-outline-warning" : "btn-outline-success")" title="@(c.IsActive ? "Tạm dừng giao dịch" : "Kích hoạt lại")">
+                                        <i class="bi @(c.IsActive ? "bi-pause" : "bi-play")"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    idx++;
+                }
+                @if (Model.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                            Không tìm thấy khách hàng nào phù hợp với điều kiện tìm kiếm.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm Khách hàng mới -->
+<div class="modal fade" id="createCustomerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form asp-action="Create" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold text-primary"><i class="bi bi-plus-circle me-1"></i> Thêm Khách hàng & Đại lý mới</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Mã khách hàng</label>
+                        <input type="text" name="code" class="form-control form-control-sm font-monospace" placeholder="Tự sinh nếu để trống (vd: KH005)" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold text-muted">Tên Khách hàng / Đại lý <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-sm" placeholder="Ví dụ: Công ty CP Bán lẻ FPT" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Phân loại khách hàng <span class="text-danger">*</span></label>
+                        <select name="customerType" class="form-select form-select-sm" required>
+                            <option value="Đại lý phân phối">Đại lý phân phối</option>
+                            <option value="Bán buôn B2B">Bán buôn B2B</option>
+                            <option value="Dự án / Công trình">Dự án / Công trình</option>
+                            <option value="Khách lẻ">Khách lẻ</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Mã số thuế</label>
+                        <input type="text" name="taxCode" class="form-control form-control-sm font-monospace" placeholder="vd: 0101234567" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Tỉnh / Thành phố</label>
+                        <input type="text" name="province" class="form-control form-control-sm" placeholder="vd: Hà Nội, TP.HCM..." />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Người đại diện / liên hệ</label>
+                        <input type="text" name="contactName" class="form-control form-control-sm" placeholder="Họ tên người liên hệ..." />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Số điện thoại liên hệ</label>
+                        <input type="text" name="contactPhone" class="form-control form-control-sm" placeholder="vd: 0988123456" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Điện thoại cơ quan / Hotline</label>
+                        <input type="text" name="phone" class="form-control form-control-sm" placeholder="vd: 024-38383838" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Email nhận thông báo kho</label>
+                        <input type="email" name="email" class="form-control form-control-sm" placeholder="vd: ketoankho@fpt.com.vn" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Địa chỉ nhận hàng / Giao kho</label>
+                        <input type="text" name="address" class="form-control form-control-sm" placeholder="Địa chỉ chi tiết nơi giao hàng hoặc văn phòng đại lý..." />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Ghi chú / Hạn mức công nợ</label>
+                        <textarea name="note" class="form-control form-control-sm" rows="2" placeholder="Ghi chú điều khoản giao hàng, hạn mức tín dụng kho..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Lưu khách hàng</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Khách hàng -->
+<div class="modal fade" id="editCustomerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form asp-action="Update" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="editId" />
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold text-primary"><i class="bi bi-pencil me-1"></i> Cập nhật thông tin Khách hàng / Đại lý</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Mã khách hàng</label>
+                        <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold text-muted">Tên Khách hàng / Đại lý <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control form-control-sm" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Phân loại khách hàng <span class="text-danger">*</span></label>
+                        <select name="customerType" id="editCustomerType" class="form-select form-select-sm" required>
+                            <option value="Đại lý phân phối">Đại lý phân phối</option>
+                            <option value="Bán buôn B2B">Bán buôn B2B</option>
+                            <option value="Dự án / Công trình">Dự án / Công trình</option>
+                            <option value="Khách lẻ">Khách lẻ</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Mã số thuế</label>
+                        <input type="text" name="taxCode" id="editTaxCode" class="form-control form-control-sm font-monospace" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Tỉnh / Thành phố</label>
+                        <input type="text" name="province" id="editProvince" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Người đại diện / liên hệ</label>
+                        <input type="text" name="contactName" id="editContactName" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Số điện thoại liên hệ</label>
+                        <input type="text" name="contactPhone" id="editContactPhone" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Điện thoại cơ quan / Hotline</label>
+                        <input type="text" name="phone" id="editPhone" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Email nhận thông báo kho</label>
+                        <input type="email" name="email" id="editEmail" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Địa chỉ nhận hàng / Giao kho</label>
+                        <input type="text" name="address" id="editAddress" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold text-muted">Ghi chú / Hạn mức công nợ</label>
+                        <textarea name="note" id="editNote" class="form-control form-control-sm" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-center">
+                        <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                            <label class="form-check-label small fw-semibold" for="editIsActive">Đang hoạt động</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Lưu thay đổi</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Chi tiết Hồ sơ & Lịch sử Giao dịch Kho của Khách hàng -->
+<div class="modal fade" id="customerDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <div>
+                    <h6 class="modal-title fw-bold text-primary mb-0" id="detailCustomerTitle">
+                        <i class="bi bi-person-lines-fill me-1"></i> Hồ sơ Khách hàng & Lịch sử Giao dịch Kho
+                    </h6>
+                    <div class="text-muted small" id="detailCustomerSub"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <!-- Thống kê nhanh của khách hàng -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">Mã số thuế / MST</div>
+                            <div class="fw-bold font-monospace" id="detailTaxCode">—</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">Điện thoại / Hotline</div>
+                            <div class="fw-bold" id="detailPhone">—</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">Tổng lượng xuất kho</div>
+                            <div class="fw-bold text-primary fs-6" id="detailTotalOut">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">Tổng lượng khách trả lại</div>
+                            <div class="fw-bold text-danger fs-6" id="detailTotalReturn">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nav Tabs cho 3 loại giao dịch -->
+                <ul class="nav nav-tabs mb-3" id="historyTabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active fw-semibold small" id="stockdoc-tab" data-bs-toggle="tab" data-bs-target="#stockdoc-pane" type="button">
+                            <i class="bi bi-box-arrow-up me-1"></i> Phiếu xuất kho thông thường (<span id="countStockDoc">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link fw-semibold small" id="outfg-tab" data-bs-toggle="tab" data-bs-target="#outfg-pane" type="button">
+                            <i class="bi bi-box-arrow-up-right me-1"></i> Xuất kho thành phẩm SX (<span id="countOutFG">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link fw-semibold small" id="return-tab" data-bs-toggle="tab" data-bs-target="#return-pane" type="button">
+                            <i class="bi bi-arrow-return-left me-1"></i> Phiếu khách trả lại (<span id="countReturn">0</span>)
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="historyTabsContent">
+                    <!-- Tab 1: Phiếu xuất kho StockDoc -->
+                    <div class="tab-pane fade show active" id="stockdoc-pane" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Số phiếu</th>
+                                        <th>Kho xuất</th>
+                                        <th>Ngày lập</th>
+                                        <th class="text-end">Số lượng</th>
+                                        <th>Tham chiếu</th>
+                                        <th>Trạng thái</th>
+                                        <th class="text-end">Chi tiết</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodyStockDoc">
+                                    <tr><td colspan="7" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Phiếu xuất thành phẩm OutFG -->
+                    <div class="tab-pane fade" id="outfg-pane" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Số phiếu</th>
+                                        <th>Kho xuất</th>
+                                        <th>Ngày xuất</th>
+                                        <th class="text-end">Số lượng</th>
+                                        <th>Địa chỉ nhận</th>
+                                        <th>Biển số xe</th>
+                                        <th>Trạng thái</th>
+                                        <th class="text-end">Chi tiết</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodyOutFG">
+                                    <tr><td colspan="8" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: Phiếu khách trả lại -->
+                    <div class="tab-pane fade" id="return-pane" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Số phiếu</th>
+                                        <th>Kho nhận</th>
+                                        <th>Ngày nhận</th>
+                                        <th class="text-end">Số lượng trả</th>
+                                        <th>Hóa đơn gốc</th>
+                                        <th>Lý do hoàn trả</th>
+                                        <th>Trạng thái</th>
+                                        <th class="text-end">Chi tiết</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodyReturn">
+                                    <tr><td colspan="8" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, taxCode, note, isActive) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editCode').value = code;
+    document.getElementById('editName').value = name;
+    document.getElementById('editCustomerType').value = type || 'Đại lý phân phối';
+    document.getElementById('editContactName').value = contactName;
+    document.getElementById('editContactPhone').value = contactPhone;
+    document.getElementById('editPhone').value = phone;
+    document.getElementById('editEmail').value = email;
+    document.getElementById('editAddress').value = address;
+    document.getElementById('editProvince').value = province;
+    document.getElementById('editTaxCode').value = taxCode;
+    document.getElementById('editNote').value = note;
+    document.getElementById('editIsActive').checked = isActive;
+    new bootstrap.Modal(document.getElementById('editCustomerModal')).show();
+}
+
+async function openDetailModal(id) {
+    const modalEl = document.getElementById('customerDetailModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+
+    document.getElementById('tableBodyStockDoc').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Đang tải...</td></tr>';
+    document.getElementById('tableBodyOutFG').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Đang tải...</td></tr>';
+    document.getElementById('tableBodyReturn').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Đang tải...</td></tr>';
+
+    try {
+        const res = await fetch(`/Customer/Detail/${id}`);
+        if (!res.ok) throw new Error('Không tải được thông tin khách hàng');
+        const data = await res.json();
+        const c = data.customer;
+
+        document.getElementById('detailCustomerTitle').innerHTML = `<i class="bi bi-person-lines-fill me-1"></i> ${c.name} <span class="badge bg-primary ms-1">${c.code}</span>`;
+        document.getElementById('detailCustomerSub').innerText = `${c.customerType} · Người liên hệ: ${c.contactName || '—'} · Địa chỉ: ${c.address || '—'}`;
+        document.getElementById('detailTaxCode').innerText = c.taxCode || '—';
+        document.getElementById('detailPhone').innerText = c.phone || c.contactPhone || '—';
+        document.getElementById('detailTotalOut').innerText = (data.totalOutQty || 0).toLocaleString('vi-VN');
+        document.getElementById('detailTotalReturn').innerText = (data.totalReturnQty || 0).toLocaleString('vi-VN');
+
+        document.getElementById('countStockDoc').innerText = data.outDocs ? data.outDocs.length : 0;
+        document.getElementById('countOutFG').innerText = data.outFGDocs ? data.outFGDocs.length : 0;
+        document.getElementById('countReturn').innerText = data.returns ? data.returns.length : 0;
+
+        // Render StockDoc
+        if (data.outDocs && data.outDocs.length > 0) {
+            document.getElementById('tableBodyStockDoc').innerHTML = data.outDocs.map(d => `
+                <tr>
+                    <td class="fw-semibold font-monospace">${d.code}</td>
+                    <td>${d.warehouse}</td>
+                    <td class="small text-muted">${d.date}</td>
+                    <td class="text-end fw-bold text-primary">${d.totalQty.toLocaleString('vi-VN')}</td>
+                    <td class="small">${d.refNo || '—'}</td>
+                    <td><span class="badge ${d.status === 'Posted' ? 'bg-success' : 'bg-secondary'}">${d.status}</span></td>
+                    <td class="text-end"><a href="/Doc/Detail/${d.id}" class="btn btn-xs btn-outline-primary py-0 px-2" target="_blank"><i class="bi bi-eye"></i></a></td>
+                </tr>
+            `).join('');
+        } else {
+            document.getElementById('tableBodyStockDoc').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Chưa có phiếu xuất kho thông thường nào.</td></tr>';
+        }
+
+        // Render OutFG
+        if (data.outFGDocs && data.outFGDocs.length > 0) {
+            document.getElementById('tableBodyOutFG').innerHTML = data.outFGDocs.map(f => `
+                <tr>
+                    <td class="fw-semibold font-monospace">${f.code}</td>
+                    <td>${f.warehouse}</td>
+                    <td class="small text-muted">${f.date}</td>
+                    <td class="text-end fw-bold text-primary">${f.totalQty.toLocaleString('vi-VN')}</td>
+                    <td class="small text-truncate" style="max-width:180px;">${f.deliveryAddress || '—'}</td>
+                    <td class="small">${f.plateNo || '—'}</td>
+                    <td><span class="badge ${f.status === 'Approved' ? 'bg-success' : 'bg-warning text-dark'}">${f.status}</span></td>
+                    <td class="text-end"><a href="/InventoryOutFG/Detail/${f.id}" class="btn btn-xs btn-outline-primary py-0 px-2" target="_blank"><i class="bi bi-eye"></i></a></td>
+                </tr>
+            `).join('');
+        } else {
+            document.getElementById('tableBodyOutFG').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Chưa có phiếu xuất thành phẩm nào.</td></tr>';
+        }
+
+        // Render Return
+        if (data.returns && data.returns.length > 0) {
+            document.getElementById('tableBodyReturn').innerHTML = data.returns.map(r => `
+                <tr>
+                    <td class="fw-semibold font-monospace">${r.code}</td>
+                    <td>${r.warehouse}</td>
+                    <td class="small text-muted">${r.date}</td>
+                    <td class="text-end fw-bold text-danger">${r.totalQty.toLocaleString('vi-VN')}</td>
+                    <td class="small">${r.invoiceNo || '—'}</td>
+                    <td class="small text-truncate" style="max-width:180px;">${r.reason || '—'}</td>
+                    <td><span class="badge ${r.status === 'Approved' ? 'bg-success' : 'bg-secondary'}">${r.status}</span></td>
+                    <td class="text-end"><a href="/CustomerReturn/Detail/${r.id}" class="btn btn-xs btn-outline-primary py-0 px-2" target="_blank"><i class="bi bi-eye"></i></a></td>
+                </tr>
+            `).join('');
+        } else {
+            document.getElementById('tableBodyReturn').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Chưa có phiếu khách trả lại nào.</td></tr>';
+        }
+
+    } catch (err) {
+        document.getElementById('tableBodyStockDoc').innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">${err.message}</td></tr>`;
+    }
+}
+</script>
+}

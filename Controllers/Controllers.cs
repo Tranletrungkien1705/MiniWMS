@@ -51,12 +51,14 @@ public class DocController(IWmsService svc) : Controller
         ViewBag.Warehouses = await svc.WarehousesAsync();
         ViewBag.Products = await svc.ProductsAsync();
         ViewBag.Suppliers = await svc.SuppliersAsync(activeOnly: true);
+        ViewBag.Customers = await svc.CustomersAsync(activeOnly: true);
         return View();
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(DocType type, int? fromWarehouseId, int? toWarehouseId, string? note, string? refNo,
         string? supplierCode, string? supplierName,
+        string? customerCode, string? customerName,
         int[]? productId, int[]? qty)
     {
         var doc = new StockDoc
@@ -66,6 +68,8 @@ public class DocController(IWmsService svc) : Controller
             ToWarehouseId = toWarehouseId,
             SupplierCode = supplierCode?.Trim(),
             SupplierName = supplierName?.Trim(),
+            CustomerCode = customerCode?.Trim(),
+            CustomerName = customerName?.Trim(),
             Note = note,
             RefNo = refNo,
             CreatedBy = "web"
@@ -563,6 +567,7 @@ public class CustomerReturnController(IWmsService svc) : Controller
         var selectedWhId = warehouseId ?? whs.FirstOrDefault()?.Id ?? 0;
         ViewBag.SelectedWarehouseId = selectedWhId;
         ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.Customers = await svc.CustomersAsync(activeOnly: true);
         return View();
     }
 
@@ -1791,6 +1796,7 @@ public class InventoryOutFGController(IWmsService svc) : Controller
     {
         ViewBag.Warehouses = await svc.WarehousesAsync();
         ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.Customers = await svc.CustomersAsync(activeOnly: true);
         return View();
     }
 
@@ -2034,6 +2040,194 @@ public class SupplierController(IWmsService svc) : Controller
         var (ok, msg) = await svc.ToggleSupplierStatusAsync(id);
         TempData[ok ? "Success" : "Error"] = msg;
         return RedirectToAction(nameof(Index));
+    }
+}
+
+public class CustomerController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, string? customerType, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.CustomerType = customerType ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var list = await svc.CustomersAsync(q, customerType, activeOnly);
+        return View(list);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? taxCode, string? note)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên khách hàng / đại lý.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var cust = new Customer
+        {
+            Code = code?.Trim() ?? "",
+            Name = name.Trim(),
+            CustomerType = string.IsNullOrWhiteSpace(customerType) ? "Đại lý phân phối" : customerType.Trim(),
+            ContactName = contactName?.Trim(),
+            ContactPhone = contactPhone?.Trim(),
+            Phone = phone?.Trim(),
+            Email = email?.Trim(),
+            Address = address?.Trim(),
+            Province = province?.Trim(),
+            TaxCode = taxCode?.Trim(),
+            Note = note?.Trim(),
+            IsActive = true
+        };
+
+        await svc.CreateCustomerAsync(cust);
+        TempData["Success"] = $"Đã tạo khách hàng '{cust.Name}'.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? taxCode, string? note, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên khách hàng / đại lý.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var cust = new Customer
+        {
+            Name = name.Trim(),
+            CustomerType = string.IsNullOrWhiteSpace(customerType) ? "Đại lý phân phối" : customerType.Trim(),
+            ContactName = contactName?.Trim(),
+            ContactPhone = contactPhone?.Trim(),
+            Phone = phone?.Trim(),
+            Email = email?.Trim(),
+            Address = address?.Trim(),
+            Province = province?.Trim(),
+            TaxCode = taxCode?.Trim(),
+            Note = note?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateCustomerAsync(id, cust);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleCustomerStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteCustomerAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetCustomerDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy khách hàng." });
+        return Json(new
+        {
+            customer = new
+            {
+                detail.Customer.Id,
+                detail.Customer.Code,
+                detail.Customer.Name,
+                detail.Customer.CustomerType,
+                detail.Customer.ContactName,
+                detail.Customer.ContactPhone,
+                detail.Customer.Phone,
+                detail.Customer.Email,
+                detail.Customer.Address,
+                detail.Customer.Province,
+                detail.Customer.TaxCode,
+                detail.Customer.Note,
+                detail.Customer.IsActive,
+                CreatedAt = detail.Customer.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            totalOutQty = detail.TotalOutQty,
+            totalReturnQty = detail.TotalReturnQty,
+            outDocs = detail.OutDocs.Select(d => new
+            {
+                d.Id,
+                d.Code,
+                Warehouse = d.FromWarehouse?.Name ?? "—",
+                Date = d.Date.ToString("dd/MM/yyyy"),
+                d.TotalQty,
+                Status = d.Status.ToString(),
+                d.RefNo,
+                d.Note
+            }),
+            outFGDocs = detail.OutFGDocs.Select(f => new
+            {
+                f.Id,
+                f.Code,
+                Warehouse = f.Warehouse?.Name ?? "—",
+                Date = f.Date.ToString("dd/MM/yyyy"),
+                f.TotalQty,
+                Status = f.Status.ToString(),
+                f.DeliveryAddress,
+                f.PlateNo
+            }),
+            returns = detail.Returns.Select(r => new
+            {
+                r.Id,
+                r.Code,
+                Warehouse = r.Warehouse?.Name ?? "—",
+                Date = r.Date.ToString("dd/MM/yyyy"),
+                r.TotalQty,
+                Status = r.Status.ToString(),
+                r.InvoiceNo,
+                r.Reason
+            })
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? customerType, bool? activeOnly)
+    {
+        var list = await svc.CustomersAsync(q, customerType, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("STT,MaKH,TenKhachHang,LoaiKhachHang,NguoiLienHe,SDTLienHe,DienThoai,Email,DiaChi,TinhThanh,MaSoThue,TrangThai,GhiChu,NgayTao");
+
+        int stt = 1;
+        foreach (var c in list)
+        {
+            sb.AppendLine(string.Join(",",
+                stt++,
+                EscapeCsv(c.Code),
+                EscapeCsv(c.Name),
+                EscapeCsv(c.CustomerType),
+                EscapeCsv(c.ContactName ?? ""),
+                EscapeCsv(c.ContactPhone ?? ""),
+                EscapeCsv(c.Phone ?? ""),
+                EscapeCsv(c.Email ?? ""),
+                EscapeCsv(c.Address ?? ""),
+                EscapeCsv(c.Province ?? ""),
+                EscapeCsv(c.TaxCode ?? ""),
+                c.IsActive ? "DangHoatDong" : "TamDung",
+                EscapeCsv(c.Note ?? ""),
+                c.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+            ));
+        }
+
+        var preamble = System.Text.Encoding.UTF8.GetPreamble();
+        var bytes = preamble.Concat(System.Text.Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+        return File(bytes, "text/csv; charset=utf-8", $"KhachHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+
+    private static string EscapeCsv(string val)
+    {
+        if (string.IsNullOrEmpty(val)) return "\"\"";
+        return "\"" + val.Replace("\"", "\"\"") + "\"";
     }
 }
 

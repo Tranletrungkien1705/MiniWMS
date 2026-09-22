@@ -12,6 +12,8 @@
                 <div class="text-muted small">
                     @if (Model.FromWarehouse != null) { <span>Từ: <b>@Model.FromWarehouse.Name</b></span> }
                     @if (Model.ToWarehouse != null) { <span class="ms-2">Đến: <b>@Model.ToWarehouse.Name</b></span> }
+                    @if (!string.IsNullOrEmpty(Model.SupplierName)) { <span class="ms-2">NCC: <b>@Model.SupplierName</b></span> }
+                    @if (!string.IsNullOrEmpty(Model.CustomerName)) { <span class="ms-2 text-primary">Khách hàng: <b>@Model.CustomerName</b> @(!string.IsNullOrEmpty(Model.CustomerCode) ? $"({Model.CustomerCode})" : "")</span> }
                     · @Model.Date.ToString("dd/MM/yyyy HH:mm")
                 </div>
                 @if (!string.IsNullOrEmpty(Model.Note)) { <div class="small mt-1">Ghi chú: @Model.Note</div> }

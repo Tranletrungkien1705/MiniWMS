@@ -124,6 +124,109 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+
+        if (!await db.Customers.AnyAsync())
+        {
+            db.Customers.AddRange(
+                new Customer
+                {
+                    Code = "KH-FPT",
+                    Name = "Công ty Cổ phần Bán lẻ Kỹ thuật số FPT",
+                    CustomerType = "Đại lý phân phối",
+                    ContactName = "Nguyễn Tuấn Anh",
+                    ContactPhone = "0982-111-222",
+                    Phone = "024-73006666",
+                    Email = "khohang@fptshop.com.vn",
+                    Address = "261 Khánh Hội, Phường 2, Quận 4, TP.HCM",
+                    Province = "TP.HCM",
+                    TaxCode = "0105777650",
+                    IsActive = true,
+                    Note = "Hệ thống đại lý phân phối thiết bị & thời trang cao cấp",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Customer
+                {
+                    Code = "KH-MWG",
+                    Name = "Công ty Cổ phần Thế Giới Di Động",
+                    CustomerType = "Đại lý phân phối",
+                    ContactName = "Trần Minh Trí",
+                    ContactPhone = "0903-555-888",
+                    Phone = "028-38125960",
+                    Email = "giaonhan@thegioididong.com",
+                    Address = "Lô T2-1.2, Đường D1, Khu Công nghệ cao, TP. Thủ Đức, TP.HCM",
+                    Province = "TP.HCM",
+                    TaxCode = "0303217354",
+                    IsActive = true,
+                    Note = "Chuỗi siêu thị phân phối bán lẻ quy mô toàn quốc",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Customer
+                {
+                    Code = "KH-VNPT",
+                    Name = "Tổng Công ty Dịch vụ Viễn thông VNPT",
+                    CustomerType = "Dự án / Công trình",
+                    ContactName = "Lê Văn Đức",
+                    ContactPhone = "0915-888-999",
+                    Phone = "024-37735555",
+                    Email = "vattu@vnpt.vn",
+                    Address = "57 Huỳnh Thúc Kháng, Đống Đa, Hà Nội",
+                    Province = "Hà Nội",
+                    TaxCode = "0106869738",
+                    IsActive = true,
+                    Note = "Hợp đồng dự án cấp phát đồng phục & vật tư định kỳ",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Customer
+                {
+                    Code = "KH-BACHHOA",
+                    Name = "Chuỗi Cửa hàng Bách Hóa Miền Bắc",
+                    CustomerType = "Bán buôn B2B",
+                    ContactName = "Hoàng Mai Hương",
+                    ContactPhone = "0934-222-333",
+                    Phone = "024-39876543",
+                    Email = "kinhdoanh@bachhoamienbac.vn",
+                    Address = "18 Tam Trinh, Hoàng Mai, Hà Nội",
+                    Province = "Hà Nội",
+                    TaxCode = "0107896541",
+                    IsActive = true,
+                    Note = "Đối tác lấy buôn phân phối cho mạng lưới cửa hàng bán buôn",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Customer
+                {
+                    Code = "KH-ANPHU",
+                    Name = "Công ty TNHH Thương mại Dịch vụ An Phú",
+                    CustomerType = "Đại lý phân phối",
+                    ContactName = "Đỗ Hải Đăng",
+                    ContactPhone = "0977-666-777",
+                    Phone = "0236-3688999",
+                    Email = "anphucorp@gmail.com",
+                    Address = "220 Nguyễn Văn Linh, Q. Hải Châu, TP. Đà Nẵng",
+                    Province = "Đà Nẵng",
+                    TaxCode = "0401889922",
+                    IsActive = true,
+                    Note = "Đại lý ủy quyền độc quyền khu vực Miền Trung",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Customer
+                {
+                    Code = "KH-RETAIL",
+                    Name = "Khách hàng mua lẻ tại kho",
+                    CustomerType = "Khách lẻ",
+                    ContactName = "Khách lẻ trực tiếp",
+                    ContactPhone = "0909-000-000",
+                    Phone = "0909-000-000",
+                    Email = "khachle@miniwms.vn",
+                    Address = "Tại quầy nhận hàng kho trung tâm",
+                    Province = "Hà Nội",
+                    TaxCode = "",
+                    IsActive = true,
+                    Note = "Khách mua lẻ trực tiếp thanh toán ngay",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Docs.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();
@@ -285,6 +388,35 @@ public static class Seeder
                     default:
                         d.SupplierCode = "NCC-MAY10";
                         d.SupplierName = "Tổng Công ty May 10 - CTCP";
+                        break;
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+
+        // Cập nhật thông tin Khách hàng cho các phiếu xuất mẫu cũ nếu chưa có
+        var existingOutDocsToUpdate = await db.Docs.Where(d => d.Type == DocType.Out && string.IsNullOrEmpty(d.CustomerCode)).ToListAsync();
+        if (existingOutDocsToUpdate.Any())
+        {
+            foreach (var d in existingOutDocsToUpdate)
+            {
+                switch (d.Code)
+                {
+                    case "PXSEED-001":
+                        d.CustomerCode = "KH-FPT";
+                        d.CustomerName = "Công ty Cổ phần Bán lẻ Kỹ thuật số FPT";
+                        break;
+                    case "PXSEED-002":
+                        d.CustomerCode = "KH-MWG";
+                        d.CustomerName = "Công ty Cổ phần Thế Giới Di Động";
+                        break;
+                    case "PXSEED-003":
+                        d.CustomerCode = "KH-BACHHOA";
+                        d.CustomerName = "Chuỗi Cửa hàng Bách Hóa Miền Bắc";
+                        break;
+                    default:
+                        d.CustomerCode = "KH-FPT";
+                        d.CustomerName = "Công ty Cổ phần Bán lẻ Kỹ thuật số FPT";
                         break;
                 }
             }
@@ -1867,19 +1999,23 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Orgs_ApiKey\" ON miniwms.\"Orgs\" (\"ApiKey\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"Suppliers\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"ContactName\" text NULL, \"Phone\" text NULL, \"Email\" text NULL, \"Address\" text NULL, \"TaxCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Note\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Suppliers_OrgId_Code\" ON miniwms.\"Suppliers\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Customers\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"CustomerType\" text NOT NULL DEFAULT 'Đại lý phân phối', \"ContactName\" text NULL, \"ContactPhone\" text NULL, \"Phone\" text NULL, \"Email\" text NULL, \"Address\" text NULL, \"Province\" text NULL, \"TaxCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Note\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Customers_OrgId_Code\" ON miniwms.\"Customers\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierName\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"CustomerCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"CustomerName\" text NULL");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
 
@@ -2258,6 +2394,8 @@ public static class Seeder
             @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_CartonId"" ON ""InventoryBoxes"" (""OrgId"", ""CartonId"");",
             @"ALTER TABLE ""Docs"" ADD COLUMN ""SupplierCode"" TEXT NULL;",
             @"ALTER TABLE ""Docs"" ADD COLUMN ""SupplierName"" TEXT NULL;",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""CustomerCode"" TEXT NULL;",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""CustomerName"" TEXT NULL;",
             @"CREATE TABLE IF NOT EXISTS ""Suppliers"" (
                 ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                 ""OrgId"" TEXT NOT NULL,
@@ -2272,7 +2410,25 @@ public static class Seeder
                 ""Note"" TEXT NULL,
                 ""CreatedAt"" TEXT NOT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Suppliers_OrgId_Code"" ON ""Suppliers"" (""OrgId"", ""Code"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Suppliers_OrgId_Code"" ON ""Suppliers"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""Customers"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""CustomerType"" TEXT NOT NULL DEFAULT 'Đại lý phân phối',
+                ""ContactName"" TEXT NULL,
+                ""ContactPhone"" TEXT NULL,
+                ""Phone"" TEXT NULL,
+                ""Email"" TEXT NULL,
+                ""Address"" TEXT NULL,
+                ""Province"" TEXT NULL,
+                ""TaxCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Note"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Customers_OrgId_Code"" ON ""Customers"" (""OrgId"", ""Code"");"
         };
         foreach (var s in sql)
         {
