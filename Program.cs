@@ -1259,6 +1259,90 @@ app.MapPost("/api/inventory-out-fg/{id:int}/cancel", async (int id, IWmsService 
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Báo cáo Tổng hợp Nhập mua & Trả hàng NCC (port từ Rpt_Summary_InAndReturnSup Skycic)
+app.MapGet("/api/reports/in-return-sup", async (int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.SummaryInReturnSupReportAsync(warehouseId, supplierCode, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+// API Danh mục Nhà cung cấp (port từ Mst_Supplier Skycic)
+app.MapGet("/api/suppliers", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var list = await svc.SuppliersAsync(q, activeOnly);
+    return Results.Ok(list.Select(s => new
+    {
+        s.Id,
+        s.Code,
+        s.Name,
+        s.ContactName,
+        s.Phone,
+        s.Email,
+        s.Address,
+        s.TaxCode,
+        s.IsActive,
+        s.Note,
+        s.CreatedAt
+    }));
+});
+
+app.MapGet("/api/suppliers/{id:int}", async (int id, IWmsService svc) =>
+{
+    var s = await svc.GetSupplierAsync(id);
+    if (s == null) return Results.NotFound(new { error = "Không tìm thấy nhà cung cấp." });
+    return Results.Ok(s);
+});
+
+app.MapPost("/api/suppliers", async (CreateSupplierDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhà cung cấp." });
+    try
+    {
+        var sup = new Supplier
+        {
+            Code = dto.Code?.Trim() ?? "",
+            Name = dto.Name.Trim(),
+            ContactName = dto.ContactName?.Trim(),
+            Phone = dto.Phone?.Trim(),
+            Email = dto.Email?.Trim(),
+            Address = dto.Address?.Trim(),
+            TaxCode = dto.TaxCode?.Trim(),
+            Note = dto.Note?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateSupplierAsync(sup);
+        return Results.Ok(new { id, code = sup.Code, name = sup.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/suppliers/{id:int}", async (int id, UpdateSupplierDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhà cung cấp." });
+    var sup = new Supplier
+    {
+        Name = dto.Name.Trim(),
+        ContactName = dto.ContactName?.Trim(),
+        Phone = dto.Phone?.Trim(),
+        Email = dto.Email?.Trim(),
+        Address = dto.Address?.Trim(),
+        TaxCode = dto.TaxCode?.Trim(),
+        Note = dto.Note?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateSupplierAsync(id, sup);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/suppliers/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleSupplierStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -1307,3 +1391,5 @@ record InventoryInFGSerialDto(int ProductId, string SerialNo, string? Note);
 record CreateInventoryOutFGDto(int WarehouseId, InvOutFGType OutType, InvOutFGFormType FormType, string CustomerName, string? AgentCode, string? DeliveryAddress, string? DriverName, string? DriverPhone, string? PlateNo, string? MoocNo, string? OrderNo, DateTime? Date, string? Remark, List<InventoryOutFGLineDto> Lines, List<InventoryOutFGSerialDto>? Serials);
 record InventoryOutFGLineDto(int ProductId, int Qty, decimal UnitPrice, decimal UnitCost, string? Note);
 record InventoryOutFGSerialDto(int ProductId, string SerialNo, string? Note);
+record CreateSupplierDto(string? Code, string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);
+record UpdateSupplierDto(string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);

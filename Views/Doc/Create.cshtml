@@ -24,6 +24,18 @@
                     <select name="toWarehouseId" class="form-select" required><option value="">— Chọn —</option>
                         @foreach (var w in whs) { <option value="@w.Id">@w.Name</option> }</select></div>
             }
+            @if (type == DocType.In)
+            {
+                var sups = (List<Supplier>?)ViewBag.Suppliers ?? new List<Supplier>();
+                <div class="col-md-4">
+                    <label class="form-label small text-muted">Nhà cung cấp</label>
+                    <select name="supplierCode" class="form-select" onchange="onSupplierChange(this)">
+                        <option value="">— Chọn nhà cung cấp —</option>
+                        @foreach (var s in sups) { <option value="@s.Code" data-name="@s.Name">@s.Code — @s.Name</option> }
+                    </select>
+                    <input type="hidden" name="supplierName" id="supplierNameInput" />
+                </div>
+            }
             <div class="col-md-4"><label class="form-label small text-muted">Số tham chiếu</label><input name="refNo" class="form-control" placeholder="Đơn hàng / chứng từ" /></div>
             <div class="col-12"><label class="form-label small text-muted">Ghi chú</label><input name="note" class="form-control" /></div>
         </div>
@@ -47,5 +59,6 @@
 <script>
 var opts = `<option value="">— Chọn hàng —</option>@foreach (var p in products) {<text><option value="@p.Id">@p.Code — @p.Name</option></text>}`;
 function addLine(){document.getElementById('lines').insertAdjacentHTML('beforeend','<tr><td><select name="productId" class="form-select form-select-sm">'+opts+'</select></td><td><input name="qty" type="number" min="1" value="1" class="form-control form-control-sm" style="max-width:120px"/></td></tr>');}
+function onSupplierChange(sel){var opt=sel.options[sel.selectedIndex];document.getElementById('supplierNameInput').value=opt?(opt.getAttribute('data-name')||''):'';}
 </script>
 }

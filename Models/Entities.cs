@@ -46,6 +46,8 @@ public class StockDoc : IOrgOwned
     public DocType Type { get; set; }
     public int? FromWarehouseId { get; set; }   // Out/Transfer
     public int? ToWarehouseId { get; set; }     // In/Transfer
+    public string? SupplierCode { get; set; }   // Mã nhà cung cấp (khi nhập kho mua hàng)
+    public string? SupplierName { get; set; }   // Tên nhà cung cấp (khi nhập kho mua hàng)
     public DateTime Date { get; set; } = DateTime.Now;
     public string? Note { get; set; }
     public string? RefNo { get; set; }
@@ -187,6 +189,23 @@ public class MoveOrderLine : IOrgOwned
     public Product Product { get; set; } = null!;
 }
 
+/// <summary>Danh mục Nhà cung cấp hàng hóa (port từ Mst_Supplier Skycic).</summary>
+public class Supplier : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? ContactName { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? Address { get; set; }
+    public string? TaxCode { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string? Note { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
 /// <summary>Phiếu xuất trả hàng nhà cung cấp (Return to Supplier - port từ InvF_InventoryReturnSup Skycic). Quản lý xuất trả hàng lỗi, hỏng, cận hạn hoặc đổi trả cho NCC.</summary>
 public class ReturnToSupplier : IOrgOwned
 {
@@ -298,6 +317,46 @@ public record InventoryInOutReport(
     int TotalOutQty,
     int TotalClosingQty,
     List<InventoryInOutRow> Rows
+);
+
+/// <summary>Dòng chi tiết Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
+public record SummaryInReturnSupRow(
+    string SupplierCode,
+    string SupplierName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int InQty,              // TotalQtyIn
+    decimal InAmount,       // TotalValIn
+    int ReturnQty,          // TotalQtyReturn
+    decimal ReturnAmount,   // TotalValReturn
+    int NetQty,             // TotalQtyRemain = InQty - ReturnQty
+    decimal NetAmount,      // TotalValRemain = InAmount - ReturnAmount
+    double ReturnRate,      // Tỷ lệ trả hàng % = ReturnQty / InQty * 100
+    double SharePercent,    // Tỷ trọng thực nhận % = NetQty / TotalAllNetQty * 100
+    string QualityGrade,    // Đánh giá chất lượng NCC: Tốt (<=2%), Cảnh báo (2%-5%), Kém (>5%)
+    string QualityBadgeClass
+);
+
+/// <summary>Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
+public record SummaryInReturnSupReport(
+    int? WarehouseId,
+    string WarehouseName,
+    string? SupplierCode,
+    DateTime FromDate,
+    DateTime ToDate,
+    string? Keyword,
+    int TotalInQty,
+    decimal TotalInAmount,
+    int TotalReturnQty,
+    decimal TotalReturnAmount,
+    int TotalNetQty,
+    decimal TotalNetAmount,
+    double AvgReturnRate,
+    int SuppliersCount,
+    int ProductsCount,
+    List<SummaryInReturnSupRow> Rows
 );
 
 /// <summary>Mức cảnh báo tồn kho an toàn (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>

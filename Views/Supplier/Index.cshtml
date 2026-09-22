@@ -1,0 +1,246 @@
+@model List<Supplier>
+@{
+    ViewData["Title"] = "Danh mục Nhà Cung Cấp";
+    var keyword = (string)ViewBag.Keyword;
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    int totalCount = Model.Count;
+    int activeCount = Model.Count(s => s.IsActive);
+    int inactiveCount = totalCount - activeCount;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i>Danh mục Nhà Cung Cấp</h5>
+        <div class="text-muted small">Port từ <code>Mst_Supplier</code> (Skycic) — Quản lý hồ sơ đối tác cung ứng, liên kết nhập mua hàng và xuất trả hàng kho</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/SummaryInReturnSup" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-truck-flatbed me-1"></i> B/C Nhập - Trả NCC
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createSupplierModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Nhà cung cấp
+        </button>
+    </div>
+</div>
+
+<!-- 3 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG NHÀ CUNG CẤP</span>
+                    <i class="bi bi-building text-secondary fs-5"></i>
+                </div>
+                <div class="stat-num text-secondary">@totalCount</div>
+                <div class="small text-muted">Hồ sơ đối tác trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG GIAO DỊCH (HOẠT ĐỘNG)</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@activeCount</div>
+                <div class="small text-muted">Khả dụng cho phiếu nhập & trả hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TẠM DỪNG HOẠT ĐỘNG</span>
+                    <i class="bi bi-pause-circle text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@inactiveCount</div>
+                <div class="small text-muted">Tạm ngưng nhập hàng mới</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="@keyword" placeholder="Tìm theo mã, tên NCC, số điện thoại..." class="form-control" />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="true" selected="@(activeOnly == true)">Đang hoạt động</option>
+                    <option value="false" selected="@(activeOnly == false)">Tạm ngưng</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/Supplier" class="btn btn-sm btn-outline-secondary" title="Đặt lại">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Nhà cung cấp -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:50px" class="text-center">STT</th>
+                    <th>Mã NCC</th>
+                    <th>Tên Nhà Cung Cấp</th>
+                    <th>Người liên hệ & SĐT</th>
+                    <th>Email & Địa chỉ</th>
+                    <th>Mã số thuế</th>
+                    <th class="text-center">Trạng thái</th>
+                    <th class="text-end">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-people fs-2 d-block mb-2 text-secondary"></i>
+                            Chưa có nhà cung cấp nào phù hợp với bộ lọc tìm kiếm.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var s in Model)
+                    {
+                        <tr>
+                            <td class="text-center small text-muted">@(stt++)</td>
+                            <td><code>@s.Code</code></td>
+                            <td>
+                                <div class="fw-semibold">@s.Name</div>
+                                @if (!string.IsNullOrWhiteSpace(s.Note))
+                                {
+                                    <div class="small text-muted fst-italic">@s.Note</div>
+                                }
+                            </td>
+                            <td>
+                                <div>@(s.ContactName ?? "—")</div>
+                                @if (!string.IsNullOrWhiteSpace(s.Phone))
+                                {
+                                    <div class="small text-muted"><i class="bi bi-telephone me-1"></i>@s.Phone</div>
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(s.Email))
+                                {
+                                    <div class="small"><i class="bi bi-envelope me-1"></i>@s.Email</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(s.Address))
+                                {
+                                    <div class="small text-muted text-truncate" style="max-width:240px;"><i class="bi bi-geo-alt me-1"></i>@s.Address</div>
+                                }
+                                else if (string.IsNullOrWhiteSpace(s.Email))
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td>@(s.TaxCode ?? "—")</td>
+                            <td class="text-center">
+                                @if (s.IsActive)
+                                {
+                                    <span class="badge bg-success">Hoạt động</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">Tạm ngưng</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <div class="d-flex justify-content-end gap-1">
+                                    <a href="/SummaryInReturnSup?supplierCode=@s.Code" class="btn btn-xs btn-outline-info py-0 px-2" title="Xem báo cáo đối soát">
+                                        <i class="bi bi-graph-up"></i> Đối soát
+                                    </a>
+                                    <form asp-action="Toggle" asp-route-id="@s.Id" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-xs @(s.IsActive ? "btn-outline-warning" : "btn-outline-success") py-0 px-2" 
+                                                title="@(s.IsActive ? "Tạm ngưng NCC" : "Kích hoạt NCC")"
+                                                onclick="return confirm('Bạn có chắc muốn đổi trạng thái NCC này?');">
+                                            <i class="bi @(s.IsActive ? "bi-pause" : "bi-play")"></i> @(s.IsActive ? "Khóa" : "Mở")
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal thêm Nhà cung cấp mới -->
+<div class="modal fade" id="createSupplierModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form asp-action="Create" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Nhà Cung Cấp Mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Mã Nhà cung cấp</label>
+                        <input type="text" name="code" placeholder="Để trống để tự sinh (VD: NCC001)" class="form-control form-control-sm" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Tên Nhà cung cấp <span class="text-danger">*</span></label>
+                        <input type="text" name="name" required placeholder="Tên công ty / đơn vị cung cấp" class="form-control form-control-sm" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-muted">Người liên hệ</label>
+                            <input type="text" name="contactName" placeholder="Tên người đại diện" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-muted">Số điện thoại</label>
+                            <input type="text" name="phone" placeholder="Số điện thoại liên hệ" class="form-control form-control-sm" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-muted">Email</label>
+                            <input type="email" name="email" placeholder="email@nhacungcap.vn" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-muted">Mã số thuế (MST)</label>
+                            <input type="text" name="taxCode" placeholder="0100xxxxxx" class="form-control form-control-sm" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Địa chỉ</label>
+                        <input type="text" name="address" placeholder="Địa chỉ trụ sở / kho NCC" class="form-control form-control-sm" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Ghi chú</label>
+                        <textarea name="note" rows="2" placeholder="Ghi chú về năng lực, hàng hóa cung cấp..." class="form-control form-control-sm"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu Nhà Cung Cấp</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

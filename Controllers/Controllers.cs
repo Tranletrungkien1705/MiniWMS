@@ -50,14 +50,26 @@ public class DocController(IWmsService svc) : Controller
         ViewBag.Type = type;
         ViewBag.Warehouses = await svc.WarehousesAsync();
         ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.Suppliers = await svc.SuppliersAsync(activeOnly: true);
         return View();
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(DocType type, int? fromWarehouseId, int? toWarehouseId, string? note, string? refNo,
+        string? supplierCode, string? supplierName,
         int[]? productId, int[]? qty)
     {
-        var doc = new StockDoc { Type = type, FromWarehouseId = fromWarehouseId, ToWarehouseId = toWarehouseId, Note = note, RefNo = refNo, CreatedBy = "web" };
+        var doc = new StockDoc
+        {
+            Type = type,
+            FromWarehouseId = fromWarehouseId,
+            ToWarehouseId = toWarehouseId,
+            SupplierCode = supplierCode?.Trim(),
+            SupplierName = supplierName?.Trim(),
+            Note = note,
+            RefNo = refNo,
+            CreatedBy = "web"
+        };
         var lines = new List<(int, int)>();
         for (int i = 0; productId != null && i < productId.Length; i++)
             lines.Add((productId[i], i < (qty?.Length ?? 0) ? qty![i] : 0));
@@ -1927,6 +1939,101 @@ public class InventoryOutFGController(IWmsService svc) : Controller
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         var fileName = $"BangKe_XuatKhoThanhPham_{DateTime.Now:yyyyMMdd_HHmm}.csv";
         return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+public class SummaryInReturnSupController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var defFrom = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var defTo = toDate ?? DateTime.Today;
+
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.SupplierCode = supplierCode;
+        ViewBag.FromDate = defFrom.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = defTo.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Suppliers = await svc.SuppliersAsync(activeOnly: true);
+
+        var report = await svc.SummaryInReturnSupReportAsync(warehouseId, supplierCode, defFrom, defTo, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var defFrom = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var defTo = toDate ?? DateTime.Today;
+        var report = await svc.SummaryInReturnSupReportAsync(warehouseId, supplierCode, defFrom, defTo, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỔNG HỢP NHẬP MUA & TRẢ HÀNG NHÀ CUNG CẤP");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Nhà cung cấp:;{(string.IsNullOrWhiteSpace(report.SupplierCode) ? "Tất cả" : report.SupplierCode)}");
+        sb.AppendLine($"Từ ngày:;{report.FromDate:dd/MM/yyyy};Đến ngày:;{report.ToDate:dd/MM/yyyy}");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã NCC;Tên Nhà Cung Cấp;Mã hàng;Tên mặt hàng;ĐVT;Tổng SL Nhập;Giá trị Nhập (VNĐ);Tổng SL Trả;Giá trị Trả (VNĐ);Thực nhận (Net);Giá trị Thực nhận (VNĐ);Tỷ lệ trả (%);Tỷ trọng (%/Tổng nhận);Đánh giá chất lượng");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.SupplierCode}\";\"{r.SupplierName.Replace("\"", "\"\"")}\";\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";{r.InQty};{r.InAmount:F0};{r.ReturnQty};{r.ReturnAmount:F0};{r.NetQty};{r.NetAmount:F0};{r.ReturnRate:F2}%;{r.SharePercent:F2}%;\"{r.QualityGrade}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;TỔNG CỘNG:;{report.TotalInQty};{report.TotalInAmount:F0};{report.TotalReturnQty};{report.TotalReturnAmount:F0};{report.TotalNetQty};{report.TotalNetAmount:F0};{report.AvgReturnRate:F2}%;100%;Số NCC: {report.SuppliersCount}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BC_TongHop_NhapTraNCC_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+public class SupplierController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var list = await svc.SuppliersAsync(q, activeOnly);
+        return View(list);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string name, string? code, string? contactName, string? phone, string? email, string? address, string? taxCode, string? note)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nhà cung cấp.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var sup = new Supplier
+        {
+            Code = code?.Trim() ?? "",
+            Name = name.Trim(),
+            ContactName = contactName?.Trim(),
+            Phone = phone?.Trim(),
+            Email = email?.Trim(),
+            Address = address?.Trim(),
+            TaxCode = taxCode?.Trim(),
+            Note = note?.Trim(),
+            IsActive = true
+        };
+
+        await svc.CreateSupplierAsync(sup);
+        TempData["Success"] = $"Đã tạo nhà cung cấp '{sup.Name}'.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleSupplierStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
     }
 }
 

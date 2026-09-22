@@ -1,0 +1,375 @@
+@model SummaryInReturnSupReport
+@{
+    ViewData["Title"] = "Báo cáo Tổng hợp Nhập mua & Trả hàng NCC";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var sups = (List<Supplier>)ViewBag.Suppliers;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedSup = (string)ViewBag.SupplierCode;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    var keyword = (string)ViewBag.Keyword;
+
+    // Nhóm theo nhà cung cấp để hiển thị bảng phân tích đối tác
+    var supGroups = Model.Rows
+        .GroupBy(r => new { r.SupplierCode, r.SupplierName })
+        .Select(g => new
+        {
+            g.Key.SupplierCode,
+            g.Key.SupplierName,
+            TotalIn = g.Sum(x => x.InQty),
+            TotalInVal = g.Sum(x => x.InAmount),
+            TotalRet = g.Sum(x => x.ReturnQty),
+            TotalRetVal = g.Sum(x => x.ReturnAmount),
+            NetQty = g.Sum(x => x.NetQty),
+            NetVal = g.Sum(x => x.NetAmount),
+            AvgRate = g.Sum(x => x.InQty) > 0 ? Math.Round((double)g.Sum(x => x.ReturnQty) / g.Sum(x => x.InQty) * 100, 2) : 0,
+            ItemsCount = g.Count()
+        })
+        .OrderByDescending(g => g.TotalIn)
+        .ToList();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-truck-flatbed text-primary me-2"></i>Báo cáo Tổng hợp Nhập mua & Trả hàng Nhà Cung Cấp</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Summary_InAndReturnSup</code> (Skycic) — Đối soát nhập kho vs xuất trả NCC, tỷ lệ hàng lỗi/trả & đánh giá chất lượng cung ứng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/SummaryInReturnSup/ExportCsv?warehouseId=@selectedWid&supplierCode=@Uri.EscapeDataString(selectedSup ?? "")&fromDate=@fromDate&toDate=@toDate&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo
+        </button>
+        <a href="/ReturnSup/Create" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Lập phiếu trả NCC
+        </a>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Nhà cung cấp</label>
+                <select name="supplierCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhà cung cấp —</option>
+                    @foreach (var s in sups)
+                    {
+                        <option value="@s.Code" selected="@(selectedSup == s.Code)">@s.Code — @s.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Từ ngày</label>
+                <input type="date" id="inputFromDate" name="fromDate" value="@fromDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Đến ngày</label>
+                <input type="date" id="inputToDate" name="toDate" value="@toDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/SummaryInReturnSup" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+            <div class="col-12 mt-2 pt-2 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="small text-muted me-1">Tìm kiếm nhanh:</span>
+                    <input type="text" name="q" value="@keyword" placeholder="Mã/Tên NCC hoặc Mặt hàng..." class="form-control form-control-sm" style="max-width:280px" />
+                    <button type="submit" class="btn btn-sm btn-outline-secondary py-1 px-2"><i class="bi bi-search"></i></button>
+                </div>
+                <div class="d-flex gap-1 align-items-center">
+                    <span class="small text-muted me-1">Chọn nhanh:</span>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('today')">Hôm nay</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('last7days')">7 ngày</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisMonth')">Tháng này</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('lastMonth')">Tháng trước</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisYear')">Năm nay</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI thống kê tổng quan -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG NHẬP MUA NCC</span>
+                    <i class="bi bi-box-arrow-in-down text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">+@Model.TotalInQty.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị: @Model.TotalInAmount.ToString("N0") đ</span>
+                    <span class="badge bg-success-subtle text-success">Mua hàng</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG XUẤT TRẢ NCC</span>
+                    <i class="bi bi-box-arrow-up text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">-@Model.TotalReturnQty.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị: @Model.TotalReturnAmount.ToString("N0") đ</span>
+                    <span class="badge bg-danger-subtle text-danger">Trả hàng NCC</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">THỰC NHẬN RÒNG (NET)</span>
+                    <i class="bi bi-archive text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalNetQty.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị: @Model.TotalNetAmount.ToString("N0") đ</span>
+                    <span class="badge bg-primary-subtle text-primary">Giữ lại kho</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỶ LỆ TRẢ HÀNG BQ</span>
+                    <i class="bi bi-percent text-warning fs-5"></i>
+                </div>
+                <div class="stat-num @(Model.AvgReturnRate > 5 ? "text-danger" : (Model.AvgReturnRate > 2 ? "text-warning" : "text-success"))">
+                    @Model.AvgReturnRate.ToString("F1")%
+                </div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>@Model.SuppliersCount NCC giao dịch</span>
+                    <span>@Model.ProductsCount mặt hàng</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng chi tiết Đối soát Nhập mua & Trả hàng NCC -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="fw-bold mb-0">Bảng kê chi tiết Nhập mua vs Xuất trả theo Nhà Cung Cấp & Mặt Hàng</h6>
+            <span class="small text-muted">Kỳ đối soát: @Model.FromDate.ToString("dd/MM/yyyy") — @Model.ToDate.ToString("dd/MM/yyyy") | Kho: @Model.WarehouseName</span>
+        </div>
+        <span class="badge bg-light text-dark border">@Model.Rows.Count dòng dữ liệu</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" id="reportTable">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:40px" class="text-center">STT</th>
+                    <th>Nhà cung cấp</th>
+                    <th>Mặt hàng</th>
+                    <th class="text-end">SL Nhập</th>
+                    <th class="text-end">Trị giá Nhập</th>
+                    <th class="text-end text-danger">SL Trả NCC</th>
+                    <th class="text-end text-danger">Trị giá Trả</th>
+                    <th class="text-end fw-bold text-primary">Thực nhận</th>
+                    <th class="text-end fw-bold">Trị giá Thực nhận</th>
+                    <th style="width:110px" class="text-center">Tỷ lệ trả (%)</th>
+                    <th style="width:90px" class="text-center">Tỷ trọng</th>
+                    <th style="width:120px" class="text-center">Đánh giá NCC</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="12" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                            Không có phát sinh giao dịch nhập kho hoặc trả hàng NCC nào trong kỳ được chọn.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="text-center small text-muted">@(stt++)</td>
+                            <td>
+                                <div class="fw-semibold">@r.SupplierName</div>
+                                <div class="small text-muted"><span class="badge bg-secondary-subtle text-secondary me-1">@r.SupplierCode</span></div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@r.ProductName</div>
+                                <div class="small text-muted"><code>@r.ProductCode</code> · ĐVT: @r.Uom</div>
+                            </td>
+                            <td class="text-end fw-semibold text-success">@r.InQty.ToString("N0")</td>
+                            <td class="text-end small">@r.InAmount.ToString("N0") đ</td>
+                            <td class="text-end fw-semibold text-danger">
+                                @(r.ReturnQty > 0 ? $"-{r.ReturnQty:N0}" : "0")
+                            </td>
+                            <td class="text-end small text-danger">
+                                @(r.ReturnAmount > 0 ? $"-{r.ReturnAmount:N0} đ" : "0 đ")
+                            </td>
+                            <td class="text-end fw-bold text-primary">@r.NetQty.ToString("N0")</td>
+                            <td class="text-end small fw-semibold">@r.NetAmount.ToString("N0") đ</td>
+                            <td class="text-center">
+                                <span class="badge @(r.ReturnRate > 5 ? "bg-danger" : (r.ReturnRate > 2 ? "bg-warning text-dark" : "bg-success"))">
+                                    @r.ReturnRate.ToString("F1")%
+                                </span>
+                                <div class="progress mt-1" style="height:4px;">
+                                    <div class="progress-bar @(r.ReturnRate > 5 ? "bg-danger" : (r.ReturnRate > 2 ? "bg-warning" : "bg-success"))" 
+                                         role="progressbar" style="width:@Math.Min(100, r.ReturnRate * 10)%"></div>
+                                </div>
+                            </td>
+                            <td class="text-center small">
+                                <div>@r.SharePercent.ToString("F1")%</div>
+                                <div class="progress mt-1" style="height:3px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width:@r.SharePercent%"></div>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.QualityBadgeClass">@r.QualityGrade</span>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="3" class="text-end">TỔNG CỘNG:</td>
+                        <td class="text-end text-success">+@Model.TotalInQty.ToString("N0")</td>
+                        <td class="text-end small">@Model.TotalInAmount.ToString("N0") đ</td>
+                        <td class="text-end text-danger">-@Model.TotalReturnQty.ToString("N0")</td>
+                        <td class="text-end small text-danger">-@Model.TotalReturnAmount.ToString("N0") đ</td>
+                        <td class="text-end text-primary">@Model.TotalNetQty.ToString("N0")</td>
+                        <td class="text-end small">@Model.TotalNetAmount.ToString("N0") đ</td>
+                        <td class="text-center">
+                            <span class="badge @(Model.AvgReturnRate > 5 ? "bg-danger" : (Model.AvgReturnRate > 2 ? "bg-warning text-dark" : "bg-success"))">
+                                @Model.AvgReturnRate.ToString("F1")%
+                            </span>
+                        </td>
+                        <td class="text-center small">100%</td>
+                        <td class="text-center small text-muted">@Model.SuppliersCount NCC</td>
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    </div>
+</div>
+
+<!-- Phân tích xếp hạng đối tác Nhà cung cấp -->
+@if (supGroups.Count > 0)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3 border-0">
+            <h6 class="fw-bold mb-0"><i class="bi bi-award text-primary me-2"></i>Bảng tổng hợp & Đánh giá năng lực Nhà Cung Cấp trong kỳ</h6>
+            <div class="small text-muted">Thống kê xếp hạng theo khối lượng nhập hàng và tỷ lệ trả hàng để đánh giá chất lượng nhà cung ứng</div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:40px" class="text-center">#</th>
+                        <th>Nhà cung cấp</th>
+                        <th class="text-center">Số mặt hàng</th>
+                        <th class="text-end">Tổng lượng nhập</th>
+                        <th class="text-end">Tổng giá trị nhập</th>
+                        <th class="text-end text-danger">Tổng lượng trả</th>
+                        <th class="text-end text-danger">Tổng giá trị trả</th>
+                        <th class="text-end fw-bold text-primary">Thực nhận (Net)</th>
+                        <th class="text-center">Tỷ lệ trả NCC</th>
+                        <th class="text-center">Xếp hạng NCC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{
+                        int rk = 1;
+                        foreach (var g in supGroups)
+                        {
+                            var rankBadge = g.AvgRate <= 2.0 ? "bg-success" : (g.AvgRate <= 5.0 ? "bg-warning text-dark" : "bg-danger");
+                            var rankLabel = g.AvgRate <= 2.0 ? "NCC Xuất sắc" : (g.AvgRate <= 5.0 ? "Cần giám sát" : "Cần tái thẩm định");
+                            <tr>
+                                <td class="text-center fw-bold text-muted">@(rk++)</td>
+                                <td>
+                                    <span class="fw-semibold">@g.SupplierName</span>
+                                    <code class="ms-1 small">@g.SupplierCode</code>
+                                </td>
+                                <td class="text-center"><span class="badge bg-secondary-subtle text-secondary">@g.ItemsCount</span></td>
+                                <td class="text-end fw-semibold text-success">@g.TotalIn.ToString("N0")</td>
+                                <td class="text-end small">@g.TotalInVal.ToString("N0") đ</td>
+                                <td class="text-end text-danger">@(g.TotalRet > 0 ? $"-{g.TotalRet:N0}" : "0")</td>
+                                <td class="text-end small text-danger">@(g.TotalRetVal > 0 ? $"-{g.TotalRetVal:N0} đ" : "0 đ")</td>
+                                <td class="text-end fw-bold text-primary">@g.NetQty.ToString("N0")</td>
+                                <td class="text-center">
+                                    <span class="badge @rankBadge">@g.AvgRate.ToString("F1")%</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @rankBadge">@rankLabel</span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+function setPeriod(type) {
+    var now = new Date();
+    var from = new Date();
+    var to = new Date();
+
+    if (type === 'today') {
+        // Hôm nay
+    } else if (type === 'last7days') {
+        from.setDate(now.getDate() - 7);
+    } else if (type === 'thisMonth') {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (type === 'lastMonth') {
+        from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        to = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (type === 'thisYear') {
+        from = new Date(now.getFullYear(), 0, 1);
+    }
+
+    var fmt = function(d) {
+        var y = d.getFullYear();
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    };
+
+    document.getElementById('inputFromDate').value = fmt(from);
+    document.getElementById('inputToDate').value = fmt(to);
+    document.getElementById('filterForm').submit();
+}
+</script>
+}

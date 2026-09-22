@@ -52,6 +52,78 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        if (!await db.Suppliers.AnyAsync())
+        {
+            db.Suppliers.AddRange(
+                new Supplier
+                {
+                    Code = "NCC-MAY10",
+                    Name = "Tổng Công ty May 10 - CTCP",
+                    ContactName = "Nguyễn Văn Hưng",
+                    Phone = "024-38276923",
+                    Email = "kinhdoanh@may10.vn",
+                    Address = "765 Nguyễn Văn Linh, Sài Đồng, Long Biên, Hà Nội",
+                    TaxCode = "0100100101",
+                    IsActive = true,
+                    Note = "Nhà cung cấp áo sơ mi và thời trang công sở cao cấp",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Supplier
+                {
+                    Code = "NCC-DAHN",
+                    Name = "Xưởng Sản Xuất Da Thật Hà Nội",
+                    ContactName = "Trần Thị Lan",
+                    Phone = "0912-345-678",
+                    Email = "dathathanoi@gmail.com",
+                    Address = "Làng nghề đồ da Phú Xuyên, Hà Nội",
+                    TaxCode = "0108928371",
+                    IsActive = true,
+                    Note = "Cung cấp phụ kiện thắt lưng, ví da, đồ da bò thật",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Supplier
+                {
+                    Code = "NCC-PHONGPHU",
+                    Name = "Tổng Công ty CP Dệt May Phong Phú",
+                    ContactName = "Lê Hoàng Nam",
+                    Phone = "028-38963533",
+                    Email = "sales@phongphucorp.com",
+                    Address = "48 Tăng Nhơn Phú, P. Tăng Nhơn Phú B, TP. Thủ Đức, TP.HCM",
+                    TaxCode = "0301445722",
+                    IsActive = true,
+                    Note = "Cung ứng vải jeans, đầm thời trang và trang phục dệt may",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Supplier
+                {
+                    Code = "NCC-VIETTIEN",
+                    Name = "Tổng Công ty CP May Việt Tiến",
+                    ContactName = "Phạm Quang Minh",
+                    Phone = "028-38640800",
+                    Email = "viettien@viettien.com.vn",
+                    Address = "07 Lê Minh Xuân, Phường 7, Tân Bình, TP.HCM",
+                    TaxCode = "0300401524",
+                    IsActive = true,
+                    Note = "Đơn vị cung ứng váy đầm, âu phục và trang phục cao cấp",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Supplier
+                {
+                    Code = "NCC-BAOBI",
+                    Name = "Công ty CP Bao bì & Phụ liệu Toàn Cầu",
+                    ContactName = "Hoàng Tuấn Anh",
+                    Phone = "0222-3899123",
+                    Email = "contact@toancaupack.vn",
+                    Address = "KCN Quế Võ, Bắc Ninh",
+                    TaxCode = "2300987654",
+                    IsActive = true,
+                    Note = "Cung cấp thùng carton, hộp đóng gói, tem nhãn WMS",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Docs.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();
@@ -118,6 +190,8 @@ public static class Seeder
                     Type = DocType.In,
                     ToWarehouseId = hn.Value,
                     Code = "PNSEED-006",
+                    SupplierCode = "NCC-VIETTIEN",
+                    SupplierName = "Tổng Công ty CP May Việt Tiến",
                     Status = DocStatus.Posted,
                     Date = DateTime.Now.AddDays(-75),
                     Note = "Nhập bộ sưu tập Váy đầm giữa mùa",
@@ -128,6 +202,63 @@ public static class Seeder
 
                 await db.SaveChangesAsync();
             }
+        }
+
+        if (!await db.Docs.AnyAsync(d => d.Code == "PNSEED-007"))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var prods = await db.Products.ToListAsync();
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+
+            if (hn.HasValue && pk.HasValue)
+            {
+                var pn7 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-007",
+                    SupplierCode = "NCC-DAHN",
+                    SupplierName = "Xưởng Sản Xuất Da Thật Hà Nội",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-5),
+                    Note = "Nhập lô thắt lưng da cao cấp từ Xưởng Da Thật Hà Nội",
+                    CreatedBy = "seed"
+                };
+                pn7.Lines.Add(new StockDocLine { ProductId = pk.Value, Quantity = 50 });
+                db.Docs.Add(pn7);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        // Cập nhật thông tin NCC cho các phiếu nhập mẫu cũ nếu chưa có
+        var existingDocsToUpdate = await db.Docs.Where(d => d.Type == DocType.In && string.IsNullOrEmpty(d.SupplierCode)).ToListAsync();
+        if (existingDocsToUpdate.Any())
+        {
+            foreach (var d in existingDocsToUpdate)
+            {
+                switch (d.Code)
+                {
+                    case "PNSEED-001":
+                    case "PNSEED-004":
+                        d.SupplierCode = "NCC-MAY10";
+                        d.SupplierName = "Tổng Công ty May 10 - CTCP";
+                        break;
+                    case "PNSEED-005":
+                        d.SupplierCode = "NCC-PHONGPHU";
+                        d.SupplierName = "Tổng Công ty CP Dệt May Phong Phú";
+                        break;
+                    case "PNSEED-006":
+                        d.SupplierCode = "NCC-VIETTIEN";
+                        d.SupplierName = "Tổng Công ty CP May Việt Tiến";
+                        break;
+                    default:
+                        d.SupplierCode = "NCC-MAY10";
+                        d.SupplierName = "Tổng Công ty May 10 - CTCP";
+                        break;
+                }
+            }
+            await db.SaveChangesAsync();
         }
         if (!await db.Docs.AnyAsync(d => d.Type == DocType.Transfer))
         {
@@ -1539,15 +1670,19 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Orgs_ApiKey\" ON miniwms.\"Orgs\" (\"ApiKey\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Suppliers\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"ContactName\" text NULL, \"Phone\" text NULL, \"Email\" text NULL, \"Address\" text NULL, \"TaxCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Note\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Suppliers_OrgId_Code\" ON miniwms.\"Suppliers\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierName\" text NULL");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
 
@@ -1923,7 +2058,24 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_BoxCode"" ON ""InventoryBoxes"" (""OrgId"", ""BoxCode"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_WarehouseId_Status"" ON ""InventoryBoxes"" (""OrgId"", ""WarehouseId"", ""Status"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_CartonId"" ON ""InventoryBoxes"" (""OrgId"", ""CartonId"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_CartonId"" ON ""InventoryBoxes"" (""OrgId"", ""CartonId"");",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""SupplierCode"" TEXT NULL;",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""SupplierName"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""Suppliers"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""ContactName"" TEXT NULL,
+                ""Phone"" TEXT NULL,
+                ""Email"" TEXT NULL,
+                ""Address"" TEXT NULL,
+                ""TaxCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Note"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Suppliers_OrgId_Code"" ON ""Suppliers"" (""OrgId"", ""Code"");"
         };
         foreach (var s in sql)
         {

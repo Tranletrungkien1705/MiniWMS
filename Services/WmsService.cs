@@ -102,6 +102,12 @@ public interface IWmsService
     Task<int> CreateInventoryOutFGAsync(InventoryOutFG doc, List<(int productId, int qty, decimal unitPrice, decimal unitCost, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
     Task<(bool ok, string msg)> ApproveInventoryOutFGAsync(int id);
     Task<(bool ok, string msg)> CancelInventoryOutFGAsync(int id);
+    Task<SummaryInReturnSupReport> SummaryInReturnSupReportAsync(int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
+    Task<Supplier?> GetSupplierAsync(int id);
+    Task<int> CreateSupplierAsync(Supplier supplier);
+    Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier);
+    Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -3483,6 +3489,269 @@ public class WmsService(AppDbContext db) : IWmsService
         doc.Status = InvOutFGStatus.Cancelled;
         await db.SaveChangesAsync();
         return (true, $"Đã hủy phiếu xuất kho thành phẩm {doc.Code}.");
+    }
+
+    /// <summary>Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
+    public async Task<SummaryInReturnSupReport> SummaryInReturnSupReportAsync(
+        int? warehouseId,
+        string? supplierCode,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? keyword)
+    {
+        var fDate = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var tDate = toDate ?? DateTime.Today;
+        var toDateEnd = tDate.Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue && warehouseId.Value > 0)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        // 1. Lấy tất cả phiếu nhập kho (DocType.In) đã ghi sổ trong khoảng thời gian
+        var inDocQuery = db.Docs
+            .Include(d => d.Lines)
+            .Where(d => d.Type == DocType.In && d.Status == DocStatus.Posted && d.Date >= fDate && d.Date <= toDateEnd);
+
+        if (warehouseId.HasValue && warehouseId.Value > 0)
+            inDocQuery = inDocQuery.Where(d => d.ToWarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(supplierCode))
+            inDocQuery = inDocQuery.Where(d => d.SupplierCode == supplierCode);
+
+        var inDocs = await inDocQuery.ToListAsync();
+
+        // 2. Lấy tất cả phiếu xuất trả hàng NCC (ReturnToSupplier) đã xuất trả trong khoảng thời gian
+        var retDocQuery = db.ReturnToSuppliers
+            .Include(r => r.Lines)
+            .Where(r => r.Status == ReturnSupStatus.Finished && r.Date >= fDate && r.Date <= toDateEnd);
+
+        if (warehouseId.HasValue && warehouseId.Value > 0)
+            retDocQuery = retDocQuery.Where(r => r.WarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(supplierCode))
+            retDocQuery = retDocQuery.Where(r => r.SupplierCode == supplierCode);
+
+        var retDocs = await retDocQuery.ToListAsync();
+
+        // Lấy thông tin Products và Suppliers
+        var prods = await db.Products.ToDictionaryAsync(p => p.Id);
+        var knownSuppliers = await db.Suppliers.ToListAsync();
+        var supDict = knownSuppliers.ToDictionary(s => s.Code, s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+        // Group Inbound: key = (SupplierCode, ProductId)
+        var inMap = new Dictionary<(string SupCode, int ProdId), (string SupName, int Qty, decimal Amount)>();
+        foreach (var d in inDocs)
+        {
+            var sCode = !string.IsNullOrWhiteSpace(d.SupplierCode) ? d.SupplierCode.Trim() : "NCC-GEN";
+            var sName = !string.IsNullOrWhiteSpace(d.SupplierName)
+                ? d.SupplierName.Trim()
+                : (supDict.TryGetValue(sCode, out var name) ? name : "Nhà cung cấp chung");
+
+            foreach (var l in d.Lines)
+            {
+                var p = prods.GetValueOrDefault(l.ProductId);
+                var cost = p?.CostPrice ?? 0;
+                var key = (sCode, l.ProductId);
+                if (inMap.TryGetValue(key, out var cur))
+                {
+                    inMap[key] = (sName, cur.Qty + l.Quantity, cur.Amount + (l.Quantity * cost));
+                }
+                else
+                {
+                    inMap[key] = (sName, l.Quantity, l.Quantity * cost);
+                }
+            }
+        }
+
+        // Group Returns: key = (SupplierCode, ProductId)
+        var retMap = new Dictionary<(string SupCode, int ProdId), (string SupName, int Qty, decimal Amount)>();
+        foreach (var r in retDocs)
+        {
+            string sCode = !string.IsNullOrWhiteSpace(r.SupplierCode) ? r.SupplierCode.Trim() : "NCC-GEN";
+            string sName = !string.IsNullOrWhiteSpace(r.SupplierName)
+                ? r.SupplierName.Trim()
+                : (supDict.TryGetValue(sCode, out var name) ? name : "Nhà cung cấp chung");
+
+            foreach (var l in r.Lines)
+            {
+                (string SupCode, int ProdId) key = (sCode, l.ProductId);
+                var amt = l.Quantity * l.UnitPrice;
+                if (retMap.TryGetValue(key, out var cur))
+                {
+                    retMap[key] = (sName, cur.Qty + l.Quantity, cur.Amount + amt);
+                }
+                else
+                {
+                    retMap[key] = (sName, l.Quantity, amt);
+                }
+            }
+        }
+
+        // Hợp nhất các cặp (SupCode, ProdId)
+        var allKeys = inMap.Keys.Union(retMap.Keys).ToList();
+        var rawRows = new List<SummaryInReturnSupRow>();
+
+        foreach (var key in allKeys)
+        {
+            inMap.TryGetValue(key, out var inVal);
+            retMap.TryGetValue(key, out var retVal);
+
+            var sName = !string.IsNullOrWhiteSpace(inVal.SupName) ? inVal.SupName : (!string.IsNullOrWhiteSpace(retVal.SupName) ? retVal.SupName : key.SupCode);
+            var p = prods.GetValueOrDefault(key.ProdId);
+            var pCode = p?.Code ?? $"SP-{key.ProdId}";
+            var pName = p?.Name ?? "Sản phẩm";
+            var uom = p?.Uom ?? "cái";
+
+            var inQty = inVal.Qty;
+            var inAmt = inVal.Amount;
+            var retQty = retVal.Qty;
+            var retAmt = retVal.Amount;
+            var netQty = inQty - retQty;
+            var netAmt = inAmt - retAmt;
+
+            double returnRate = inQty > 0 ? Math.Round((double)retQty / inQty * 100, 2) : (retQty > 0 ? 100.0 : 0.0);
+
+            string grade;
+            string badge;
+            if (returnRate <= 2.0)
+            {
+                grade = "Tốt (Tỷ lệ trả ≤ 2%)";
+                badge = "bg-success";
+            }
+            else if (returnRate <= 5.0)
+            {
+                grade = "Cảnh báo (2% - 5%)";
+                badge = "bg-warning text-dark";
+            }
+            else
+            {
+                grade = "Kém (Tỷ lệ trả > 5%)";
+                badge = "bg-danger";
+            }
+
+            rawRows.Add(new SummaryInReturnSupRow(
+                key.SupCode,
+                sName,
+                key.ProdId,
+                pCode,
+                pName,
+                uom,
+                inQty,
+                inAmt,
+                retQty,
+                retAmt,
+                netQty,
+                netAmt,
+                returnRate,
+                0,
+                grade,
+                badge
+            ));
+        }
+
+        // Lọc theo từ khóa tìm kiếm (Mã/Tên NCC hoặc Mã/Tên sản phẩm)
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLowerInvariant();
+            rawRows = rawRows.Where(r =>
+                r.SupplierCode.ToLowerInvariant().Contains(kw) ||
+                r.SupplierName.ToLowerInvariant().Contains(kw) ||
+                r.ProductCode.ToLowerInvariant().Contains(kw) ||
+                r.ProductName.ToLowerInvariant().Contains(kw)
+            ).ToList();
+        }
+
+        int totalNetAll = rawRows.Sum(r => Math.Max(0, r.NetQty));
+        var finalRows = rawRows.Select(r =>
+        {
+            double share = totalNetAll > 0 ? Math.Round((double)Math.Max(0, r.NetQty) / totalNetAll * 100, 2) : 0.0;
+            return r with { SharePercent = share };
+        })
+        .OrderByDescending(r => r.InQty)
+        .ThenBy(r => r.SupplierName)
+        .ToList();
+
+        int totalInQty = finalRows.Sum(r => r.InQty);
+        decimal totalInAmount = finalRows.Sum(r => r.InAmount);
+        int totalRetQty = finalRows.Sum(r => r.ReturnQty);
+        decimal totalRetAmount = finalRows.Sum(r => r.ReturnAmount);
+        int totalNetQty = totalInQty - totalRetQty;
+        decimal totalNetAmount = totalInAmount - totalRetAmount;
+        double avgRetRate = totalInQty > 0 ? Math.Round((double)totalRetQty / totalInQty * 100, 2) : 0.0;
+        int supCount = finalRows.Select(r => r.SupplierCode).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        int prodCount = finalRows.Select(r => r.ProductId).Distinct().Count();
+
+        return new SummaryInReturnSupReport(
+            warehouseId,
+            whName,
+            supplierCode,
+            fDate,
+            tDate,
+            keyword,
+            totalInQty,
+            totalInAmount,
+            totalRetQty,
+            totalRetAmount,
+            totalNetQty,
+            totalNetAmount,
+            avgRetRate,
+            supCount,
+            prodCount,
+            finalRows
+        );
+    }
+
+    /// <summary>Danh sách Danh mục Nhà cung cấp (port từ Mst_Supplier Skycic).</summary>
+    public async Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Suppliers.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(s => s.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(s => s.Code.ToLower().Contains(kw) || s.Name.ToLower().Contains(kw) || (s.Phone != null && s.Phone.Contains(kw)));
+        }
+        return await query.OrderBy(s => s.Code).ToListAsync();
+    }
+
+    public Task<Supplier?> GetSupplierAsync(int id) => db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+
+    public async Task<int> CreateSupplierAsync(Supplier supplier)
+    {
+        if (string.IsNullOrWhiteSpace(supplier.Code))
+            supplier.Code = $"NCC{await db.Suppliers.CountAsync() + 1:D3}";
+        supplier.CreatedAt = DateTime.Now;
+        db.Suppliers.Add(supplier);
+        await db.SaveChangesAsync();
+        return supplier.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier)
+    {
+        var existing = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhà cung cấp.");
+        existing.Name = supplier.Name.Trim();
+        existing.ContactName = supplier.ContactName?.Trim();
+        existing.Phone = supplier.Phone?.Trim();
+        existing.Email = supplier.Email?.Trim();
+        existing.Address = supplier.Address?.Trim();
+        existing.TaxCode = supplier.TaxCode?.Trim();
+        existing.Note = supplier.Note?.Trim();
+        existing.IsActive = supplier.IsActive;
+        await db.SaveChangesAsync();
+        return (true, "Đã cập nhật nhà cung cấp.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id)
+    {
+        var existing = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhà cung cấp.");
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? "Đã kích hoạt nhà cung cấp." : "Đã tạm dừng nhà cung cấp.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
