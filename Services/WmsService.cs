@@ -24,6 +24,7 @@ public interface IWmsService
     Task<(bool ok, string msg)> BalanceAuditAsync(int id);
     Task CancelAuditAsync(int id);
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
+    Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -220,6 +221,136 @@ public class WmsService(AppDbContext db) : IWmsService
             rows.Add(new BalanceRow(wh, w.Name, pid, p.Code, p.Name, p.Uom, qty, p.MinStock));
         }
         return rows.OrderBy(r => r.Warehouse).ThenBy(r => r.ProductCode).ToList();
+    }
+
+    public async Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate)
+    {
+        var product = await db.Products.FirstOrDefaultAsync(p => p.Id == productId)
+            ?? throw new KeyNotFoundException($"Không tìm thấy mặt hàng với ID {productId}.");
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Lines.Any(l => l.ProductId == productId))
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.ToWarehouse)
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        // Tách các biến động phát sinh theo kho
+        var allTrans = new List<(DateTime Date, string DocCode, int DocId, DocType DocType, string ActionDesc, int WhId, string WhName, string? OffsetWhName, int QtyIn, int QtyOut, string? Note, string? RefNo)>();
+
+        foreach (var d in docs)
+        {
+            var line = d.Lines.FirstOrDefault(l => l.ProductId == productId);
+            if (line == null || line.Quantity == 0) continue;
+
+            bool isAudit = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("KK", StringComparison.OrdinalIgnoreCase)
+                           || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("kiểm kê", StringComparison.OrdinalIgnoreCase));
+
+            if (d.Type == DocType.In)
+            {
+                if (warehouseId.HasValue && d.ToWarehouseId != warehouseId.Value) continue;
+                var action = isAudit ? "Kiểm kê - Điều chỉnh thừa (AuditIn)" : "Nhập kho (In)";
+                allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", null, line.Quantity, 0, d.Note, d.RefNo));
+            }
+            else if (d.Type == DocType.Out)
+            {
+                if (warehouseId.HasValue && d.FromWarehouseId != warehouseId.Value) continue;
+                var action = isAudit ? "Kiểm kê - Điều chỉnh thiếu (AuditOut)" : "Xuất kho (Out)";
+                allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", null, 0, line.Quantity, d.Note, d.RefNo));
+            }
+            else if (d.Type == DocType.Transfer)
+            {
+                if (warehouseId.HasValue)
+                {
+                    if (d.FromWarehouseId == warehouseId.Value)
+                    {
+                        var action = $"Chuyển kho đi (tới {d.ToWarehouse?.Name ?? "kho khác"})";
+                        allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.FromWarehouseId.Value, d.FromWarehouse?.Name ?? "", d.ToWarehouse?.Name, 0, line.Quantity, d.Note, d.RefNo));
+                    }
+                    else if (d.ToWarehouseId == warehouseId.Value)
+                    {
+                        var action = $"Chuyển kho đến (từ {d.FromWarehouse?.Name ?? "kho khác"})";
+                        allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.ToWarehouseId.Value, d.ToWarehouse?.Name ?? "", d.FromWarehouse?.Name, line.Quantity, 0, d.Note, d.RefNo));
+                    }
+                }
+                else
+                {
+                    // Trường hợp xem tất cả kho: ghi nhận 2 giao dịch chuyển đi và nhận đến
+                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Chuyển đi: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", d.ToWarehouse?.Name, 0, line.Quantity, d.Note, d.RefNo));
+                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Nhận chuyển: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", d.FromWarehouse?.Name, line.Quantity, 0, d.Note, d.RefNo));
+                }
+            }
+        }
+
+        // Tách kỳ báo cáo và tính tồn đầu kỳ
+        int openingBalance = 0;
+        var startFilterDate = fromDate?.Date;
+        var endFilterDate = toDate?.Date.AddDays(1).AddTicks(-1);
+
+        var periodTrans = new List<(DateTime Date, string DocCode, int DocId, DocType DocType, string ActionDesc, int WhId, string WhName, string? OffsetWhName, int QtyIn, int QtyOut, string? Note, string? RefNo)>();
+
+        foreach (var t in allTrans.OrderBy(x => x.Date).ThenBy(x => x.DocId))
+        {
+            if (startFilterDate.HasValue && t.Date < startFilterDate.Value)
+            {
+                openingBalance += (t.QtyIn - t.QtyOut);
+            }
+            else if (!endFilterDate.HasValue || t.Date <= endFilterDate.Value)
+            {
+                periodTrans.Add(t);
+            }
+        }
+
+        int running = openingBalance;
+        var rows = new List<WarehouseCardRow>();
+        foreach (var t in periodTrans)
+        {
+            running += (t.QtyIn - t.QtyOut);
+            rows.Add(new WarehouseCardRow(
+                t.Date,
+                t.DocCode,
+                t.DocId,
+                t.DocType,
+                t.ActionDesc,
+                t.WhId,
+                t.WhName,
+                t.OffsetWhName,
+                t.QtyIn,
+                t.QtyOut,
+                running,
+                t.Note,
+                t.RefNo
+            ));
+        }
+
+        int totalIn = rows.Sum(r => r.QtyIn);
+        int totalOut = rows.Sum(r => r.QtyOut);
+        int closingBalance = running;
+
+        return new WarehouseCardReport(
+            product.Id,
+            product.Code,
+            product.Name,
+            product.Uom,
+            warehouseId,
+            whName,
+            fromDate,
+            toDate,
+            openingBalance,
+            totalIn,
+            totalOut,
+            closingBalance,
+            rows
+        );
     }
 
     public async Task<WmsDash> DashboardAsync()

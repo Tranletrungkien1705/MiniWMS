@@ -199,6 +199,39 @@ public class InventoryController(IWmsService svc) : Controller
     }
 }
 
+public class WarehouseCardController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? productId, int? warehouseId, DateTime? fromDate, DateTime? toDate)
+    {
+        var prods = await svc.ProductsAsync();
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Products = prods;
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd");
+
+        var targetPid = productId ?? prods.FirstOrDefault()?.Id ?? 0;
+        ViewBag.ProductId = targetPid;
+
+        if (targetPid <= 0)
+        {
+            return View((WarehouseCardReport?)null);
+        }
+
+        try
+        {
+            var report = await svc.WarehouseCardAsync(targetPid, warehouseId, fromDate, toDate);
+            return View(report);
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+            return View((WarehouseCardReport?)null);
+        }
+    }
+}
+
 public class OrgController(AppDbContext db) : Controller
 {
     public async Task<IActionResult> Index()

@@ -60,6 +60,21 @@ app.MapGet("/api/audits", async (int? warehouseId, StockAuditStatus? status, IWm
         Lines = a.Lines.Select(l => new { l.Product.Code, l.Product.Name, l.QtyInit, l.QtyActual, l.DiffQty })
     })));
 
+// API Thẻ kho (Warehouse Card - port từ Rpt_InvF_WarehouseCard Skycic)
+app.MapGet("/api/warehouse-card", async (int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate, IWmsService svc) =>
+{
+    if (productId <= 0) return Results.BadRequest(new { error = "Cần productId." });
+    try
+    {
+        var card = await svc.WarehouseCardAsync(productId, warehouseId, fromDate, toDate);
+        return Results.Ok(card);
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });

@@ -1,0 +1,196 @@
+@model WarehouseCardReport?
+@{
+    ViewData["Title"] = "Thẻ kho";
+    var prods = (List<Product>)ViewBag.Products;
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedPid = (int)ViewBag.ProductId;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var fromDate = (string?)ViewBag.FromDate;
+    var toDate = (string?)ViewBag.ToDate;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Mặt hàng <span class="text-danger">*</span></label>
+                <select name="productId" class="form-select form-select-sm" required>
+                    @foreach (var p in prods)
+                    {
+                        <option value="@p.Id" selected="@(selectedPid == p.Id)">@p.Code — @p.Name (@p.Uom)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Kho</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Từ ngày</label>
+                <input type="date" name="fromDate" value="@fromDate" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Đến ngày</label>
+                <input type="date" name="toDate" value="@toDate" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-search me-1"></i> Xem thẻ kho
+                </button>
+                <a href="/WarehouseCard" class="btn btn-sm btn-outline-secondary">Đặt lại</a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In thẻ kho">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model != null)
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="card h-100 border-0 bg-light">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Tồn đầu kỳ</div>
+                    <div class="stat-num text-secondary">@Model.OpeningBalance.ToString("N0") <span class="fs-6 fw-normal text-muted">@Model.Uom</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-0 bg-light">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Tổng nhập trong kỳ</div>
+                    <div class="stat-num text-success">+@Model.TotalIn.ToString("N0") <span class="fs-6 fw-normal text-muted">@Model.Uom</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-0 bg-light">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Tổng xuất trong kỳ</div>
+                    <div class="stat-num text-danger">-@Model.TotalOut.ToString("N0") <span class="fs-6 fw-normal text-muted">@Model.Uom</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-0 bg-light">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Tồn cuối kỳ</div>
+                    <div class="stat-num text-primary">@Model.ClosingBalance.ToString("N0") <span class="fs-6 fw-normal text-muted">@Model.Uom</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <span class="badge bg-secondary me-2">@Model.ProductCode</span>
+                <span class="fw-bold fs-6 me-2">@Model.ProductName</span>
+                <span class="text-muted small">(@Model.Uom)</span>
+            </div>
+            <div class="small text-muted">
+                <i class="bi bi-building me-1"></i>Kho: <strong class="text-dark">@Model.WarehouseName</strong>
+                @if (Model.FromDate.HasValue || Model.ToDate.HasValue)
+                {
+                    <span class="ms-3"><i class="bi bi-calendar3 me-1"></i>Kỳ: 
+                        @(Model.FromDate?.ToString("dd/MM/yyyy") ?? "—") đến @(Model.ToDate?.ToString("dd/MM/yyyy") ?? "Hiện tại")
+                    </span>
+                }
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:110px">Ngày</th>
+                        <th style="width:130px">Số phiếu</th>
+                        <th style="width:140px">Loại GD</th>
+                        <th>Kho</th>
+                        <th>Kho đối ứng</th>
+                        <th class="text-end text-success" style="width:100px">Nhập</th>
+                        <th class="text-end text-danger" style="width:100px">Xuất</th>
+                        <th class="text-end text-primary" style="width:110px">Tồn lũy kế</th>
+                        <th>Diễn giải / Tham chiếu</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="table-secondary fw-semibold">
+                        <td colspan="5"><i class="bi bi-clock-history me-1"></i>TỒN ĐẦU KỲ</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end text-primary">@Model.OpeningBalance.ToString("N0")</td>
+                        <td class="text-muted small">Số dư trước kỳ báo cáo</td>
+                    </tr>
+                    @foreach (var r in Model.Rows)
+                    {
+                        var (badgeText, badgeCss) = Ui.CardActionBadge(r.DocType, r.RefNo);
+                        <tr>
+                            <td class="small text-muted">@r.Date.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                <a href="/Doc/Detail/@r.DocId" class="fw-bold text-decoration-none">@r.DocCode</a>
+                            </td>
+                            <td>
+                                <span class="badge bg-@badgeCss">@badgeText</span>
+                            </td>
+                            <td>@r.WarehouseName</td>
+                            <td class="text-muted">@(r.OffsetWarehouseName ?? "—")</td>
+                            <td class="text-end fw-semibold text-success">
+                                @(r.QtyIn > 0 ? $"+{r.QtyIn:N0}" : "—")
+                            </td>
+                            <td class="text-end fw-semibold text-danger">
+                                @(r.QtyOut > 0 ? $"-{r.QtyOut:N0}" : "—")
+                            </td>
+                            <td class="text-end fw-bold text-primary">
+                                @r.Balance.ToString("N0")
+                            </td>
+                            <td class="small">
+                                @r.ActionDesc
+                                @if (!string.IsNullOrWhiteSpace(r.RefNo))
+                                {
+                                    <span class="badge bg-light text-dark border ms-1">@r.RefNo</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(r.Note))
+                                {
+                                    <span class="text-muted ms-1">(@r.Note)</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">Không có phát sinh giao dịch nào trong khoảng thời gian này.</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light fw-bold border-top-2">
+                    <tr>
+                        <td colspan="5">TỔNG CỘNG PHÁT SINH & TỒN CUỐI</td>
+                        <td class="text-end text-success">+@Model.TotalIn.ToString("N0")</td>
+                        <td class="text-end text-danger">-@Model.TotalOut.ToString("N0")</td>
+                        <td class="text-end text-primary fs-6">@Model.ClosingBalance.ToString("N0")</td>
+                        <td class="text-muted small">Khớp với tồn thực tế của kỳ</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body text-center text-muted py-5">
+            <i class="bi bi-journal-text display-4 text-secondary mb-3"></i>
+            <h5>Chưa chọn mặt hàng</h5>
+            <p>Vui lòng chọn một mặt hàng trong danh sách trên và bấm <strong>Xem thẻ kho</strong> để xem lịch sử biến động.</p>
+        </div>
+    </div>
+}

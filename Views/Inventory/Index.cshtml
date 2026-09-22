@@ -8,7 +8,7 @@
         </select></div>
     </form>
     <table class="table table-hover align-middle">
-        <thead><tr><th>Kho</th><th>Mã hàng</th><th>Tên hàng</th><th>ĐVT</th><th class="text-end">Tồn</th><th class="text-end">Định mức</th><th></th></tr></thead>
+        <thead><tr><th>Kho</th><th>Mã hàng</th><th>Tên hàng</th><th>ĐVT</th><th class="text-end">Tồn</th><th class="text-end">Định mức</th><th class="text-end">Thao tác</th></tr></thead>
         <tbody>
         @foreach (var r in Model)
         {
@@ -16,7 +16,10 @@
             <tr class="@(low ? "table-danger" : "")">
                 <td>@r.Warehouse</td><td class="fw-semibold">@r.ProductCode</td><td>@r.ProductName</td><td>@r.Uom</td>
                 <td class="text-end fw-semibold">@r.Qty.ToString("N0")</td><td class="text-end text-muted">@(r.MinStock > 0 ? r.MinStock.ToString("N0") : "—")</td>
-                <td>@if (low) { <span class="badge bg-danger">Dưới định mức</span> }</td>
+                <td class="text-end">
+                    @if (low) { <span class="badge bg-danger me-1">Dưới định mức</span> }
+                    <a href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId" class="btn btn-sm btn-outline-primary" title="Xem thẻ kho mặt hàng này"><i class="bi bi-journal-text me-1"></i>Thẻ kho</a>
+                </td>
             </tr>
         }
         @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Chưa có tồn (tạo phiếu nhập rồi ghi sổ).</td></tr> }

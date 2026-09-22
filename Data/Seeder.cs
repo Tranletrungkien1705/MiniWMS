@@ -41,6 +41,52 @@ public static class Seeder
             db.Docs.Add(pn);
             await db.SaveChangesAsync();
         }
+        if (!await db.Docs.AnyAsync(d => d.Type == DocType.Transfer))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+
+            if (hn.HasValue && hcm.HasValue && ao.HasValue && quan.HasValue)
+            {
+                var pc = new StockDoc
+                {
+                    Type = DocType.Transfer,
+                    FromWarehouseId = hn.Value,
+                    ToWarehouseId = hcm.Value,
+                    Code = "PCSEED-001",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-2),
+                    Note = "Điều chuyển nội bộ tiếp tế chi nhánh HCM",
+                    CreatedBy = "seed"
+                };
+                pc.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 20 });
+                pc.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 10 });
+                db.Docs.Add(pc);
+
+                if (pk.HasValue)
+                {
+                    var px = new StockDoc
+                    {
+                        Type = DocType.Out,
+                        FromWarehouseId = hn.Value,
+                        Code = "PXSEED-001",
+                        Status = DocStatus.Posted,
+                        Date = DateTime.Now.AddDays(-1),
+                        Note = "Xuất bán đơn hàng shop online",
+                        CreatedBy = "seed"
+                    };
+                    px.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 15 });
+                    px.Lines.Add(new StockDocLine { ProductId = pk.Value, Quantity = 10 });
+                    db.Docs.Add(px);
+                }
+                await db.SaveChangesAsync();
+            }
+        }
         if (!await db.Audits.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();

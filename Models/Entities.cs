@@ -108,3 +108,38 @@ public class StockAuditLine : IOrgOwned
 
     public int DiffQty => QtyActual - QtyInit; // > 0: Thừa, < 0: Thiếu, = 0: Khớp
 }
+
+/// <summary>Dòng chi tiết Thẻ kho (Warehouse Card - port từ Rpt_InvF_WarehouseCard Skycic).</summary>
+public record WarehouseCardRow(
+    DateTime Date,
+    string DocCode,
+    int DocId,
+    DocType DocType,
+    string ActionDesc,
+    int WarehouseId,
+    string WarehouseName,
+    string? OffsetWarehouseName,
+    int QtyIn,
+    int QtyOut,
+    int Balance,
+    string? Note,
+    string? RefNo
+);
+
+/// <summary>Báo cáo Thẻ kho tổng hợp của một mặt hàng theo thời gian và kho.</summary>
+public record WarehouseCardReport(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    int OpeningBalance,
+    int TotalIn,
+    int TotalOut,
+    int ClosingBalance,
+    List<WarehouseCardRow> Rows
+);
+
