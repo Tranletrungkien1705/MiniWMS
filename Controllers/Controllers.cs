@@ -2074,6 +2074,44 @@ public class InventoryOutDtlController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryInDtlController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.FromDate = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).ToString("yyyy-MM-dd");
+        ViewBag.ToDate = (toDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+        ViewBag.InType = inType ?? "";
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryInDtlReportAsync(warehouseId, fromDate, toDate, inType, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? q)
+    {
+        var report = await svc.InventoryInDtlReportAsync(warehouseId, fromDate, toDate, inType, q);
+
+        var sb = new System.Text.StringBuilder();
+        // Thêm UTF-8 BOM để Excel hiển thị tiếng Việt không bị lỗi font
+        sb.Append('\uFEFF');
+        sb.AppendLine("STT;Số phiếu nhập;Ngày nhập;Loại nhập;Số hóa đơn / Chứng từ;Mã tham chiếu / Lệnh gốc;Kho nhập;Vị trí / Ô kệ;Nhà cung cấp / Đối tác giao;Mã vật tư;Tên vật tư;ĐVT;Số lượng nhập;Đơn giá nhập (đ);Thuế VAT (%);Thành tiền trước thuế (đ);Tiền thuế (đ);Tổng thanh toán (đ);Người nhập;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Items)
+        {
+            var dateStr = r.DocDate.ToString("dd/MM/yyyy HH:mm");
+            sb.AppendLine($"{stt++};\"{r.DocNo}\";{dateStr};\"{r.InTypeName}\";\"{r.InvoiceNo ?? "—"}\";\"{r.RefNo ?? "—"}\";\"{r.WarehouseName}\";\"{r.LocationCode ?? "—"}\";\"{r.SupplierName}\";\"{r.ProductCode}\";\"{r.ProductName}\";\"{r.UnitName}\";{r.Quantity};{r.UnitPrice:F0};{r.VatPercent:F0};{r.ValBeforeTax:F0};{r.ValTax:F0};{r.TotalAmount:F0};\"{r.CreatedBy}\";\"{r.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_ChiTietNhapKho_{report.FromDate:yyyyMMdd}_{report.ToDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

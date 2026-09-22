@@ -1401,6 +1401,56 @@ public record InventoryOutDtlReport(
     int DistinctProductsCount
 );
 
+/// <summary>Dòng báo cáo chi tiết nhập kho (port từ Rpt_InventoryInDtl Skycic).</summary>
+public record InventoryInDtlItem(
+    int Id,
+    string DocNo,
+    DateTime DocDate,
+    string InType,
+    string InTypeName,
+    string? RefNo,
+    string? RefType,
+    int WarehouseId,
+    string WarehouseName,
+    string? LocationCode,
+    string? SupplierCode,
+    string SupplierName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string UnitName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal VatPercent,
+    decimal ValBeforeTax,
+    decimal ValTax,
+    decimal TotalAmount,
+    string? InvoiceNo,
+    DateTime? InvoiceDate,
+    string CreatedBy,
+    string? Note,
+    string? DocUrl
+);
+
+/// <summary>Báo cáo tổng hợp nhập kho chi tiết (port từ Rpt_InventoryInDtl Skycic).</summary>
+public record InventoryInDtlReport(
+    DateTime FromDate,
+    DateTime ToDate,
+    int? WarehouseId,
+    string WarehouseName,
+    string? InTypeFilter,
+    string? Keyword,
+    List<InventoryInDtlItem> Items,
+    int TotalDocsCount,
+    int TotalQty,
+    decimal TotalBeforeTax,
+    decimal TotalTaxAmount,
+    decimal TotalAmount,
+    int DistinctProductsCount,
+    int DistinctSuppliersCount
+);
+
+
 
 
 

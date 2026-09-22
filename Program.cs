@@ -1358,6 +1358,13 @@ app.MapGet("/api/reports/inventory-out-detail", async (int? warehouseId, DateTim
     return Results.Ok(report);
 });
 
+// API Báo cáo Tổng hợp Nhập kho Chi tiết (port từ Rpt_InventoryInDtl Skycic)
+app.MapGet("/api/reports/inventory-in-detail", async (int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryInDtlReportAsync(warehouseId, fromDate, toDate, inType, q);
+    return Results.Ok(report);
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 

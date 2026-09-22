@@ -231,6 +231,36 @@ public static class Seeder
             }
         }
 
+        if (!await db.Docs.AnyAsync(d => d.Code == "PNSEED-008"))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue)
+            {
+                var pn8 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-008",
+                    SupplierCode = "NCC-MAY10",
+                    SupplierName = "Tổng Công ty May 10 - CTCP",
+                    RefNo = "PO-2026-0388",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-1),
+                    Note = "Nhập bổ sung đơn hàng thời trang hè 2026",
+                    CreatedBy = "thu_kho_hn"
+                };
+                pn8.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 40 });
+                pn8.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 25 });
+                db.Docs.Add(pn8);
+                await db.SaveChangesAsync();
+            }
+        }
+
         // Cập nhật thông tin NCC cho các phiếu nhập mẫu cũ nếu chưa có
         var existingDocsToUpdate = await db.Docs.Where(d => d.Type == DocType.In && string.IsNullOrEmpty(d.SupplierCode)).ToListAsync();
         if (existingDocsToUpdate.Any())
