@@ -985,13 +985,158 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Quản lý Thùng Carton & Đóng kiện hàng hoá (InventoryCarton - port từ Inv_InventoryCarton Skycic)
+        if (!await db.InventoryCartons.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001");
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001");
+
+            var today = DateTime.Today;
+
+            if (whHn != null && ao != null && quan != null && pk != null && vay != null)
+            {
+                var cartons = new List<InventoryCarton>
+                {
+                    // 1. Thùng đã niêm phong - Kho Hà Nội (Áo sơ mi trắng)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonCode = "CTN2603-HN01",
+                        QrCode = "CTN2603-HN01",
+                        CartonType = "Thùng carton 5 lớp sóng BC (60x40x40)",
+                        ProductId = ao.Id,
+                        LotNo = "LOT-AO26-01",
+                        Quantity = 30,
+                        Capacity = 50,
+                        LengthCm = 60, WidthCm = 40, HeightCm = 40,
+                        GrossWeightKg = 12.5,
+                        Status = CartonStatus.Sealed,
+                        ShelfLocation = "A-01-01",
+                        PackerName = "Nguyễn Văn Đóng",
+                        PackedAt = today.AddDays(-5),
+                        SealedAt = today.AddDays(-5).AddHours(2),
+                        Remark = "Kiện hàng áo sơ mi trắng đóng thùng đạt chuẩn xuất khẩu"
+                    },
+                    // 2. Thùng đã niêm phong - Kho Hà Nội (Quần jeans slim)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonCode = "CTN2603-HN02",
+                        QrCode = "CTN2603-HN02",
+                        CartonType = "Thùng carton xuất khẩu chịu lực (60x40x40)",
+                        ProductId = quan.Id,
+                        LotNo = "LOT-QJ26-01",
+                        Quantity = 20,
+                        Capacity = 30,
+                        LengthCm = 60, WidthCm = 40, HeightCm = 40,
+                        GrossWeightKg = 16.0,
+                        Status = CartonStatus.Sealed,
+                        ShelfLocation = "A-01-02",
+                        PackerName = "Trần Thị Kiện",
+                        PackedAt = today.AddDays(-4),
+                        SealedAt = today.AddDays(-4).AddHours(1),
+                        Remark = "Đã dán tem kiểm định QC Pass và niêm phong kẹp chì"
+                    },
+                    // 3. Thùng đang đóng dở dang - Kho Hà Nội (Váy đầm công sở)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonCode = "CTN2603-HN03",
+                        QrCode = "CTN2603-HN03",
+                        CartonType = "Thùng carton chống ẩm 3 lớp (50x40x30)",
+                        ProductId = vay.Id,
+                        LotNo = "LOT-VD26-01",
+                        Quantity = 15,
+                        Capacity = 25,
+                        LengthCm = 50, WidthCm = 40, HeightCm = 30,
+                        GrossWeightKg = 9.8,
+                        Status = CartonStatus.Packing,
+                        ShelfLocation = "A-02-01",
+                        PackerName = "Lê Văn Hộp",
+                        PackedAt = today.AddDays(-1),
+                        Remark = "Đang chờ kiểm đếm thêm 10 váy đầm để đủ kiện 25 sp"
+                    },
+                    // 4. Thùng đã xuất kho giao hàng - Kho Hà Nội (Thắt lưng da)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonCode = "CTN2603-HN04",
+                        QrCode = "CTN2603-HN04",
+                        CartonType = "Thùng carton nhỏ phụ kiện (40x30x20)",
+                        ProductId = pk.Id,
+                        LotNo = "LOT-TL26-01",
+                        Quantity = 25,
+                        Capacity = 40,
+                        LengthCm = 40, WidthCm = 30, HeightCm = 20,
+                        GrossWeightKg = 8.5,
+                        Status = CartonStatus.Shipped,
+                        ShelfLocation = "B-01-01",
+                        PackerName = "Nguyễn Văn Đóng",
+                        PackedAt = today.AddDays(-3),
+                        SealedAt = today.AddDays(-3).AddHours(2),
+                        ShippedAt = today.AddDays(-1),
+                        RefDocNo = "PXSEED-001",
+                        Remark = "Đã xuất kho bàn giao đơn vị vận chuyển Viettel Post"
+                    },
+                    // 5. Thùng rỗng sẵn sàng đóng hàng - Kho Hà Nội
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonCode = "CTN2603-HN05",
+                        QrCode = "CTN2603-HN05",
+                        CartonType = "Thùng carton tiêu chuẩn (40x30x30)",
+                        Quantity = 0,
+                        Capacity = 50,
+                        LengthCm = 40, WidthCm = 30, HeightCm = 30,
+                        GrossWeightKg = 0.5,
+                        Status = CartonStatus.Empty,
+                        ShelfLocation = "B-01-02",
+                        Remark = "Thùng rỗng sẵn sàng đóng gói cho ca sản xuất chiều"
+                    }
+                };
+
+                // 6. Thùng tại Kho TP.HCM
+                if (whHcm != null)
+                {
+                    cartons.Add(new InventoryCarton
+                    {
+                        WarehouseId = whHcm.Id,
+                        CartonCode = "CTN2603-HCM01",
+                        QrCode = "CTN2603-HCM01",
+                        CartonType = "Thùng carton 5 lớp sóng BC (60x40x40)",
+                        ProductId = ao.Id,
+                        LotNo = "LOT-AO26-HCM1",
+                        Quantity = 20,
+                        Capacity = 50,
+                        LengthCm = 60, WidthCm = 40, HeightCm = 40,
+                        GrossWeightKg = 8.4,
+                        Status = CartonStatus.Sealed,
+                        ShelfLocation = "KHO-HCM-A",
+                        PackerName = "Trần Nam",
+                        PackedAt = today.AddDays(-2),
+                        SealedAt = today.AddDays(-2).AddHours(1),
+                        RefDocNo = "PCSEED-001",
+                        Remark = "Hàng nhận từ lệnh điều chuyển nội bộ Kho Hà Nội"
+                    });
+                }
+
+                db.InventoryCartons.AddRange(cartons);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -1210,7 +1355,37 @@ public static class Seeder
                 CONSTRAINT ""FK_PeriodClosingLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
             );",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
-            @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
+            @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryCartons"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""CartonCode"" TEXT NOT NULL,
+                ""QrCode"" TEXT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""CartonType"" TEXT NOT NULL DEFAULT 'Thùng carton tiêu chuẩn',
+                ""ProductId"" INTEGER NULL,
+                ""LotNo"" TEXT NULL,
+                ""Quantity"" INTEGER NOT NULL DEFAULT 0,
+                ""Capacity"" INTEGER NOT NULL DEFAULT 50,
+                ""LengthCm"" REAL NOT NULL DEFAULT 40,
+                ""WidthCm"" REAL NOT NULL DEFAULT 30,
+                ""HeightCm"" REAL NOT NULL DEFAULT 30,
+                ""GrossWeightKg"" REAL NOT NULL DEFAULT 0,
+                ""Status"" INTEGER NOT NULL DEFAULT 0,
+                ""ShelfLocation"" TEXT NULL,
+                ""PackerName"" TEXT NULL,
+                ""PackedAt"" TEXT NULL,
+                ""SealedAt"" TEXT NULL,
+                ""ShippedAt"" TEXT NULL,
+                ""RefDocNo"" TEXT NULL,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryCartons_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_InventoryCartons_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryCartons_OrgId_CartonCode"" ON ""InventoryCartons"" (""OrgId"", ""CartonCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryCartons_OrgId_WarehouseId_Status"" ON ""InventoryCartons"" (""OrgId"", ""WarehouseId"", ""Status"");"
         };
         foreach (var s in sql)
         {

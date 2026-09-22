@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0);
 
 public interface IWmsService
 {
@@ -71,6 +71,15 @@ public interface IWmsService
     Task<(bool ok, string msg, int id)> CreateAndClosePeriodAsync(int? warehouseId, int year, int month, string? note, string closedBy);
     Task<(bool ok, string msg)> ReopenPeriodClosingAsync(int id, string reason);
     Task<(bool ok, string msg)> CancelPeriodClosingAsync(int id);
+    Task<CartonReport> CartonsAsync(int? warehouseId, int? productId, CartonStatus? status, string? q);
+    Task<InventoryCarton?> GetCartonAsync(int id);
+    Task<int> CreateCartonAsync(InventoryCarton carton);
+    Task<(bool ok, string msg, List<int> ids)> GenerateCartonsBatchAsync(int warehouseId, string cartonType, int count, double length, double width, double height, int capacity, string? shelfLocation, string? prefix);
+    Task<(bool ok, string msg)> PackCartonAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? note);
+    Task<(bool ok, string msg)> SealCartonAsync(int id);
+    Task<(bool ok, string msg)> UnpackCartonAsync(int id, string? reason);
+    Task<(bool ok, string msg)> ShipCartonAsync(int id, string refDocNo);
+    Task<(bool ok, string msg)> DeleteCartonAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1312,6 +1321,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalBlocks = await db.InventoryBlocks.CountAsync();
         var totalCostPrices = await db.CostPriceHists.CountAsync(c => c.IsCurrent);
         var totalClosedPeriods = await db.PeriodClosings.CountAsync(p => p.Status == PeriodClosingStatus.Closed);
+        var totalCartons = await db.InventoryCartons.CountAsync();
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1329,7 +1339,8 @@ public class WmsService(AppDbContext db) : IWmsService
             damagedSerials,
             totalBlocks,
             totalCostPrices,
-            totalClosedPeriods);
+            totalClosedPeriods,
+            totalCartons);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -2176,6 +2187,271 @@ public class WmsService(AppDbContext db) : IWmsService
 
         await db.SaveChangesAsync();
         return (true, $"Đã hủy bỏ kỳ chốt kho '{closing.PeriodName}'.");
+    }
+
+    /// <summary>Báo cáo & Danh sách Quản lý Thùng Carton (port từ Inv_InventoryCarton Skycic).</summary>
+    public async Task<CartonReport> CartonsAsync(int? warehouseId, int? productId, CartonStatus? status, string? q)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        string? prodName = null;
+        if (productId.HasValue)
+        {
+            var p = await db.Products.FirstOrDefaultAsync(x => x.Id == productId.Value);
+            if (p != null) prodName = p.Name;
+        }
+
+        var query = db.InventoryCartons.Include(c => c.Warehouse).Include(c => c.Product).AsQueryable();
+        if (warehouseId.HasValue) query = query.Where(c => c.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) query = query.Where(c => c.ProductId == productId.Value);
+        if (status.HasValue) query = query.Where(c => c.Status == status.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(c => c.CartonCode.ToLower().Contains(kw) ||
+                                     (c.QrCode != null && c.QrCode.ToLower().Contains(kw)) ||
+                                     (c.LotNo != null && c.LotNo.ToLower().Contains(kw)) ||
+                                     (c.ShelfLocation != null && c.ShelfLocation.ToLower().Contains(kw)) ||
+                                     (c.PackerName != null && c.PackerName.ToLower().Contains(kw)) ||
+                                     (c.RefDocNo != null && c.RefDocNo.ToLower().Contains(kw)) ||
+                                     (c.Remark != null && c.Remark.ToLower().Contains(kw)) ||
+                                     (c.Product != null && (c.Product.Code.ToLower().Contains(kw) || c.Product.Name.ToLower().Contains(kw))));
+        }
+
+        var list = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
+
+        int totalCartons = list.Count;
+        int emptyCount = list.Count(c => c.Status == CartonStatus.Empty);
+        int packingCount = list.Count(c => c.Status == CartonStatus.Packing);
+        int sealedCount = list.Count(c => c.Status == CartonStatus.Sealed);
+        int shippedCount = list.Count(c => c.Status == CartonStatus.Shipped);
+        int totalItemsPacked = list.Sum(c => c.Quantity);
+        double totalVolumeM3 = Math.Round(list.Sum(c => c.VolumeM3), 3);
+        double totalWeightKg = Math.Round(list.Sum(c => c.GrossWeightKg), 2);
+
+        var rows = list.Select(c =>
+        {
+            var (statusLabel, badgeClass) = c.Status switch
+            {
+                CartonStatus.Empty => ("Thùng rỗng", "bg-secondary"),
+                CartonStatus.Packing => ("Đang đóng kiện", "bg-warning text-dark"),
+                CartonStatus.Sealed => ("Đã niêm phong", "bg-success"),
+                CartonStatus.Shipped => ("Đã xuất kho", "bg-primary"),
+                CartonStatus.Unpacked => ("Đã tháo dỡ", "bg-dark"),
+                _ => ("Khác", "bg-secondary")
+            };
+
+            return new CartonRow(
+                c.Id,
+                c.CartonCode,
+                c.QrCode,
+                c.WarehouseId,
+                c.Warehouse.Name,
+                c.CartonType,
+                c.ProductId,
+                c.Product?.Code,
+                c.Product?.Name,
+                c.Product?.Uom,
+                c.LotNo,
+                c.Quantity,
+                c.Capacity,
+                c.LengthCm,
+                c.WidthCm,
+                c.HeightCm,
+                c.VolumeM3,
+                c.GrossWeightKg,
+                c.Status,
+                statusLabel,
+                badgeClass,
+                c.ShelfLocation,
+                c.PackerName,
+                c.PackedAt,
+                c.SealedAt,
+                c.ShippedAt,
+                c.RefDocNo,
+                c.Remark,
+                c.CreatedAt
+            );
+        }).ToList();
+
+        return new CartonReport(
+            warehouseId,
+            whName,
+            productId,
+            prodName,
+            status,
+            q,
+            totalCartons,
+            emptyCount,
+            packingCount,
+            sealedCount,
+            shippedCount,
+            totalItemsPacked,
+            totalVolumeM3,
+            totalWeightKg,
+            rows
+        );
+    }
+
+    public Task<InventoryCarton?> GetCartonAsync(int id) =>
+        db.InventoryCartons
+            .Include(c => c.Warehouse)
+            .Include(c => c.Product)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+    public async Task<int> CreateCartonAsync(InventoryCarton carton)
+    {
+        if (string.IsNullOrWhiteSpace(carton.CartonCode))
+        {
+            carton.CartonCode = $"CTN{DateTime.Now:yyMMdd}-{await db.InventoryCartons.CountAsync() + 1:D3}";
+        }
+        if (string.IsNullOrWhiteSpace(carton.QrCode))
+        {
+            carton.QrCode = carton.CartonCode;
+        }
+
+        if (carton.Quantity > 0 && carton.Status == CartonStatus.Empty)
+        {
+            carton.Status = CartonStatus.Packing;
+            carton.PackedAt ??= DateTime.Now;
+        }
+
+        carton.CreatedAt = DateTime.Now;
+        db.InventoryCartons.Add(carton);
+        await db.SaveChangesAsync();
+        return carton.Id;
+    }
+
+    public async Task<(bool ok, string msg, List<int> ids)> GenerateCartonsBatchAsync(
+        int warehouseId, string cartonType, int count, double length, double width, double height, int capacity, string? shelfLocation, string? prefix)
+    {
+        if (count <= 0 || count > 500) return (false, "Số lượng sinh mã thùng phải từ 1 đến 500.", []);
+
+        var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
+        if (wh == null) return (false, "Không tìm thấy kho lưu trữ.", []);
+
+        var currentTotal = await db.InventoryCartons.CountAsync();
+        var pre = string.IsNullOrWhiteSpace(prefix) ? $"CTN{DateTime.Now:yyMMdd}-" : prefix.Trim();
+        var type = string.IsNullOrWhiteSpace(cartonType) ? "Thùng carton tiêu chuẩn" : cartonType.Trim();
+
+        var list = new List<InventoryCarton>();
+        for (int i = 1; i <= count; i++)
+        {
+            var code = $"{pre}{currentTotal + i:D3}";
+            list.Add(new InventoryCarton
+            {
+                WarehouseId = warehouseId,
+                CartonCode = code,
+                QrCode = code,
+                CartonType = type,
+                LengthCm = length > 0 ? length : 40,
+                WidthCm = width > 0 ? width : 30,
+                HeightCm = height > 0 ? height : 30,
+                Capacity = capacity > 0 ? capacity : 50,
+                ShelfLocation = shelfLocation?.Trim(),
+                Status = CartonStatus.Empty,
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        db.InventoryCartons.AddRange(list);
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã sinh thành công {count} mã thùng carton mới ({list.First().CartonCode} &rarr; {list.Last().CartonCode}).", list.Select(c => c.Id).ToList());
+    }
+
+    public async Task<(bool ok, string msg)> PackCartonAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? note)
+    {
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Sealed) return (false, "Thùng đã được niêm phong, không thể đóng thêm hàng. Vui lòng mở kiện trước.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng hàng đã xuất kho, không thể thao tác đóng gói.");
+
+        var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId);
+        if (prod == null) return (false, "Không tìm thấy mặt hàng.");
+        if (quantity <= 0) return (false, "Số lượng đóng thùng phải lớn hơn 0.");
+
+        carton.ProductId = productId;
+        carton.Quantity = quantity;
+        carton.LotNo = lotNo?.Trim();
+        if (grossWeightKg > 0) carton.GrossWeightKg = grossWeightKg;
+        carton.PackerName = string.IsNullOrWhiteSpace(packerName) ? "thukho" : packerName.Trim();
+        carton.PackedAt = DateTime.Now;
+        carton.Status = CartonStatus.Packing;
+        if (!string.IsNullOrWhiteSpace(note)) carton.Remark = note.Trim();
+        carton.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã đóng {quantity} {prod.Uom} '{prod.Name}' vào thùng {carton.CartonCode}.");
+    }
+
+    public async Task<(bool ok, string msg)> SealCartonAsync(int id)
+    {
+        var carton = await db.InventoryCartons.Include(c => c.Product).FirstOrDefaultAsync(c => c.Id == id);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Sealed) return (false, "Thùng carton đã được niêm phong trước đó.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng hàng đã xuất kho.");
+
+        carton.Status = CartonStatus.Sealed;
+        carton.SealedAt = DateTime.Now;
+        carton.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã niêm phong thành công thùng carton {carton.CartonCode}. Sẵn sàng xuất kho / vận chuyển.");
+    }
+
+    public async Task<(bool ok, string msg)> UnpackCartonAsync(int id, string? reason)
+    {
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "Không thể tháo dỡ thùng hàng đã xuất kho giao cho khách.");
+
+        carton.ProductId = null;
+        carton.Quantity = 0;
+        carton.LotNo = null;
+        carton.GrossWeightKg = 0;
+        carton.Status = CartonStatus.Empty;
+        carton.SealedAt = null;
+        carton.PackedAt = null;
+        var r = string.IsNullOrWhiteSpace(reason) ? "Đã dỡ hàng về thùng trống" : reason.Trim();
+        carton.Remark = string.IsNullOrWhiteSpace(carton.Remark) ? r : $"{carton.Remark} | {r}";
+        carton.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã tháo dỡ hàng khỏi thùng {carton.CartonCode}. Thùng đã đưa về trạng thái trống.");
+    }
+
+    public async Task<(bool ok, string msg)> ShipCartonAsync(int id, string refDocNo)
+    {
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Empty) return (false, "Thùng rỗng không thể thực hiện xuất kho giao hàng.");
+
+        carton.Status = CartonStatus.Shipped;
+        carton.ShippedAt = DateTime.Now;
+        carton.RefDocNo = refDocNo.Trim();
+        carton.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã ghi nhận xuất kho cho thùng {carton.CartonCode} theo chứng từ {carton.RefDocNo}.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCartonAsync(int id)
+    {
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Sealed || carton.Status == CartonStatus.Shipped)
+            return (false, "Không thể xóa thùng carton đã niêm phong hoặc đã xuất kho. Hãy dỡ thùng trước khi xóa.");
+
+        db.InventoryCartons.Remove(carton);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa thùng carton {carton.CartonCode}.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

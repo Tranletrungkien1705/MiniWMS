@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     public DbSet<CostPriceHist> CostPriceHists => Set<CostPriceHist>();
     public DbSet<PeriodClosing> PeriodClosings => Set<PeriodClosing>();
     public DbSet<PeriodClosingLine> PeriodClosingLines => Set<PeriodClosingLine>();
+    public DbSet<InventoryCarton> InventoryCartons => Set<InventoryCarton>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -166,6 +167,15 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.PeriodClosing).WithMany(x => x.Lines).HasForeignKey(x => x.PeriodClosingId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryCarton>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.CartonCode }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
+            e.Ignore(x => x.VolumeM3);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

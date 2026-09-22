@@ -806,6 +806,103 @@ public record PeriodClosingPreviewReport(
     List<PeriodClosingPreviewItem> Items
 );
 
+/// <summary>Trạng thái vòng đời của Thùng Carton / Kiện hàng (port từ Inv_InventoryCarton Skycic).</summary>
+public enum CartonStatus
+{
+    Empty = 0,    // Thùng rỗng / Mới khởi tạo mã thùng
+    Packing = 1,  // Đang đóng kiện / Chưa niêm phong
+    Sealed = 2,   // Đã niêm phong / Hoàn tất đóng gói, sẵn sàng xuất
+    Shipped = 3,  // Đã xuất kho giao hàng
+    Unpacked = 4  // Đã mở kiện / Tháo dỡ hoàn kho
+}
+
+/// <summary>Quản lý Thùng Carton & Đóng kiện hàng hóa trong kho (port từ Inv_InventoryCarton & Inv_GenTimesCarton Skycic).</summary>
+public class InventoryCarton : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CartonCode { get; set; } = "";                     // Mã thùng carton (CanNo, vd: CTN-2026-0001)
+    public string? QrCode { get; set; }                              // Mã QR định danh dán nhãn thùng (QR_CanNo)
+    public int WarehouseId { get; set; }                             // Kho lưu trữ thùng
+    public string CartonType { get; set; } = "Thùng carton tiêu chuẩn"; // Loại thùng / Quy cách (CartonType)
+    public int? ProductId { get; set; }                              // Mặt hàng đóng trong thùng (null nếu thùng rỗng)
+    public string? LotNo { get; set; }                               // Số lô hàng (ProductLotNo)
+    public int Quantity { get; set; } = 0;                           // Số lượng hàng trong thùng (Qty)
+    public int Capacity { get; set; } = 50;                          // Sức chứa định mức tối đa của thùng
+    public double LengthCm { get; set; } = 40;                       // Dài (cm)
+    public double WidthCm { get; set; } = 30;                        // Rộng (cm)
+    public double HeightCm { get; set; } = 30;                       // Cao (cm)
+    public double GrossWeightKg { get; set; } = 0;                   // Trọng lượng cả bì (kg)
+    public CartonStatus Status { get; set; } = CartonStatus.Empty;   // Trạng thái thùng
+    public string? ShelfLocation { get; set; }                       // Vị trí lưu kho (kệ/ô)
+    public string? PackerName { get; set; }                          // Người thực hiện đóng thùng
+    public DateTime? PackedAt { get; set; }                          // Thời điểm đóng thùng
+    public DateTime? SealedAt { get; set; }                          // Thời điểm niêm phong
+    public DateTime? ShippedAt { get; set; }                         // Thời điểm xuất kho
+    public string? RefDocNo { get; set; }                            // Số chứng từ xuất/nhập/lệnh liên quan
+    public string? Remark { get; set; }                              // Ghi chú thùng carton
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public Product? Product { get; set; }
+
+    /// <summary>Thể tích khối tính bằng m3 = (LengthCm * WidthCm * HeightCm) / 1,000,000</summary>
+    public double VolumeM3 => Math.Round((LengthCm * WidthCm * HeightCm) / 1000000.0, 3);
+}
+
+/// <summary>Dòng hiển thị Thùng carton kèm trạng thái nhãn.</summary>
+public record CartonRow(
+    int Id,
+    string CartonCode,
+    string? QrCode,
+    int WarehouseId,
+    string WarehouseName,
+    string CartonType,
+    int? ProductId,
+    string? ProductCode,
+    string? ProductName,
+    string? Uom,
+    string? LotNo,
+    int Quantity,
+    int Capacity,
+    double LengthCm,
+    double WidthCm,
+    double HeightCm,
+    double VolumeM3,
+    double GrossWeightKg,
+    CartonStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    string? ShelfLocation,
+    string? PackerName,
+    DateTime? PackedAt,
+    DateTime? SealedAt,
+    DateTime? ShippedAt,
+    string? RefDocNo,
+    string? Remark,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo & Danh sách Quản lý Thùng Carton tổng hợp (port từ Inv_InventoryCarton Skycic).</summary>
+public record CartonReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int? ProductId,
+    string? ProductName,
+    CartonStatus? StatusFilter,
+    string? Keyword,
+    int TotalCartons,
+    int EmptyCount,
+    int PackingCount,
+    int SealedCount,
+    int ShippedCount,
+    int TotalItemsPacked,
+    double TotalVolumeM3,
+    double TotalWeightKg,
+    List<CartonRow> Rows
+);
+
 
 
 
