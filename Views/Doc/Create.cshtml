@@ -1,0 +1,51 @@
+@{
+    var type = (DocType)ViewBag.Type;
+    var (tt, _) = Ui.DocTypeBadge(type);
+    ViewData["Title"] = $"Tạo phiếu — {tt}";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var products = (List<Product>)ViewBag.Products;
+    bool needFrom = type is DocType.Out or DocType.Transfer;
+    bool needTo = type is DocType.In or DocType.Transfer;
+}
+<form asp-action="Create" method="post">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="type" value="@((int)type)" />
+    <div class="card mb-3"><div class="card-body">
+        <div class="row g-3">
+            @if (needFrom)
+            {
+                <div class="col-md-4"><label class="form-label small text-muted">Từ kho *</label>
+                    <select name="fromWarehouseId" class="form-select" required><option value="">— Chọn —</option>
+                        @foreach (var w in whs) { <option value="@w.Id">@w.Name</option> }</select></div>
+            }
+            @if (needTo)
+            {
+                <div class="col-md-4"><label class="form-label small text-muted">Đến kho *</label>
+                    <select name="toWarehouseId" class="form-select" required><option value="">— Chọn —</option>
+                        @foreach (var w in whs) { <option value="@w.Id">@w.Name</option> }</select></div>
+            }
+            <div class="col-md-4"><label class="form-label small text-muted">Số tham chiếu</label><input name="refNo" class="form-control" placeholder="Đơn hàng / chứng từ" /></div>
+            <div class="col-12"><label class="form-label small text-muted">Ghi chú</label><input name="note" class="form-control" /></div>
+        </div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">Dòng hàng</h6>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()"><i class="bi bi-plus"></i> Thêm dòng</button></div>
+        <table class="table align-middle"><thead><tr><th style="width:70%">Mặt hàng</th><th>Số lượng</th></tr></thead>
+        <tbody id="lines">
+            <tr>
+                <td><select name="productId" class="form-select form-select-sm"><option value="">— Chọn hàng —</option>
+                    @foreach (var p in products) { <option value="@p.Id">@p.Code — @p.Name (@p.Uom)</option> }</select></td>
+                <td><input name="qty" type="number" min="1" value="1" class="form-control form-control-sm" style="max-width:120px" /></td>
+            </tr>
+        </tbody></table>
+        <div class="mt-2"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Tạo phiếu (Nháp)</button> <a href="/Doc" class="btn btn-outline-secondary">Hủy</a></div>
+    </div></div>
+</form>
+@section Scripts {
+<script>
+var opts = `<option value="">— Chọn hàng —</option>@foreach (var p in products) {<text><option value="@p.Id">@p.Code — @p.Name</option></text>}`;
+function addLine(){document.getElementById('lines').insertAdjacentHTML('beforeend','<tr><td><select name="productId" class="form-select form-select-sm">'+opts+'</select></td><td><input name="qty" type="number" min="1" value="1" class="form-control form-control-sm" style="max-width:120px"/></td></tr>');}
+</script>
+}

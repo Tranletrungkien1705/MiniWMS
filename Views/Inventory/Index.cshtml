@@ -1,0 +1,25 @@
+@model List<BalanceRow>
+@{ ViewData["Title"] = "Tồn kho"; var whs = (List<Warehouse>)ViewBag.Warehouses; var wid = (int?)ViewBag.WarehouseId; }
+<div class="card"><div class="card-body">
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4"><select name="warehouseId" class="form-select" onchange="this.form.submit()">
+            <option value="">— Tất cả kho —</option>
+            @foreach (var w in whs) { <option value="@w.Id" selected="@(wid==w.Id)">@w.Name</option> }
+        </select></div>
+    </form>
+    <table class="table table-hover align-middle">
+        <thead><tr><th>Kho</th><th>Mã hàng</th><th>Tên hàng</th><th>ĐVT</th><th class="text-end">Tồn</th><th class="text-end">Định mức</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var r in Model)
+        {
+            var low = r.MinStock > 0 && r.Qty <= r.MinStock;
+            <tr class="@(low ? "table-danger" : "")">
+                <td>@r.Warehouse</td><td class="fw-semibold">@r.ProductCode</td><td>@r.ProductName</td><td>@r.Uom</td>
+                <td class="text-end fw-semibold">@r.Qty.ToString("N0")</td><td class="text-end text-muted">@(r.MinStock > 0 ? r.MinStock.ToString("N0") : "—")</td>
+                <td>@if (low) { <span class="badge bg-danger">Dưới định mức</span> }</td>
+            </tr>
+        }
+        @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Chưa có tồn (tạo phiếu nhập rồi ghi sổ).</td></tr> }
+        </tbody>
+    </table>
+</div></div>

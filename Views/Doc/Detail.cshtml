@@ -1,0 +1,48 @@
+@model StockDoc
+@{
+    ViewData["Title"] = $"Phiếu {Model.Code}";
+    var (tt, tcss) = Ui.DocTypeBadge(Model.Type);
+    var (st, scss) = Ui.StatusBadge(Model.Status);
+}
+<div class="row g-3">
+    <div class="col-lg-8"><div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <h5 class="fw-bold mb-1">@Model.Code <span class="badge bg-@tcss ms-1">@tt</span></h5>
+                <div class="text-muted small">
+                    @if (Model.FromWarehouse != null) { <span>Từ: <b>@Model.FromWarehouse.Name</b></span> }
+                    @if (Model.ToWarehouse != null) { <span class="ms-2">Đến: <b>@Model.ToWarehouse.Name</b></span> }
+                    · @Model.Date.ToString("dd/MM/yyyy HH:mm")
+                </div>
+                @if (!string.IsNullOrEmpty(Model.Note)) { <div class="small mt-1">Ghi chú: @Model.Note</div> }
+            </div>
+            <span class="badge bg-@scss fs-6">@st</span>
+        </div>
+        <table class="table align-middle">
+            <thead><tr><th>Mã</th><th>Tên hàng</th><th>ĐVT</th><th class="text-end">Số lượng</th></tr></thead>
+            <tbody>
+            @foreach (var l in Model.Lines)
+            {
+                <tr><td class="fw-semibold">@l.Product.Code</td><td>@l.Product.Name</td><td>@l.Product.Uom</td><td class="text-end">@l.Quantity</td></tr>
+            }
+            <tr class="fw-bold"><td colspan="3" class="text-end">Tổng</td><td class="text-end">@Model.TotalQty</td></tr>
+            </tbody>
+        </table>
+    </div></div></div>
+    <div class="col-lg-4"><div class="card"><div class="card-body">
+        <h6 class="fw-bold mb-3">Thao tác</h6>
+        @if (Model.Status == DocStatus.Draft)
+        {
+            <form asp-action="Post" method="post" class="mb-2">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-primary w-100"><i class="bi bi-check2-square me-1"></i>Ghi sổ (cập nhật tồn)</button></form>
+            <form asp-action="Cancel" method="post" onsubmit="return confirm('Hủy phiếu?')">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-outline-danger w-100"><i class="bi bi-x-circle me-1"></i>Hủy phiếu</button></form>
+        }
+        else if (Model.Status == DocStatus.Posted)
+        {
+            <div class="alert alert-success small mb-0"><i class="bi bi-check-circle me-1"></i>Đã ghi sổ — đã cập nhật tồn kho.</div>
+        }
+        else { <div class="alert alert-secondary small mb-0">Phiếu đã hủy.</div> }
+        <a href="/Doc" class="btn btn-outline-secondary w-100 mt-2">Về danh sách</a>
+    </div></div></div>
+</div>
