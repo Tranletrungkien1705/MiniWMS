@@ -283,6 +283,96 @@ app.MapDelete("/api/inventory-blocks/{id:int}", async (int id, IWmsService svc) 
 app.MapGet("/api/inventory-blocks/shelves", async (int? warehouseId, IWmsService svc) =>
     Results.Ok(await svc.GetShelvesAsync(warehouseId)));
 
+// API Lịch sử & Tính giá vốn kho hàng hoá (Cost Price Management & Calculation - port từ Inv_CostPriceHist Skycic)
+app.MapGet("/api/cost-prices", async (int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.CostPriceHistReportAsync(warehouseId, productId, currentOnly, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/cost-prices/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetCostPriceHistAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy bản ghi giá vốn." });
+    return Results.Ok(new
+    {
+        item.Id,
+        Warehouse = item.Warehouse?.Name ?? "Toàn hệ thống",
+        item.WarehouseId,
+        ProductCode = item.Product.Code,
+        ProductName = item.Product.Name,
+        item.ProductId,
+        item.CostPrice,
+        EffectDate = item.EffectDate.ToString("yyyy-MM-dd"),
+        item.RefDocNo,
+        item.IsCurrent,
+        item.CalcPeriodName,
+        SourceType = item.SourceType.ToString(),
+        item.Remark,
+        item.CreatedBy,
+        item.CreatedAt,
+        item.UpdatedBy,
+        item.UpdatedAt
+    });
+});
+
+app.MapPost("/api/cost-prices", async (CreateCostPriceDto dto, IWmsService svc) =>
+{
+    if (dto.ProductId <= 0) return Results.BadRequest(new { error = "Cần ProductId." });
+    if (dto.CostPrice < 0) return Results.BadRequest(new { error = "Giá vốn không thể âm." });
+
+    try
+    {
+        var item = new CostPriceHist
+        {
+            WarehouseId = dto.WarehouseId > 0 ? dto.WarehouseId : null,
+            ProductId = dto.ProductId,
+            CostPrice = dto.CostPrice,
+            EffectDate = dto.EffectDate ?? DateTime.Today,
+            RefDocNo = dto.RefDocNo?.Trim() ?? $"DC-{DateTime.Now:yyyyMMdd}",
+            CalcPeriodName = dto.CalcPeriodName?.Trim() ?? "Thiết lập giá vốn thủ công",
+            IsCurrent = dto.IsCurrent ?? true,
+            SourceType = CostPriceSourceType.Manual,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+        var id = await svc.CreateCostPriceHistAsync(item);
+        return Results.Ok(new { id, costPrice = item.CostPrice, isCurrent = item.IsCurrent });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/cost-prices/{id:int}", async (int id, UpdateCostPriceDto dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.UpdateCostPriceHistAsync(id, dto.CostPrice, dto.Remark);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/cost-prices/calculate", async (CalcCostPricePreviewDto dto, IWmsService svc) =>
+{
+    var from = dto.FromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-1);
+    var to = dto.ToDate ?? DateTime.Today;
+    var name = string.IsNullOrWhiteSpace(dto.CalcPeriodName) ? $"Kỳ tính giá vốn {DateTime.Today:MM/yyyy}" : dto.CalcPeriodName.Trim();
+    var preview = await svc.PreviewCalculateCostPriceAsync(dto.WarehouseId, from, to, name, dto.ProductIds);
+    return Results.Ok(preview);
+});
+
+app.MapPost("/api/cost-prices/apply-calculation", async (ApplyCostPriceCalcDto dto, IWmsService svc) =>
+{
+    if (dto.Items == null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Không có mặt hàng nào để áp dụng." });
+
+    var effDate = dto.EffectDate ?? DateTime.Today;
+    var name = string.IsNullOrWhiteSpace(dto.CalcPeriodName) ? $"Kỳ tính giá vốn {DateTime.Today:MM/yyyy}" : dto.CalcPeriodName.Trim();
+    var items = dto.Items.Select(i => (i.ProductId, i.NewCostPrice, i.Note ?? "")).ToList();
+
+    var (ok, msg, count) = await svc.ApplyCalculateCostPriceAsync(dto.WarehouseId, effDate, name, items);
+    return ok ? Results.Ok(new { success = true, message = msg, count }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>
@@ -590,3 +680,8 @@ record CreateStockSerialDto(int WarehouseId, int ProductId, string SerialNo, str
 record ChangeSerialStatusDto(StockSerialStatus Status, string? Note);
 record CreateInventoryBlockDto(int WarehouseId, string InvBlockCode, string ShelfCode, string? InvBlockDesc, double Length, double Width, double Height, int MaxCapacity, string? Remark, bool? FlagActive);
 record UpdateInventoryBlockDto(string? ShelfCode, string? InvBlockDesc, double Length, double Width, double Height, int MaxCapacity, string? Remark, bool FlagActive);
+record CreateCostPriceDto(int? WarehouseId, int ProductId, decimal CostPrice, DateTime? EffectDate, string? RefDocNo, string? CalcPeriodName, bool? IsCurrent, string? Remark);
+record UpdateCostPriceDto(decimal CostPrice, string? Remark);
+record CalcCostPricePreviewDto(int? WarehouseId, DateTime? FromDate, DateTime? ToDate, string? CalcPeriodName, int[]? ProductIds);
+record ApplyCostPriceCalcDto(int? WarehouseId, DateTime? EffectDate, string? CalcPeriodName, List<ApplyCostPriceItemDto> Items);
+record ApplyCostPriceItemDto(int ProductId, decimal NewCostPrice, string? Note);

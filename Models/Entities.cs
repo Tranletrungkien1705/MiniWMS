@@ -580,6 +580,108 @@ public record InventoryBlockReport(
     List<InventoryBlockRow> Rows
 );
 
+/// <summary>Nguồn gốc thiết lập / phát sinh giá vốn (port từ Inv_CostPriceHist Skycic).</summary>
+public enum CostPriceSourceType
+{
+    AutoCalc = 0, // Tính tự động từ kỳ tính giá vốn kho (theo phiếu nhập kho)
+    Manual = 1    // Thiết lập / điều chỉnh thủ công
+}
+
+/// <summary>Lịch sử & Tính giá vốn kho hàng hoá (Cost Price History & Calculation - port từ Inv_CostPriceHist Skycic).</summary>
+public class CostPriceHist : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int? WarehouseId { get; set; }                    // Áp dụng cho kho cụ thể (null = toàn hệ thống)
+    public int ProductId { get; set; }                       // Mặt hàng
+    public DateTime EffectDate { get; set; } = DateTime.Now; // Thời điểm hiệu lực (EffectDTimeUTC)
+    public decimal CostPrice { get; set; } = 0m;             // Giá vốn đơn vị kho (UPInv)
+    public string? RefDocNo { get; set; }                    // Mã chứng từ / Số phiếu / Kỳ tính giá vốn (FormNo)
+    public bool IsCurrent { get; set; } = true;              // Cờ giá vốn hiện hành đang áp dụng (FlagIsCurrent)
+    public string? CalcPeriodName { get; set; }              // Tên kỳ tính giá vốn (nếu tính theo kỳ)
+    public CostPriceSourceType SourceType { get; set; } = CostPriceSourceType.AutoCalc; // Nguồn tính giá vốn
+    public string? Remark { get; set; }                      // Ghi chú lý do cập nhật/điều chỉnh
+    public string CreatedBy { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? UpdatedBy { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse? Warehouse { get; set; }
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng hiển thị Lịch sử giá vốn kho (port từ Inv_CostPriceHist Skycic).</summary>
+public record CostPriceHistRow(
+    int Id,
+    int? WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    DateTime EffectDate,
+    decimal CostPrice,
+    string? RefDocNo,
+    bool IsCurrent,
+    string? CalcPeriodName,
+    CostPriceSourceType SourceType,
+    string SourceTypeLabel,
+    string BadgeClass,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt,
+    string? UpdatedBy,
+    DateTime? UpdatedAt
+);
+
+/// <summary>Báo cáo & Danh sách Lịch sử giá vốn kho tổng hợp (port từ Inv_CostPriceHist Skycic).</summary>
+public record CostPriceHistReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int? ProductId,
+    string ProductName,
+    bool? CurrentOnly,
+    string? Keyword,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    int TotalRecords,
+    int CurrentItemsCount,
+    decimal AvgCostPrice,
+    decimal MaxCostPrice,
+    decimal MinCostPrice,
+    List<CostPriceHistRow> Rows
+);
+
+/// <summary>Dòng xem trước tính toán giá vốn bình quân theo kỳ (port từ Inv_CostPriceHist_Calc Skycic).</summary>
+public record CostPriceCalcItem(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int? WarehouseId,
+    string WarehouseName,
+    decimal OldCostPrice,
+    int InQty,
+    decimal InTotalAmount,
+    decimal NewCostPrice,
+    decimal DiffAmount,
+    double DiffPercent,
+    string Note
+);
+
+/// <summary>Báo cáo xem trước kết quả tính giá vốn kho theo kỳ (port từ Inv_CostPriceHist_Calc Skycic).</summary>
+public record CostPriceCalcPreviewReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime FromDate,
+    DateTime ToDate,
+    string CalcPeriodName,
+    int TotalProducts,
+    int CalculatedProducts,
+    int ChangedProducts,
+    List<CostPriceCalcItem> Items
+);
+
 
 
 

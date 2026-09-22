@@ -1,0 +1,268 @@
+@model CostPriceCalcPreviewReport
+@{
+    ViewData["Title"] = "Kỳ tính Giá vốn Kho — Tính toán & Chốt giá vốn bình quân";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    var calcPeriodName = (string)ViewBag.CalcPeriodName;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-calculator me-2 text-primary"></i> Kỳ tính Giá vốn kho hàng hóa</h5>
+        <div class="text-muted small">Tính đơn giá vốn bình quân gia quyền theo các giao dịch nhập kho trong kỳ</div>
+    </div>
+    <a href="/CostPrice@(selectedWid.HasValue ? $"?warehouseId={selectedWid}" : "")" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Quay lại danh sách giá vốn
+    </a>
+</div>
+
+<!-- Bộ cấu hình tham số kỳ tính giá vốn -->
+<div class="card mb-3 border-primary shadow-sm">
+    <div class="card-header bg-light py-2">
+        <span class="fw-bold small text-primary"><i class="bi bi-sliders me-1"></i> Thiết lập tham số kỳ tính giá vốn</span>
+    </div>
+    <div class="card-body">
+        <form method="get" action="/CostPrice/Calculate" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho áp dụng tính giá <span class="text-danger">*</span></label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Toàn bộ các kho (Mặc định) —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Từ ngày nhập kho <span class="text-danger">*</span></label>
+                <input type="date" name="fromDate" value="@fromDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Đến ngày nhập kho <span class="text-danger">*</span></label>
+                <input type="date" name="toDate" value="@toDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tên kỳ tính giá vốn <span class="text-danger">*</span></label>
+                <input type="text" name="calcPeriodName" value="@calcPeriodName" class="form-control form-control-sm" placeholder="VD: Kỳ tính giá vốn tháng 03/2026" required />
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-play-circle me-1"></i> Tính giá vốn
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Thống kê kết quả xem trước -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG MẶT HÀNG</span>
+                    <i class="bi bi-box-seam text-secondary fs-5"></i>
+                </div>
+                <div class="stat-num text-dark">@Model.TotalProducts</div>
+                <div class="text-muted" style="font-size:11px">Toàn bộ danh mục áp dụng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">PHÁT SINH NHẬP KHO</span>
+                    <i class="bi bi-box-arrow-in-down text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.CalculatedProducts</div>
+                <div class="text-muted" style="font-size:11px">Có giao dịch nhập trong kỳ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CÓ BIẾN ĐỘNG GIÁ</span>
+                    <i class="bi bi-graph-up text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@Model.ChangedProducts</div>
+                <div class="text-muted" style="font-size:11px">Giá mới khác giá cũ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHO ÁP DỤNG</span>
+                    <i class="bi bi-building text-primary fs-5"></i>
+                </div>
+                <div class="fw-bold text-primary mt-1" style="font-size:18px">@Model.WarehouseName</div>
+                <div class="text-muted" style="font-size:11px">Kỳ: @Model.FromDate.ToString("dd/MM") — @Model.ToDate.ToString("dd/MM/yyyy")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng xem trước và chốt giá vốn -->
+<form method="post" action="/CostPrice/ApplyCalculation" id="formApply">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="warehouseId" value="@selectedWid" />
+    <input type="hidden" name="calcPeriodName" value="@calcPeriodName" />
+    <input type="hidden" name="effectDate" value="@toDate" />
+
+    <div class="card">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <span class="fw-bold small text-dark"><i class="bi bi-table me-1"></i> Bảng xem trước giá vốn tính toán (@Model.Items.Count mặt hàng)</span>
+                <span class="text-muted small">| Có thể điều chỉnh số liệu trước khi chốt</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-success px-3 fw-semibold" onclick="return confirm('Bạn có chắc chắn muốn chốt và áp dụng giá vốn tính toán này vào hệ thống?');">
+                    <i class="bi bi-check-circle me-1"></i> Lưu & Áp dụng giá vốn
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="font-size:13px">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:40px">
+                            <input type="checkbox" id="checkAll" class="form-check-input" checked onclick="toggleAll(this)" />
+                        </th>
+                        <th class="text-center" style="width:45px">STT</th>
+                        <th>Mã hàng</th>
+                        <th>Tên hàng hoá</th>
+                        <th>ĐVT</th>
+                        <th class="text-end">Giá vốn hiện tại</th>
+                        <th class="text-end">Nhập trong kỳ</th>
+                        <th class="text-end" style="width:160px">Giá vốn mới (VNĐ)</th>
+                        <th class="text-end">Chênh lệch</th>
+                        <th class="text-center">Biến động</th>
+                        <th>Giải trình tính toán</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Items.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="11" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                Không tìm thấy mặt hàng nào để tính giá vốn.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        for (int i = 0; i < Model.Items.Count; i++)
+                        {
+                            var item = Model.Items[i];
+                            var hasChanged = item.DiffAmount != 0;
+                            var rowBg = hasChanged ? (item.DiffAmount > 0 ? "table-warning-subtle" : "table-info-subtle") : "";
+
+                            <tr class="@rowBg">
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input row-chk" checked onchange="toggleRow(this)" />
+                                    <input type="hidden" name="productIds" value="@item.ProductId" class="prod-id-input" />
+                                </td>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td><span class="badge bg-light text-dark border font-monospace">@item.ProductCode</span></td>
+                                <td class="fw-semibold">@item.ProductName</td>
+                                <td><span class="text-muted">@item.Uom</span></td>
+                                <td class="text-end font-monospace text-muted">@item.OldCostPrice.ToString("N0") đ</td>
+                                <td class="text-end font-monospace">
+                                    @if (item.InQty > 0)
+                                    {
+                                        <span class="fw-bold text-primary">+@item.InQty</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">0</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <input type="number" name="newCostPrices" value="@item.NewCostPrice.ToString("F0")"
+                                           class="form-control form-control-sm text-end font-monospace fw-bold price-input @(hasChanged ? "border-primary" : "")"
+                                           min="0" step="1000" />
+                                </td>
+                                <td class="text-end font-monospace">
+                                    @if (item.DiffAmount > 0)
+                                    {
+                                        <span class="text-danger fw-bold">+@item.DiffAmount.ToString("N0") đ</span>
+                                    }
+                                    else if (item.DiffAmount < 0)
+                                    {
+                                        <span class="text-success fw-bold">@item.DiffAmount.ToString("N0") đ</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (item.DiffPercent > 0)
+                                    {
+                                        <span class="badge bg-danger"><i class="bi bi-arrow-up-right me-1"></i>+@item.DiffPercent%</span>
+                                    }
+                                    else if (item.DiffPercent < 0)
+                                    {
+                                        <span class="badge bg-success"><i class="bi bi-arrow-down-left me-1"></i>@item.DiffPercent%</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">Ổn định</span>
+                                    }
+                                </td>
+                                <td class="small text-muted">
+                                    <input type="text" name="notes" value="@item.Note" class="form-control form-control-sm border-0 bg-transparent text-muted note-input" />
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-light py-2 d-flex justify-content-between align-items-center">
+            <div class="small text-muted">
+                <i class="bi bi-info-circle me-1"></i> Khi nhấn <b>"Lưu & Áp dụng giá vốn"</b>, hệ thống sẽ lưu lịch sử tính giá vào sổ <code>CostPriceHist</code> và tự động đồng bộ sang giá vốn của từng mặt hàng.
+            </div>
+            <button type="submit" class="btn btn-sm btn-success px-4 fw-semibold" onclick="return confirm('Bạn có chắc chắn muốn chốt và áp dụng giá vốn tính toán này vào hệ thống?');">
+                <i class="bi bi-check-circle me-1"></i> Lưu & Áp dụng giá vốn
+            </button>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+    function toggleAll(master) {
+        document.querySelectorAll('.row-chk').forEach(c => {
+            c.checked = master.checked;
+            toggleRow(c);
+        });
+    }
+
+    function toggleRow(chk) {
+        var tr = chk.closest('tr');
+        var prodInput = tr.querySelector('.prod-id-input');
+        var priceInput = tr.querySelector('.price-input');
+        var noteInput = tr.querySelector('.note-input');
+        if (!chk.checked) {
+            prodInput.disabled = true;
+            priceInput.disabled = true;
+            noteInput.disabled = true;
+            tr.style.opacity = '0.5';
+        } else {
+            prodInput.disabled = false;
+            priceInput.disabled = false;
+            noteInput.disabled = false;
+            tr.style.opacity = '1';
+        }
+    }
+</script>
+}

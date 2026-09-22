@@ -972,5 +972,148 @@ public class InventoryBlockController(IWmsService svc) : Controller
     }
 }
 
+public class CostPriceController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        var prods = await svc.ProductsAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.Products = prods;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ProductId = productId;
+        ViewBag.CurrentOnly = currentOnly;
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.CostPriceHistReportAsync(warehouseId, productId, currentOnly, fromDate, toDate, q);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int? warehouseId, int productId, decimal costPrice, DateTime? effectDate, string? refDocNo, string? remark)
+    {
+        if (productId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn mặt hàng.";
+            return RedirectToAction(nameof(Index), new { warehouseId, productId });
+        }
+        if (costPrice < 0)
+        {
+            TempData["Error"] = "Đơn giá vốn không thể là số âm.";
+            return RedirectToAction(nameof(Index), new { warehouseId, productId });
+        }
+
+        try
+        {
+            var item = new CostPriceHist
+            {
+                WarehouseId = warehouseId > 0 ? warehouseId : null,
+                ProductId = productId,
+                CostPrice = costPrice,
+                EffectDate = effectDate ?? DateTime.Today,
+                RefDocNo = string.IsNullOrWhiteSpace(refDocNo) ? $"DC-{DateTime.Now:yyyyMMdd}" : refDocNo.Trim(),
+                CalcPeriodName = $"Điều chỉnh giá vốn thủ công {DateTime.Today:dd/MM/yyyy}",
+                IsCurrent = true,
+                SourceType = CostPriceSourceType.Manual,
+                Remark = remark?.Trim(),
+                CreatedBy = "admin"
+            };
+
+            await svc.CreateCostPriceHistAsync(item);
+            TempData["Success"] = $"Đã thiết lập giá vốn {costPrice:N0} đ thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index), new { warehouseId, productId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, decimal costPrice, string? remark, int? filterWhId, int? filterProdId, bool? filterCurrent, string? q)
+    {
+        var (ok, msg) = await svc.UpdateCostPriceHistAsync(id, costPrice, remark);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId = filterWhId, productId = filterProdId, currentOnly = filterCurrent, q });
+    }
+
+    public async Task<IActionResult> Calculate(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? calcPeriodName)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+
+        var defFrom = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-1);
+        var defTo = toDate ?? DateTime.Today;
+        var periodName = string.IsNullOrWhiteSpace(calcPeriodName) ? $"Kỳ tính giá vốn tháng {DateTime.Today:MM/yyyy}" : calcPeriodName.Trim();
+
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.FromDate = defFrom.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = defTo.ToString("yyyy-MM-dd");
+        ViewBag.CalcPeriodName = periodName;
+
+        var preview = await svc.PreviewCalculateCostPriceAsync(warehouseId, defFrom, defTo, periodName, null);
+        return View(preview);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApplyCalculation(int? warehouseId, DateTime? effectDate, string? calcPeriodName, int[]? productIds, decimal[]? newCostPrices, string[]? notes)
+    {
+        if (productIds == null || productIds.Length == 0)
+        {
+            TempData["Error"] = "Không có mặt hàng nào để áp dụng.";
+            return RedirectToAction(nameof(Calculate), new { warehouseId });
+        }
+
+        var periodName = string.IsNullOrWhiteSpace(calcPeriodName) ? $"Kỳ tính giá vốn {DateTime.Today:MM/yyyy}" : calcPeriodName.Trim();
+        var effDate = effectDate ?? DateTime.Today;
+
+        var items = new List<(int ProductId, decimal NewCostPrice, string Note)>();
+        for (int i = 0; i < productIds.Length; i++)
+        {
+            var pid = productIds[i];
+            var price = (newCostPrices != null && i < newCostPrices.Length) ? newCostPrices[i] : 0m;
+            var note = (notes != null && i < notes.Length) ? notes[i] : "";
+            items.Add((pid, price, note));
+        }
+
+        var (ok, msg, count) = await svc.ApplyCalculateCostPriceAsync(warehouseId, effDate, periodName, items);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.CostPriceHistReportAsync(warehouseId, productId, currentOnly, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BẢNG KÊ & LỊCH SỬ GIÁ VỐN KHO HÀNG HÓA");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Mặt hàng:;{report.ProductName}");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc hiện hành:;{(currentOnly.HasValue ? (currentOnly.Value ? "Chỉ giá vốn hiện hành" : "Chỉ lịch sử cũ") : "Tất cả các kỳ")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho lưu trữ;Đơn giá vốn (VNĐ);Trạng thái hiện hành;Thời điểm hiệu lực;Số chứng từ / Kỳ tính;Nguồn tính;Người cập nhật;Ngày cập nhật;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var eff = r.EffectDate.ToString("dd/MM/yyyy");
+            var upd = (r.UpdatedAt ?? r.CreatedAt).ToString("dd/MM/yyyy HH:mm");
+            var cur = r.IsCurrent ? "Hiện hành" : "Lịch sử";
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.CostPrice:F0};\"{cur}\";{eff};\"{r.RefDocNo ?? "—"}\";\"{r.SourceTypeLabel}\";\"{r.UpdatedBy ?? r.CreatedBy}\";{upd};\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalRecords} bản ghi;;;{report.CurrentItemsCount} sp có giá vốn;Đơn giá bình quân:;{report.AvgCostPrice:F0};;Cao nhất: {report.MaxCostPrice:F0};Thấp nhất: {report.MinCostPrice:F0}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_GiaVonKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 
 

@@ -23,6 +23,7 @@
         <a href="/LotExpiry" class="btn btn-outline-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Lô & Hạn sử dụng</a>
         <a href="/StorageTime" class="btn btn-outline-info text-dark"><i class="bi bi-clock-history me-1"></i>Báo cáo tuổi kho</a>
         <a href="/StockSerial" class="btn btn-outline-primary"><i class="bi bi-upc-scan me-1"></i>Serial / IMEI</a>
+        <a href="/CostPrice" class="btn btn-outline-success"><i class="bi bi-calculator me-1"></i>Giá vốn kho</a>
         <a href="/InventoryInOut" class="btn btn-primary"><i class="bi bi-graph-up-arrow me-1"></i>Báo cáo NXT</a>
     </div>
     @if (d.DamagedSerials > 0) { <div class="alert alert-danger mt-3 mb-0 small"><i class="bi bi-exclamation-octagon me-1"></i>Có <b>@d.DamagedSerials</b> serial/sản phẩm báo lỗi hỏng (NG) cần thẩm định/bảo hành. <a href="/StockSerial?status=2" class="fw-semibold text-danger text-decoration-underline">Kiểm tra danh sách Serial NG ngay</a></div> }

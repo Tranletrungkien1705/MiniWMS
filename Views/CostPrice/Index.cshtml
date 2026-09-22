@@ -1,0 +1,337 @@
+@model CostPriceHistReport
+@{
+    ViewData["Title"] = "Quản lý & Lịch sử Giá vốn Kho — Đơn giá vốn kho hàng hóa";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var prods = (List<Product>)ViewBag.Products;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedPid = (int?)ViewBag.ProductId;
+    var selectedCurrent = (bool?)ViewBag.CurrentOnly;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Kho áp dụng</label>
+                <select name="warehouseId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Mặt hàng</label>
+                <select name="productId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả mặt hàng —</option>
+                    @foreach (var p in prods)
+                    {
+                        <option value="@p.Id" selected="@(selectedPid == p.Id)">@p.Code — @p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Trạng thái giá</label>
+                <select name="currentOnly" class="form-select form-select-sm">
+                    <option value="">— Tất cả các kỳ —</option>
+                    <option value="true" selected="@(selectedCurrent == true)">Chỉ giá hiện hành</option>
+                    <option value="false" selected="@(selectedCurrent == false)">Chỉ lịch sử cũ</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tìm kiếm kỳ tính / chứng từ</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã kỳ tính, số phiếu, ghi chú..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Lọc dữ liệu">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/CostPrice" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/CostPrice/ExportCsv?warehouseId=@selectedWid&productId=@selectedPid&currentOnly=@(selectedCurrent.HasValue ? selectedCurrent.Value.ToString().ToLower() : "")&fromDate=@fromDate&toDate=@toDate&q=@Uri.EscapeDataString(keyword ?? "")"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i>
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In bảng kê">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG BẢN GHI</span>
+                    <i class="bi bi-clock-history text-secondary fs-5"></i>
+                </div>
+                <div class="stat-num text-dark">@Model.TotalRecords.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Lịch sử các kỳ tính & điều chỉnh</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">HÀNG ĐÃ CÓ GIÁ</span>
+                    <i class="bi bi-check2-circle text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.CurrentItemsCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Mặt hàng có giá hiện hành</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">GIÁ VỐN TRUNG BÌNH</span>
+                    <i class="bi bi-cash-stack text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.AvgCostPrice.ToString("N0") <span style="font-size:13px;font-weight:normal">đ</span></div>
+                <div class="text-muted" style="font-size:11px">Đơn giá bình quân danh mục</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">GIÁ CAO NHẤT</span>
+                    <i class="bi bi-arrow-up-right-circle-fill text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.MaxCostPrice.ToString("N0") <span style="font-size:13px;font-weight:normal">đ</span></div>
+                <div class="text-muted" style="font-size:11px">Đơn giá vốn lớn nhất</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">GIÁ THẤP NHẤT</span>
+                    <i class="bi bi-arrow-down-left-circle-fill text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.MinCostPrice.ToString("N0") <span style="font-size:13px;font-weight:normal">đ</span></div>
+                <div class="text-muted" style="font-size:11px">Đơn giá vốn nhỏ nhất</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex align-items-center gap-2">
+        <h6 class="mb-0 fw-bold">Bảng kê lịch sử giá vốn kho hàng hóa</h6>
+        <span class="badge bg-light text-dark border">@Model.Rows.Count dòng hiển thị</span>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/CostPrice/Calculate@(selectedWid.HasValue ? $"?warehouseId={selectedWid}" : "")" class="btn btn-sm btn-primary">
+            <i class="bi bi-calculator me-1"></i> Tính giá vốn kho theo kỳ
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#modalCreateCostPrice">
+            <i class="bi bi-plus-circle me-1"></i> Điều chỉnh giá vốn
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width:45px">STT</th>
+                    <th>Mã hàng</th>
+                    <th>Tên hàng hoá</th>
+                    <th>ĐVT</th>
+                    <th>Kho áp dụng</th>
+                    <th class="text-end">Đơn giá vốn (VNĐ)</th>
+                    <th class="text-center">Trạng thái</th>
+                    <th class="text-center">Hiệu lực từ</th>
+                    <th>Số chứng từ / Kỳ tính</th>
+                    <th>Nguồn</th>
+                    <th>Người lập</th>
+                    <th>Cập nhật lúc</th>
+                    <th>Ghi chú</th>
+                    <th class="text-center" style="width:70px">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="14" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                            Không có dữ liệu giá vốn nào phù hợp với bộ lọc.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="text-center text-muted small">@(stt++)</td>
+                            <td><span class="badge bg-light text-dark border font-monospace">@r.ProductCode</span></td>
+                            <td class="fw-semibold">@r.ProductName</td>
+                            <td><span class="text-muted">@r.Uom</span></td>
+                            <td><span class="badge bg-light text-secondary border">@r.WarehouseName</span></td>
+                            <td class="text-end fw-bold font-monospace @(r.IsCurrent ? "text-success fs-6" : "text-muted")">
+                                @r.CostPrice.ToString("N0") đ
+                            </td>
+                            <td class="text-center">
+                                @if (r.IsCurrent)
+                                {
+                                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Hiện hành</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-light text-muted border">Lịch sử cũ</span>
+                                }
+                            </td>
+                            <td class="text-center text-muted small">@r.EffectDate.ToString("dd/MM/yyyy")</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(r.RefDocNo))
+                                {
+                                    <span class="fw-medium">@r.RefDocNo</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(r.CalcPeriodName) && r.CalcPeriodName != r.RefDocNo)
+                                {
+                                    <div class="text-muted small" style="font-size:11px">@r.CalcPeriodName</div>
+                                }
+                            </td>
+                            <td>
+                                <span class="badge @r.BadgeClass">@r.SourceTypeLabel</span>
+                            </td>
+                            <td class="small text-muted">@r.CreatedBy</td>
+                            <td class="small text-muted">@((r.UpdatedAt ?? r.CreatedAt).ToString("dd/MM/yyyy HH:mm"))</td>
+                            <td class="small text-muted" style="max-width:200px" title="@r.Remark">
+                                @(string.IsNullOrWhiteSpace(r.Remark) ? "—" : r.Remark)
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" title="Sửa nhanh giá vốn"
+                                        onclick="openEditModal(@r.Id, '@r.ProductCode - @r.ProductName.Replace("'", "\\'")', @r.CostPrice, '@(r.Remark?.Replace("'", "\\'") ?? "")')">
+                                    <i class="bi bi-pencil-square"></i> Sửa
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm mới / Điều chỉnh giá vốn thủ công -->
+<div class="modal fade" id="modalCreateCostPrice" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" action="/CostPrice/Create" class="modal-content">
+            @Html.AntiForgeryToken()
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-1 text-success"></i> Thiết lập / Điều chỉnh giá vốn kho</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-3">
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Kho áp dụng</label>
+                    <select name="warehouseId" class="form-select">
+                        <option value="">— Áp dụng toàn hệ thống —</option>
+                        @foreach (var w in whs)
+                        {
+                            <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                        }
+                    </select>
+                    <div class="form-text small">Để trống nếu áp dụng giá vốn thống nhất toàn công ty.</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Mặt hàng <span class="text-danger">*</span></label>
+                    <select name="productId" class="form-select" required>
+                        <option value="">-- Chọn mặt hàng --</option>
+                        @foreach (var p in prods)
+                        {
+                            <option value="@p.Id" selected="@(selectedPid == p.Id)">@p.Code — @p.Name (Hiện tại: @p.CostPrice.ToString("N0") đ)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-semibold">Đơn giá vốn mới (VNĐ) <span class="text-danger">*</span></label>
+                    <input type="number" name="costPrice" class="form-control font-monospace" min="0" step="1000" placeholder="VD: 150000" required />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-semibold">Ngày hiệu lực</label>
+                    <input type="date" name="effectDate" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Số chứng từ / Mã đợt điều chỉnh</label>
+                    <input type="text" name="refDocNo" class="form-control" placeholder="VD: DC-20260330, HD-10294..." />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Lý do / Ghi chú điều chỉnh</label>
+                    <textarea name="remark" class="form-control" rows="2" placeholder="Ghi chú nguyên nhân thay đổi giá vốn..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check-lg me-1"></i> Lưu giá vốn</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Sửa nhanh giá vốn -->
+<div class="modal fade" id="modalEditCostPrice" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" action="/CostPrice/Update" class="modal-content">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="editId" />
+            <input type="hidden" name="filterWhId" value="@selectedWid" />
+            <input type="hidden" name="filterProdId" value="@selectedPid" />
+            <input type="hidden" name="filterCurrent" value="@(selectedCurrent.HasValue ? selectedCurrent.Value.ToString().ToLower() : "")" />
+            <input type="hidden" name="q" value="@keyword" />
+
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-1 text-primary"></i> Sửa nhanh đơn giá vốn</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body row g-3">
+                <div class="col-12">
+                    <label class="form-label small fw-semibold text-muted">Mặt hàng</label>
+                    <div class="fw-bold p-2 bg-light rounded" id="editProductName">—</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Đơn giá vốn (VNĐ) <span class="text-danger">*</span></label>
+                    <input type="number" name="costPrice" id="editCostPrice" class="form-control font-monospace fs-5 fw-bold" min="0" step="1000" required />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-semibold">Ghi chú sửa đổi</label>
+                    <textarea name="remark" id="editRemark" class="form-control" rows="2" placeholder="Lý do điều chỉnh giá..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Cập nhật</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditModal(id, prodName, costPrice, remark) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editProductName').innerText = prodName;
+        document.getElementById('editCostPrice').value = costPrice;
+        document.getElementById('editRemark').value = remark || '';
+        new bootstrap.Modal(document.getElementById('modalEditCostPrice')).show();
+    }
+</script>
+}

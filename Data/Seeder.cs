@@ -801,13 +801,88 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Quản lý & Lịch sử Giá vốn kho (CostPriceHist - port từ Inv_CostPriceHist Skycic)
+        if (!await db.CostPriceHists.AnyAsync())
+        {
+            var prods = await db.Products.ToListAsync();
+            var whMain = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN" || w.Name.Contains("Hà Nội") || w.Name.Contains("Chính"));
+            var whSub = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM" || (whMain != null && w.Id != whMain.Id));
+            var costPrices = new List<CostPriceHist>();
+
+            foreach (var p in prods)
+            {
+                decimal baseCost = p.CostPrice > 0 ? p.CostPrice : (p.Code switch
+                {
+                    "AO-001" => 150000m,
+                    "QUAN-001" => 280000m,
+                    "PK-001" => 120000m,
+                    "VAY-001" => 320000m,
+                    _ => 100000m
+                });
+
+                // 1. Bản ghi kỳ trước (1 tháng trước) - Lịch sử
+                costPrices.Add(new CostPriceHist
+                {
+                    WarehouseId = whMain?.Id,
+                    ProductId = p.Id,
+                    EffectDate = DateTime.Today.AddMonths(-1).AddDays(-5),
+                    CostPrice = Math.Round(baseCost * 0.96m, 0),
+                    RefDocNo = $"KYTINH-{DateTime.Today.AddMonths(-1):yyyyMM}",
+                    CalcPeriodName = $"Kỳ tính giá vốn tháng {DateTime.Today.AddMonths(-1):MM/yyyy}",
+                    IsCurrent = false,
+                    SourceType = CostPriceSourceType.AutoCalc,
+                    Remark = "Tính giá vốn bình quân gia quyền kỳ trước theo phiếu nhập kho",
+                    CreatedBy = "hethong",
+                    CreatedAt = DateTime.Today.AddMonths(-1).AddDays(-5)
+                });
+
+                // 2. Bản ghi hiện hành (áp dụng từ đầu tháng này)
+                costPrices.Add(new CostPriceHist
+                {
+                    WarehouseId = whMain?.Id,
+                    ProductId = p.Id,
+                    EffectDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1),
+                    CostPrice = baseCost,
+                    RefDocNo = $"KYTINH-{DateTime.Today:yyyyMM}",
+                    CalcPeriodName = $"Kỳ tính giá vốn tháng {DateTime.Today:MM/yyyy}",
+                    IsCurrent = true,
+                    SourceType = CostPriceSourceType.AutoCalc,
+                    Remark = "Chốt giá vốn bình quân gia quyền kỳ hiện hành",
+                    CreatedBy = "admin",
+                    CreatedAt = DateTime.Today.AddDays(-10)
+                });
+
+                // 3. Nếu có kho phụ, thêm giá vốn kho phụ (có thể chênh lệch chi phí vận chuyển lưu kho)
+                if (whSub != null)
+                {
+                    costPrices.Add(new CostPriceHist
+                    {
+                        WarehouseId = whSub.Id,
+                        ProductId = p.Id,
+                        EffectDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1),
+                        CostPrice = Math.Round(baseCost * 1.02m, 0), // Kho phụ cộng thêm 2% chi phí luân chuyển
+                        RefDocNo = $"KYTINH-{DateTime.Today:yyyyMM}-HCM",
+                        CalcPeriodName = $"Kỳ tính giá vốn tháng {DateTime.Today:MM/yyyy} - {whSub.Name}",
+                        IsCurrent = true,
+                        SourceType = CostPriceSourceType.AutoCalc,
+                        Remark = $"Giá vốn kho {whSub.Name} bao gồm chi phí điều chuyển luân kho",
+                        CreatedBy = "admin",
+                        CreatedAt = DateTime.Today.AddDays(-10)
+                    });
+                }
+            }
+
+            db.CostPriceHists.AddRange(costPrices);
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -965,6 +1040,26 @@ public static class Seeder
                 CONSTRAINT ""FK_InventoryBlocks_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryBlocks_OrgId_WarehouseId_InvBlockCode"" ON ""InventoryBlocks"" (""OrgId"", ""WarehouseId"", ""InvBlockCode"");",
+            @"CREATE TABLE IF NOT EXISTS ""CostPriceHists"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""EffectDate"" TEXT NOT NULL,
+                ""CostPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""RefDocNo"" TEXT NULL,
+                ""IsCurrent"" INTEGER NOT NULL DEFAULT 1,
+                ""CalcPeriodName"" TEXT NULL,
+                ""SourceType"" INTEGER NOT NULL DEFAULT 0,
+                ""Remark"" TEXT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedBy"" TEXT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_CostPriceHists_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_CostPriceHists_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE INDEX IF NOT EXISTS ""IX_CostPriceHists_OrgId_WarehouseId_ProductId_EffectDate"" ON ""CostPriceHists"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""EffectDate"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
             @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
         };

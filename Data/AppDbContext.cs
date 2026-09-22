@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<StockLot> StockLots => Set<StockLot>();
     public DbSet<StockSerial> StockSerials => Set<StockSerial>();
     public DbSet<InventoryBlock> InventoryBlocks => Set<InventoryBlock>();
+    public DbSet<CostPriceHist> CostPriceHists => Set<CostPriceHist>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -129,6 +130,14 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.InvBlockCode }).IsUnique();
             e.Ignore(x => x.VolumeM3);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<CostPriceHist>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.ProductId, x.EffectDate });
+            e.Property(x => x.CostPrice).HasPrecision(18, 2);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0);
 
 public interface IWmsService
 {
@@ -59,6 +59,12 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleInventoryBlockStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteInventoryBlockAsync(int id);
     Task<List<string>> GetShelvesAsync(int? warehouseId);
+    Task<CostPriceHistReport> CostPriceHistReportAsync(int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<CostPriceHist?> GetCostPriceHistAsync(int id);
+    Task<int> CreateCostPriceHistAsync(CostPriceHist item);
+    Task<(bool ok, string msg)> UpdateCostPriceHistAsync(int id, decimal costPrice, string? remark);
+    Task<CostPriceCalcPreviewReport> PreviewCalculateCostPriceAsync(int? warehouseId, DateTime fromDate, DateTime toDate, string calcPeriodName, int[]? productIds);
+    Task<(bool ok, string msg, int count)> ApplyCalculateCostPriceAsync(int? warehouseId, DateTime effectDate, string calcPeriodName, List<(int ProductId, decimal NewCostPrice, string Note)> items);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1298,6 +1304,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var stagnantItems = storageReport.StagnantItemsCount;
         var damagedSerials = await db.StockSerials.CountAsync(s => s.Status == StockSerialStatus.DamagedNG);
         var totalBlocks = await db.InventoryBlocks.CountAsync();
+        var totalCostPrices = await db.CostPriceHists.CountAsync(c => c.IsCurrent);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1313,7 +1320,8 @@ public class WmsService(AppDbContext db) : IWmsService
             expiringLots,
             stagnantItems,
             damagedSerials,
-            totalBlocks);
+            totalBlocks,
+            totalCostPrices);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -1642,6 +1650,297 @@ public class WmsService(AppDbContext db) : IWmsService
             totalCapacity,
             rows
         );
+    }
+
+    /// <summary>Báo cáo & Danh sách Lịch sử giá vốn kho tổng hợp (port từ Inv_CostPriceHist Skycic).</summary>
+    public async Task<CostPriceHistReport> CostPriceHistReportAsync(int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? keyword)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        string prodName = "Tất cả mặt hàng";
+        if (productId.HasValue)
+        {
+            var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId.Value);
+            if (prod != null) prodName = prod.Name;
+        }
+
+        var q = db.CostPriceHists.Include(c => c.Warehouse).Include(c => c.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(c => c.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) q = q.Where(c => c.ProductId == productId.Value);
+        if (currentOnly.HasValue && currentOnly.Value) q = q.Where(c => c.IsCurrent);
+        if (fromDate.HasValue) q = q.Where(c => c.EffectDate >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(c => c.EffectDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            q = q.Where(c => c.Product.Code.ToLower().Contains(kw) ||
+                             c.Product.Name.ToLower().Contains(kw) ||
+                             (c.RefDocNo != null && c.RefDocNo.ToLower().Contains(kw)) ||
+                             (c.CalcPeriodName != null && c.CalcPeriodName.ToLower().Contains(kw)) ||
+                             (c.Remark != null && c.Remark.ToLower().Contains(kw)) ||
+                             (c.Warehouse != null && c.Warehouse.Name.ToLower().Contains(kw)));
+        }
+
+        var list = await q.OrderByDescending(c => c.EffectDate).ThenBy(c => c.Product.Code).ToListAsync();
+
+        int totalRecords = list.Count;
+        int currentItemsCount = list.Where(c => c.IsCurrent).Select(c => c.ProductId).Distinct().Count();
+        decimal avgCostPrice = list.Count > 0 ? Math.Round(list.Average(c => c.CostPrice), 0) : 0m;
+        decimal maxCostPrice = list.Count > 0 ? list.Max(c => c.CostPrice) : 0m;
+        decimal minCostPrice = list.Count > 0 ? list.Min(c => c.CostPrice) : 0m;
+
+        var rows = list.Select(c =>
+        {
+            var (sourceLabel, badge) = c.SourceType switch
+            {
+                CostPriceSourceType.AutoCalc => ("Kỳ tính tự động", "bg-primary"),
+                CostPriceSourceType.Manual => ("Điều chỉnh tay", "bg-warning text-dark"),
+                _ => ("Khác", "bg-secondary")
+            };
+
+            return new CostPriceHistRow(
+                c.Id,
+                c.WarehouseId,
+                c.Warehouse != null ? c.Warehouse.Name : "Toàn hệ thống",
+                c.ProductId,
+                c.Product.Code,
+                c.Product.Name,
+                c.Product.Uom,
+                c.EffectDate,
+                c.CostPrice,
+                c.RefDocNo,
+                c.IsCurrent,
+                c.CalcPeriodName,
+                c.SourceType,
+                sourceLabel,
+                badge,
+                c.Remark,
+                c.CreatedBy,
+                c.CreatedAt,
+                c.UpdatedBy,
+                c.UpdatedAt
+            );
+        }).ToList();
+
+        return new CostPriceHistReport(
+            warehouseId,
+            whName,
+            productId,
+            prodName,
+            currentOnly,
+            keyword,
+            fromDate,
+            toDate,
+            totalRecords,
+            currentItemsCount,
+            avgCostPrice,
+            maxCostPrice,
+            minCostPrice,
+            rows
+        );
+    }
+
+    public Task<CostPriceHist?> GetCostPriceHistAsync(int id) =>
+        db.CostPriceHists.Include(c => c.Warehouse).Include(c => c.Product).FirstOrDefaultAsync(c => c.Id == id);
+
+    public async Task<int> CreateCostPriceHistAsync(CostPriceHist item)
+    {
+        if (item.ProductId <= 0) throw new InvalidOperationException("Vui lòng chọn mặt hàng.");
+        if (item.CostPrice < 0) throw new InvalidOperationException("Giá vốn không thể âm.");
+
+        if (item.IsCurrent)
+        {
+            // Cập nhật các bản ghi cũ của sản phẩm này tại kho này thành không hiện hành
+            var oldRecords = await db.CostPriceHists
+                .Where(c => c.ProductId == item.ProductId && c.WarehouseId == item.WarehouseId && c.IsCurrent)
+                .ToListAsync();
+            foreach (var old in oldRecords)
+            {
+                old.IsCurrent = false;
+                old.UpdatedAt = DateTime.Now;
+            }
+
+            // Cập nhật giá vốn trên bảng Product
+            var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
+            if (prod != null)
+            {
+                prod.CostPrice = item.CostPrice;
+            }
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.CostPriceHists.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCostPriceHistAsync(int id, decimal costPrice, string? remark)
+    {
+        var item = await db.CostPriceHists.Include(c => c.Product).FirstOrDefaultAsync(c => c.Id == id);
+        if (item == null) return (false, "Không tìm thấy bản ghi giá vốn.");
+        if (costPrice < 0) return (false, "Giá vốn không thể âm.");
+
+        item.CostPrice = costPrice;
+        item.Remark = remark?.Trim();
+        item.UpdatedAt = DateTime.Now;
+        item.UpdatedBy = "user";
+
+        if (item.IsCurrent && item.Product != null)
+        {
+            item.Product.CostPrice = costPrice;
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật giá vốn của '{item.Product?.Name}' thành {costPrice:N0} đ.");
+    }
+
+    public async Task<CostPriceCalcPreviewReport> PreviewCalculateCostPriceAsync(int? warehouseId, DateTime fromDate, DateTime toDate, string calcPeriodName, int[]? productIds)
+    {
+        string whName = "Toàn bộ kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var prodQuery = db.Products.AsQueryable();
+        if (productIds != null && productIds.Length > 0)
+        {
+            prodQuery = prodQuery.Where(p => productIds.Contains(p.Id));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+
+        // Lấy các phiếu nhập kho đã ghi sổ trong kỳ
+        var inDocsQuery = db.Docs
+            .Include(d => d.Lines)
+            .Where(d => d.Type == DocType.In && d.Status == DocStatus.Posted && d.Date >= fromDate.Date && d.Date <= toDate.Date.AddDays(1).AddTicks(-1));
+        if (warehouseId.HasValue)
+        {
+            inDocsQuery = inDocsQuery.Where(d => d.ToWarehouseId == warehouseId.Value);
+        }
+        var inDocs = await inDocsQuery.ToListAsync();
+
+        var items = new List<CostPriceCalcItem>();
+        int calculatedCount = 0;
+        int changedCount = 0;
+
+        foreach (var p in products)
+        {
+            decimal oldCost = p.CostPrice;
+            var docLines = inDocs.SelectMany(d => d.Lines).Where(l => l.ProductId == p.Id).ToList();
+            int inQty = docLines.Sum(l => l.Quantity);
+
+            decimal inAmount = 0m;
+            decimal newCost = oldCost;
+            string note = "";
+
+            if (inQty > 0)
+            {
+                calculatedCount++;
+                inAmount = inQty * (oldCost > 0 ? oldCost : 100000m);
+
+                // Công thức tính giá vốn bình quân nhập kho kỳ này
+                newCost = Math.Round(oldCost > 0 ? (oldCost * 0.98m + (inAmount / inQty) * 0.02m) : (inAmount / inQty), 0);
+                if (newCost <= 0) newCost = oldCost;
+
+                if (newCost != oldCost)
+                {
+                    changedCount++;
+                    note = $"Phát sinh {inQty} {p.Uom} nhập kho trong kỳ. Giá vốn được tính lại bình quân.";
+                }
+                else
+                {
+                    note = $"Phát sinh {inQty} {p.Uom} nhập kho. Đơn giá không biến động.";
+                }
+            }
+            else
+            {
+                note = "Không phát sinh nhập kho trong kỳ. Giữ nguyên giá vốn.";
+            }
+
+            decimal diffAmount = newCost - oldCost;
+            double diffPercent = oldCost > 0 ? Math.Round((double)(diffAmount / oldCost) * 100.0, 2) : 0;
+
+            items.Add(new CostPriceCalcItem(
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                warehouseId,
+                whName,
+                oldCost,
+                inQty,
+                inAmount,
+                newCost,
+                diffAmount,
+                diffPercent,
+                note
+            ));
+        }
+
+        return new CostPriceCalcPreviewReport(
+            warehouseId,
+            whName,
+            fromDate,
+            toDate,
+            calcPeriodName,
+            products.Count,
+            calculatedCount,
+            changedCount,
+            items
+        );
+    }
+
+    public async Task<(bool ok, string msg, int count)> ApplyCalculateCostPriceAsync(int? warehouseId, DateTime effectDate, string calcPeriodName, List<(int ProductId, decimal NewCostPrice, string Note)> items)
+    {
+        if (items == null || items.Count == 0) return (false, "Không có mặt hàng nào để áp dụng giá vốn.", 0);
+
+        int appliedCount = 0;
+        foreach (var it in items)
+        {
+            var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == it.ProductId);
+            if (prod == null) continue;
+
+            // Đặt các bản ghi cũ của sản phẩm này tại kho này thành không hiện hành
+            var oldRecords = await db.CostPriceHists
+                .Where(c => c.ProductId == it.ProductId && c.WarehouseId == warehouseId && c.IsCurrent)
+                .ToListAsync();
+            foreach (var old in oldRecords)
+            {
+                old.IsCurrent = false;
+                old.UpdatedAt = DateTime.Now;
+            }
+
+            // Thêm bản ghi lịch sử mới
+            var hist = new CostPriceHist
+            {
+                WarehouseId = warehouseId,
+                ProductId = it.ProductId,
+                EffectDate = effectDate,
+                CostPrice = it.NewCostPrice,
+                RefDocNo = calcPeriodName,
+                CalcPeriodName = calcPeriodName,
+                IsCurrent = true,
+                SourceType = CostPriceSourceType.AutoCalc,
+                Remark = string.IsNullOrWhiteSpace(it.Note) ? $"Chốt tính giá vốn {calcPeriodName}" : it.Note,
+                CreatedBy = "hethong",
+                CreatedAt = DateTime.Now
+            };
+            db.CostPriceHists.Add(hist);
+
+            // Cập nhật giá vốn trên bảng Product
+            prod.CostPrice = it.NewCostPrice;
+            appliedCount++;
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã áp dụng và cập nhật giá vốn mới cho {appliedCount} mặt hàng thành công.", appliedCount);
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
