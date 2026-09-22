@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int PendingInFGs = 0);
 
 public interface IWmsService
 {
@@ -80,6 +80,11 @@ public interface IWmsService
     Task<(bool ok, string msg)> UnpackCartonAsync(int id, string? reason);
     Task<(bool ok, string msg)> ShipCartonAsync(int id, string refDocNo);
     Task<(bool ok, string msg)> DeleteCartonAsync(int id);
+    Task<InventoryInFGReport> InventoryInFGsAsync(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q);
+    Task<InventoryInFG?> GetInventoryInFGAsync(int id);
+    Task<int> CreateInventoryInFGAsync(InventoryInFG doc, List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
+    Task<(bool ok, string msg)> ApproveInventoryInFGAsync(int id);
+    Task<(bool ok, string msg)> CancelInventoryInFGAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -315,7 +320,9 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (warehouseId.HasValue && d.ToWarehouseId != warehouseId.Value) continue;
                 bool isCusReturn = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("THKH", StringComparison.OrdinalIgnoreCase)
                                    || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("khách trả", StringComparison.OrdinalIgnoreCase));
-                var action = isAudit ? "Kiểm kê - Điều chỉnh thừa (AuditIn)" : (isCusReturn ? "Khách trả lại (CusReturn)" : "Nhập kho (In)");
+                bool isInFG = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("IFFG", StringComparison.OrdinalIgnoreCase)
+                              || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("thành phẩm", StringComparison.OrdinalIgnoreCase));
+                var action = isAudit ? "Kiểm kê - Điều chỉnh thừa (AuditIn)" : (isCusReturn ? "Khách trả lại (CusReturn)" : (isInFG ? "Nhập thành phẩm SX (InFG)" : "Nhập kho (In)"));
                 allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", null, line.Quantity, 0, d.Note, d.RefNo));
             }
             else if (d.Type == DocType.Out)
@@ -1322,6 +1329,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalCostPrices = await db.CostPriceHists.CountAsync(c => c.IsCurrent);
         var totalClosedPeriods = await db.PeriodClosings.CountAsync(p => p.Status == PeriodClosingStatus.Closed);
         var totalCartons = await db.InventoryCartons.CountAsync();
+        var pendingInFGs = await db.InventoryInFGs.CountAsync(f => f.Status == InvInFGStatus.Pending);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1340,7 +1348,8 @@ public class WmsService(AppDbContext db) : IWmsService
             totalBlocks,
             totalCostPrices,
             totalClosedPeriods,
-            totalCartons);
+            totalCartons,
+            pendingInFGs);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -2452,6 +2461,282 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryCartons.Remove(carton);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa thùng carton {carton.CartonCode}.");
+    }
+
+    public async Task<InventoryInFGReport> InventoryInFGsAsync(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var query = db.InventoryInFGs
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .AsQueryable();
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            query = query.Where(f => f.WarehouseId == warehouseId.Value);
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        if (status.HasValue) query = query.Where(f => f.Status == status.Value);
+        if (formType.HasValue) query = query.Where(f => f.FormType == formType.Value);
+
+        if (fromDate.HasValue)
+        {
+            var f = fromDate.Value.Date;
+            query = query.Where(x => x.Date >= f);
+        }
+        if (toDate.HasValue)
+        {
+            var t = toDate.Value.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(x => x.Date <= t);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(f => f.Code.ToLower().Contains(kw) ||
+                                     f.WorkshopName.ToLower().Contains(kw) ||
+                                     (f.WorkOrderNo != null && f.WorkOrderNo.ToLower().Contains(kw)) ||
+                                     (f.ShiftLeader != null && f.ShiftLeader.ToLower().Contains(kw)) ||
+                                     (f.Remark != null && f.Remark.ToLower().Contains(kw)) ||
+                                     f.Lines.Any(l => l.Product.Code.ToLower().Contains(kw) || l.Product.Name.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderByDescending(f => f.Date).ThenByDescending(f => f.Id).ToListAsync();
+
+        int totalReceipts = list.Count;
+        int pendingCount = list.Count(f => f.Status == InvInFGStatus.Pending);
+        int approvedCount = list.Count(f => f.Status == InvInFGStatus.Approved);
+        int cancelledCount = list.Count(f => f.Status == InvInFGStatus.Cancelled);
+        int totalPlanQty = list.Sum(f => f.TotalPlanQty);
+        int totalActualQty = list.Sum(f => f.TotalActualQty);
+        int totalDefectQty = list.Sum(f => f.TotalDefectQty);
+        decimal totalAmount = list.Sum(f => f.TotalAmount);
+
+        var rows = list.Select(f =>
+        {
+            var (formLabel, _) = f.FormType switch
+            {
+                InvInFGFormType.InternalProduction => ("Sản xuất nội bộ", "bg-primary"),
+                InvInFGFormType.Outsourced => ("Gia công ngoài", "bg-info text-dark"),
+                InvInFGFormType.AssemblyPack => ("Lắp ráp đóng gói", "bg-secondary"),
+                InvInFGFormType.WarrantyRefurbish => ("Tân trang bảo hành", "bg-warning text-dark"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            var (statusLabel, badgeClass) = f.Status switch
+            {
+                InvInFGStatus.Pending => ("Chờ duyệt KCS", "bg-warning text-dark"),
+                InvInFGStatus.Approved => ("Đã nhập kho", "bg-success"),
+                InvInFGStatus.Cancelled => ("Đã hủy", "bg-secondary"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            return new InventoryInFGRow(
+                f.Id,
+                f.Code,
+                f.WarehouseId,
+                f.Warehouse.Name,
+                f.FormType,
+                formLabel,
+                f.WorkshopName,
+                f.WorkOrderNo,
+                f.ShiftLeader,
+                f.Date,
+                f.Status,
+                statusLabel,
+                badgeClass,
+                f.TotalPlanQty,
+                f.TotalActualQty,
+                f.TotalDefectQty,
+                f.PassRatePercent,
+                f.TotalAmount,
+                f.TotalSerialsCount,
+                f.StockDocId,
+                f.StockDoc?.Code,
+                f.Remark,
+                f.CreatedBy,
+                f.CreatedAt,
+                f.ApprovedAt,
+                f.ApprovedBy
+            );
+        }).ToList();
+
+        return new InventoryInFGReport(
+            warehouseId,
+            whName,
+            status,
+            formType,
+            fromDate,
+            toDate,
+            q,
+            totalReceipts,
+            pendingCount,
+            approvedCount,
+            cancelledCount,
+            totalPlanQty,
+            totalActualQty,
+            totalDefectQty,
+            totalAmount,
+            rows
+        );
+    }
+
+    public Task<InventoryInFG?> GetInventoryInFGAsync(int id) =>
+        db.InventoryInFGs
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+    public async Task<int> CreateInventoryInFGAsync(
+        InventoryInFG doc,
+        List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)> lines,
+        List<(int productId, string serialNo, string? note)> serials)
+    {
+        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lòng chọn kho thành phẩm.");
+        if (string.IsNullOrWhiteSpace(doc.WorkshopName)) throw new InvalidOperationException("Vui lòng nhập phân xưởng / nhà máy sản xuất.");
+        if (lines.Count == 0 || !lines.Any(l => l.productId > 0 && l.actualQty > 0))
+            throw new InvalidOperationException("Cần ít nhất 1 dòng thành phẩm có số lượng nhập > 0.");
+
+        if (string.IsNullOrWhiteSpace(doc.Code))
+        {
+            doc.Code = $"IFFG{DateTime.Now:yyMMdd}-{await db.InventoryInFGs.CountAsync() + 1:D3}";
+        }
+
+        doc.Status = InvInFGStatus.Pending;
+        doc.CreatedAt = DateTime.Now;
+
+        foreach (var l in lines.Where(x => x.productId > 0 && x.actualQty > 0))
+        {
+            var unitCost = l.unitCost;
+            if (unitCost <= 0)
+            {
+                var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == l.productId);
+                if (prod != null && prod.CostPrice > 0) unitCost = prod.CostPrice;
+            }
+
+            doc.Lines.Add(new InventoryInFGLine
+            {
+                ProductId = l.productId,
+                PlanQty = l.planQty > 0 ? l.planQty : l.actualQty,
+                ActualQty = l.actualQty,
+                DefectQty = l.defectQty >= 0 ? l.defectQty : 0,
+                UnitCost = unitCost,
+                ProductionDate = l.prodDate ?? doc.Date,
+                Note = l.note?.Trim()
+            });
+        }
+
+        foreach (var s in serials.Where(x => x.productId > 0 && !string.IsNullOrWhiteSpace(x.serialNo)))
+        {
+            doc.Serials.Add(new InventoryInFGSerial
+            {
+                ProductId = s.productId,
+                SerialNo = s.serialNo.Trim(),
+                Note = s.note?.Trim()
+            });
+        }
+
+        db.InventoryInFGs.Add(doc);
+        await db.SaveChangesAsync();
+        return doc.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ApproveInventoryInFGAsync(int id)
+    {
+        var doc = await db.InventoryInFGs
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho thành phẩm.");
+        if (doc.Status != InvInFGStatus.Pending) return (false, "Phiếu không ở trạng thái Chờ duyệt.");
+        if (doc.Lines.Count == 0 || !doc.Lines.Any(l => l.ActualQty > 0))
+            return (false, "Phiếu không có mặt hàng thành phẩm nào hợp lệ.");
+
+        // Tạo StockDoc (Phiếu nhập kho) để tăng tồn kho và ghi sổ
+        var stockDoc = new StockDoc
+        {
+            Type = DocType.In,
+            ToWarehouseId = doc.WarehouseId,
+            Date = doc.Date,
+            RefNo = doc.Code,
+            Note = $"Nhập kho thành phẩm theo phiếu {doc.Code} - Lệnh SX: {doc.WorkOrderNo ?? "—"} từ {doc.WorkshopName}",
+            CreatedBy = doc.CreatedBy ?? "system",
+            Status = DocStatus.Draft,
+            CreatedAt = DateTime.Now
+        };
+
+        foreach (var line in doc.Lines.Where(l => l.ActualQty > 0))
+        {
+            stockDoc.Lines.Add(new StockDocLine
+            {
+                ProductId = line.ProductId,
+                Quantity = line.ActualQty
+            });
+        }
+
+        db.Docs.Add(stockDoc);
+        await db.SaveChangesAsync();
+
+        // Ghi sổ phiếu kho
+        var (postOk, postMsg) = await PostDocAsync(stockDoc.Id);
+        if (!postOk)
+        {
+            return (false, $"Lỗi ghi sổ phiếu nhập kho: {postMsg}");
+        }
+
+        doc.StockDocId = stockDoc.Id;
+        doc.Status = InvInFGStatus.Approved;
+        doc.ApprovedAt = DateTime.Now;
+        doc.ApprovedBy = "admin";
+
+        // Tự động đăng ký serial vào danh sách tồn kho khả dụng
+        foreach (var s in doc.Serials)
+        {
+            var exists = await db.StockSerials.AnyAsync(ss =>
+                ss.WarehouseId == doc.WarehouseId &&
+                ss.ProductId == s.ProductId &&
+                ss.SerialNo == s.SerialNo);
+
+            if (!exists)
+            {
+                db.StockSerials.Add(new StockSerial
+                {
+                    WarehouseId = doc.WarehouseId,
+                    ProductId = s.ProductId,
+                    SerialNo = s.SerialNo,
+                    Status = StockSerialStatus.Available,
+                    InDate = doc.Date,
+                    RefNo = doc.Code,
+                    Note = $"Nhập thành phẩm từ {doc.WorkshopName} (Phiếu {doc.Code})",
+                    CreatedAt = DateTime.Now
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã phê duyệt và nhập kho thành công phiếu {doc.Code}. Tổng {doc.TotalActualQty} thành phẩm đã vào kho {doc.Warehouse.Name}.");
+    }
+
+    public async Task<(bool ok, string msg)> CancelInventoryInFGAsync(int id)
+    {
+        var doc = await db.InventoryInFGs.FirstOrDefaultAsync(f => f.Id == id);
+        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho thành phẩm.");
+        if (doc.Status == InvInFGStatus.Approved)
+            return (false, "Phiếu nhập kho thành phẩm đã được phê duyệt ghi sổ kho, không thể hủy bỏ.");
+        if (doc.Status == InvInFGStatus.Cancelled)
+            return (false, "Phiếu này đã được hủy trước đó.");
+
+        doc.Status = InvInFGStatus.Cancelled;
+        await db.SaveChangesAsync();
+        return (true, $"Đã hủy phiếu nhập kho thành phẩm {doc.Code}.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

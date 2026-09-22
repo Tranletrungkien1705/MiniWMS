@@ -1392,6 +1392,171 @@ public class CartonController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryInFGController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.FormType = formType;
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryInFGsAsync(warehouseId, status, formType, fromDate, toDate, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> Create()
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Products = await svc.ProductsAsync();
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, InvInFGFormType formType, string workshopName, string? workOrderNo, string? shiftLeader,
+        DateTime? date, string? remark, int[]? productIds, int[]? planQtys, int[]? actualQtys, int[]? defectQtys, decimal[]? unitCosts, string[]? notes, string? serialsInput)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho nhập thành phẩm.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (string.IsNullOrWhiteSpace(workshopName))
+        {
+            TempData["Error"] = "Vui lòng nhập tên phân xưởng / nhà máy sản xuất.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        var lines = new List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)>();
+        if (productIds != null)
+        {
+            for (int i = 0; i < productIds.Length; i++)
+            {
+                var pid = productIds[i];
+                var plan = (planQtys != null && i < planQtys.Length) ? planQtys[i] : 0;
+                var act = (actualQtys != null && i < actualQtys.Length) ? actualQtys[i] : 0;
+                var def = (defectQtys != null && i < defectQtys.Length) ? defectQtys[i] : 0;
+                var cost = (unitCosts != null && i < unitCosts.Length) ? unitCosts[i] : 0m;
+                var note = (notes != null && i < notes.Length) ? notes[i] : null;
+                if (pid > 0 && act > 0)
+                {
+                    lines.Add((pid, plan, act, def, cost, date, note));
+                }
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 dòng mặt hàng thành phẩm có số lượng nhập > 0.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        // Tách danh sách Serial / IMEI nếu có nhập
+        var serials = new List<(int productId, string serialNo, string? note)>();
+        if (!string.IsNullOrWhiteSpace(serialsInput))
+        {
+            var linesArr = serialsInput.Split(new[] { '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var firstPid = lines.First().productId;
+            foreach (var item in linesArr)
+            {
+                var trimmed = item.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                if (trimmed.Contains(':'))
+                {
+                    var parts = trimmed.Split(':', 2);
+                    var prodCode = parts[0].Trim();
+                    var serNo = parts[1].Trim();
+                    var matchedProd = (await svc.ProductsAsync()).FirstOrDefault(p => p.Code.Equals(prodCode, StringComparison.OrdinalIgnoreCase));
+                    var targetPid = matchedProd?.Id ?? firstPid;
+                    serials.Add((targetPid, serNo, null));
+                }
+                else
+                {
+                    serials.Add((firstPid, trimmed, null));
+                }
+            }
+        }
+
+        try
+        {
+            var doc = new InventoryInFG
+            {
+                WarehouseId = warehouseId,
+                FormType = formType,
+                WorkshopName = workshopName.Trim(),
+                WorkOrderNo = workOrderNo?.Trim(),
+                ShiftLeader = shiftLeader?.Trim(),
+                Date = date ?? DateTime.Today,
+                Remark = remark?.Trim(),
+                CreatedBy = "admin"
+            };
+
+            var id = await svc.CreateInventoryInFGAsync(doc, lines, serials);
+            TempData["Success"] = $"Đã lập phiếu nhập thành phẩm {doc.Code} (Chờ duyệt KCS). Bấm 'Phê duyệt & Nhập kho' để ghi sổ tồn kho.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+            return RedirectToAction(nameof(Create));
+        }
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var doc = await svc.GetInventoryInFGAsync(id);
+        if (doc == null) return NotFound();
+        return View(doc);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApproveInventoryInFGAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        var (ok, msg) = await svc.CancelInventoryInFGAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.InventoryInFGsAsync(warehouseId, status, formType, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BẢNG KÊ QUẢN LÝ PHIẾU NHẬP KHO THÀNH PHẨM SẢN XUẤT");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Từ ngày:;{(report.FromDate.HasValue ? report.FromDate.Value.ToString("dd/MM/yyyy") : "Tất cả")};Đến ngày:;{(report.ToDate.HasValue ? report.ToDate.Value.ToString("dd/MM/yyyy") : "Tất cả")}");
+        sb.AppendLine($"Trạng thái lọc:;{(status.HasValue ? status.Value.ToString() : "Tất cả")};Hình thức:;{(formType.HasValue ? formType.Value.ToString() : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phiếu;Ngày nhập;Kho thành phẩm;Hình thức nhập;Phân xưởng / Đối tác SX;Lệnh SX / Mẻ;Quản đốc ca;SL Kế hoạch;SL Thực nhập;SL Phế phẩm;Tỷ lệ KCS (%);Tổng giá trị (VNĐ);Số lượng Serial;Trạng thái;Phiếu kho liên kết;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var dateStr = r.Date.ToString("dd/MM/yyyy");
+            sb.AppendLine($"{stt++};\"{r.Code}\";{dateStr};\"{r.WarehouseName}\";\"{r.FormTypeLabel}\";\"{r.WorkshopName}\";\"{r.WorkOrderNo ?? "—"}\";\"{r.ShiftLeader ?? "—"}\";{r.TotalPlanQty};{r.TotalActualQty};{r.TotalDefectQty};{r.PassRatePercent:F1}%;{r.TotalAmount:F0};{r.TotalSerialsCount};\"{r.StatusLabel}\";\"{r.StockDocCode ?? "—"}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;TỔNG CỘNG:;{report.TotalPlanQty};{report.TotalActualQty};{report.TotalDefectQty};;{report.TotalAmount:F0};;Chờ duyệt: {report.PendingCount};Đã nhập kho: {report.ApprovedCount};Đã hủy: {report.CancelledCount}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_NhapKhoThanhPham_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 
 
 

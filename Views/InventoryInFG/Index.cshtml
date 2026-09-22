@@ -1,0 +1,294 @@
+@model InventoryInFGReport
+@{
+    ViewData["Title"] = "Nhập kho thành phẩm sản xuất (InvF_InventoryInFG)";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold text-dark">
+            <i class="bi bi-box-arrow-in-down-right text-primary me-2"></i>Nhập kho thành phẩm sản xuất
+        </h4>
+        <div class="text-muted small">
+            Nghiệp vụ tiếp nhận thành phẩm xuất xưởng, đối soát KCS & tự động tăng tồn kho (Port từ InvF_InventoryInFG Skycic)
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/InventoryInFG/ExportCsv?warehouseId=@Model.WarehouseId&status=@((int?)Model.StatusFilter)&formType=@((int?)Model.FormTypeFilter)&fromDate=@(Model.FromDate?.ToString("yyyy-MM-dd"))&toDate=@(Model.ToDate?.ToString("yyyy-MM-dd"))&q=@Model.Keyword"
+           class="btn btn-outline-success btn-sm">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-printer me-1"></i> In danh sách
+        </button>
+        <a href="/InventoryInFG/Create" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i> Lập phiếu nhập TP mới
+        </a>
+    </div>
+</div>
+
+<!-- KPI Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-primary">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">Tổng số phiếu</div>
+                <div class="stat-num text-primary">@Model.TotalReceipts</div>
+                <div class="text-muted" style="font-size: 11px;">Tất cả phiếu nhập TP</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-warning">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">Chờ duyệt KCS</div>
+                <div class="stat-num text-warning">@Model.PendingCount</div>
+                <div class="text-muted" style="font-size: 11px;">Chờ nghiệm thu & duyệt</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-success">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">Đã nhập kho</div>
+                <div class="stat-num text-success">@Model.ApprovedCount</div>
+                <div class="text-muted" style="font-size: 11px;">Đã ghi sổ tăng tồn</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-info">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">SL Kế hoạch</div>
+                <div class="stat-num text-info">@Model.TotalPlanQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size: 11px;">Theo lệnh sản xuất</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-primary">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">Thực nhập đạt KCS</div>
+                <div class="stat-num text-primary">@Model.TotalActualQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size: 11px;">Phế phẩm: <b class="text-danger">@Model.TotalDefectQty</b></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="card h-100 shadow-sm border-0 border-start border-4 border-success">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-medium">Tổng giá trị TP</div>
+                <div class="stat-num text-success" style="font-size: 20px;">@Model.TotalAmount.ToString("N0") đ</div>
+                <div class="text-muted" style="font-size: 11px;">Chi phí sản xuất kho</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho thành phẩm</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">-- Tất cả kho lưu trữ --</option>
+                    @foreach (var w in whs)
+                    {
+                        if (Model.WarehouseId == w.Id)
+                        {
+                            <option value="@w.Id" selected>@w.Name (@w.Code)</option>
+                        }
+                        else
+                        {
+                            <option value="@w.Id">@w.Name (@w.Code)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Trạng thái</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <option value="0" selected="@(Model.StatusFilter == InvInFGStatus.Pending)">Chờ duyệt KCS</option>
+                    <option value="1" selected="@(Model.StatusFilter == InvInFGStatus.Approved)">Đã nhập kho</option>
+                    <option value="2" selected="@(Model.StatusFilter == InvInFGStatus.Cancelled)">Đã hủy</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Hình thức nhập</label>
+                <select name="formType" class="form-select form-select-sm">
+                    <option value="">-- Tất cả hình thức --</option>
+                    <option value="0" selected="@(Model.FormTypeFilter == InvInFGFormType.InternalProduction)">Sản xuất nội bộ</option>
+                    <option value="1" selected="@(Model.FormTypeFilter == InvInFGFormType.Outsourced)">Gia công ngoài (OEM)</option>
+                    <option value="2" selected="@(Model.FormTypeFilter == InvInFGFormType.AssemblyPack)">Lắp ráp đóng gói</option>
+                    <option value="3" selected="@(Model.FormTypeFilter == InvInFGFormType.WarrantyRefurbish)">Tân trang bảo hành</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Từ khóa (Mã, Xưởng, Lệnh SX, Quản đốc)</label>
+                <input type="text" name="q" value="@Model.Keyword" placeholder="Nhập từ khóa..." class="form-select form-select-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/InventoryInFG" class="btn btn-outline-secondary btn-sm" title="Xóa bộ lọc">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách phiếu nhập kho thành phẩm -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        @if (Model.Rows.Count == 0)
+        {
+            <div class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <div class="mt-2 text-muted fw-semibold">Không tìm thấy phiếu nhập kho thành phẩm nào phù hợp</div>
+                <div class="small text-secondary">Hãy thay đổi bộ lọc hoặc bấm tạo phiếu nhập kho thành phẩm mới.</div>
+                <a href="/InventoryInFG/Create" class="btn btn-primary btn-sm mt-3">
+                    <i class="bi bi-plus-circle me-1"></i> Tạo phiếu nhập TP mới
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3" style="width: 50px;">STT</th>
+                            <th>Mã phiếu TP</th>
+                            <th>Ngày nhập</th>
+                            <th>Kho thành phẩm</th>
+                            <th>Hình thức nhập</th>
+                            <th>Phân xưởng / Đối tác</th>
+                            <th>Lệnh SX / Quản đốc</th>
+                            <th class="text-end">Kế hoạch</th>
+                            <th class="text-end">Thực nhập</th>
+                            <th class="text-end">Phế phẩm</th>
+                            <th class="text-end">Tỷ lệ KCS</th>
+                            <th class="text-end">Tổng tiền (VNĐ)</th>
+                            <th class="text-center">Serial</th>
+                            <th class="text-center">Trạng thái</th>
+                            <th class="text-center pe-3">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int stt = 1; }
+                        @foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted small">@(stt++)</td>
+                                <td>
+                                    <a href="/InventoryInFG/Detail/@r.Id" class="fw-bold text-decoration-none font-monospace text-primary">
+                                        @r.Code
+                                    </a>
+                                    @if (!string.IsNullOrWhiteSpace(r.StockDocCode))
+                                    {
+                                        <div class="small text-muted font-monospace" style="font-size: 11px;">
+                                            <i class="bi bi-link-45deg"></i>@r.StockDocCode
+                                        </div>
+                                    }
+                                </td>
+                                <td class="small">
+                                    @r.Date.ToString("dd/MM/yyyy")
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi bi-building me-1"></i>@r.WarehouseName
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1">
+                                        @r.FormTypeLabel
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@r.WorkshopName</div>
+                                    @if (!string.IsNullOrWhiteSpace(r.Remark))
+                                    {
+                                        <div class="text-muted small text-truncate" style="max-width: 180px;" title="@r.Remark">
+                                            @r.Remark
+                                        </div>
+                                    }
+                                </td>
+                                <td class="small">
+                                    @if (!string.IsNullOrWhiteSpace(r.WorkOrderNo))
+                                    {
+                                        <div class="fw-semibold text-secondary font-monospace"><i class="bi bi-gear me-1"></i>@r.WorkOrderNo</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(r.ShiftLeader))
+                                    {
+                                        <div class="text-muted" style="font-size: 11px;"><i class="bi bi-person me-1"></i>@r.ShiftLeader</div>
+                                    }
+                                </td>
+                                <td class="text-end fw-semibold text-secondary">
+                                    @r.TotalPlanQty.ToString("N0")
+                                </td>
+                                <td class="text-end fw-bold text-success">
+                                    @r.TotalActualQty.ToString("N0")
+                                </td>
+                                <td class="text-end">
+                                    @if (r.TotalDefectQty > 0)
+                                    {
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                                            @r.TotalDefectQty
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">0</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    @if (r.PassRatePercent >= 95)
+                                    {
+                                        <span class="badge bg-success-subtle text-success">@r.PassRatePercent.ToString("F1")%</span>
+                                    }
+                                    else if (r.PassRatePercent >= 80)
+                                    {
+                                        <span class="badge bg-warning-subtle text-warning-emphasis">@r.PassRatePercent.ToString("F1")%</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger-subtle text-danger">@r.PassRatePercent.ToString("F1")%</span>
+                                    }
+                                </td>
+                                <td class="text-end fw-bold text-dark font-monospace">
+                                    @r.TotalAmount.ToString("N0") đ
+                                </td>
+                                <td class="text-center">
+                                    @if (r.TotalSerialsCount > 0)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" title="@r.TotalSerialsCount mã Serial/IMEI">
+                                            <i class="bi bi-upc-scan me-1"></i>@r.TotalSerialsCount
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass px-2 py-1">
+                                        @r.StatusLabel
+                                    </span>
+                                </td>
+                                <td class="text-center pe-3">
+                                    <a href="/InventoryInFG/Detail/@r.Id" class="btn btn-sm btn-outline-primary py-0 px-2" title="Xem chi tiết">
+                                        <i class="bi bi-eye me-1"></i>Xem
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

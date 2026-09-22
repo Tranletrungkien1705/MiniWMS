@@ -28,6 +28,9 @@ public class AppDbContext : DbContext
     public DbSet<PeriodClosing> PeriodClosings => Set<PeriodClosing>();
     public DbSet<PeriodClosingLine> PeriodClosingLines => Set<PeriodClosingLine>();
     public DbSet<InventoryCarton> InventoryCartons => Set<InventoryCarton>();
+    public DbSet<InventoryInFG> InventoryInFGs => Set<InventoryInFG>();
+    public DbSet<InventoryInFGLine> InventoryInFGLines => Set<InventoryInFGLine>();
+    public DbSet<InventoryInFGSerial> InventoryInFGSerials => Set<InventoryInFGSerial>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -176,6 +179,36 @@ public class AppDbContext : DbContext
             e.Ignore(x => x.VolumeM3);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryInFG>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
+            e.Ignore(x => x.TotalPlanQty);
+            e.Ignore(x => x.TotalActualQty);
+            e.Ignore(x => x.TotalDefectQty);
+            e.Ignore(x => x.TotalAmount);
+            e.Ignore(x => x.TotalSerialsCount);
+            e.Ignore(x => x.PassRatePercent);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.StockDoc).WithMany().HasForeignKey(x => x.StockDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryInFGLine>(e =>
+        {
+            e.Property(x => x.UnitCost).HasPrecision(18, 2);
+            e.Ignore(x => x.Amount);
+            e.Ignore(x => x.PassRate);
+            e.HasOne(x => x.InventoryInFG).WithMany(x => x.Lines).HasForeignKey(x => x.InventoryInFGId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryInFGSerial>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.InventoryInFGId, x.ProductId, x.SerialNo });
+            e.HasOne(x => x.InventoryInFG).WithMany(x => x.Serials).HasForeignKey(x => x.InventoryInFGId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

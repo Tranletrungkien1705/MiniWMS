@@ -888,6 +888,116 @@ app.MapDelete("/api/inventory-cartons/{id:int}", async (int id, IWmsService svc)
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Nhập kho thành phẩm sản xuất (port từ InvF_InventoryInFG Skycic)
+app.MapGet("/api/inventory-in-fg", async (int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryInFGsAsync(warehouseId, status, formType, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-in-fg/{id:int}", async (int id, IWmsService svc) =>
+{
+    var doc = await svc.GetInventoryInFGAsync(id);
+    if (doc == null) return Results.NotFound(new { error = "Không tìm thấy phiếu nhập kho thành phẩm." });
+    return Results.Ok(new
+    {
+        doc.Id,
+        doc.Code,
+        Warehouse = doc.Warehouse.Name,
+        doc.WarehouseId,
+        FormType = doc.FormType.ToString(),
+        doc.WorkshopName,
+        doc.WorkOrderNo,
+        doc.ShiftLeader,
+        Date = doc.Date.ToString("yyyy-MM-dd"),
+        Status = doc.Status.ToString(),
+        doc.TotalPlanQty,
+        doc.TotalActualQty,
+        doc.TotalDefectQty,
+        doc.TotalAmount,
+        doc.PassRatePercent,
+        doc.TotalSerialsCount,
+        doc.StockDocId,
+        StockDocCode = doc.StockDoc?.Code,
+        doc.Remark,
+        doc.CreatedBy,
+        doc.CreatedAt,
+        ApprovedAt = doc.ApprovedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        doc.ApprovedBy,
+        Lines = doc.Lines.Select(l => new
+        {
+            l.Id,
+            ProductCode = l.Product.Code,
+            ProductName = l.Product.Name,
+            l.Product.Uom,
+            l.ProductId,
+            l.PlanQty,
+            l.ActualQty,
+            l.DefectQty,
+            l.UnitCost,
+            l.Amount,
+            l.PassRate,
+            ProductionDate = l.ProductionDate?.ToString("yyyy-MM-dd"),
+            l.Note
+        }),
+        Serials = doc.Serials.Select(s => new
+        {
+            s.Id,
+            ProductCode = s.Product.Code,
+            ProductName = s.Product.Name,
+            s.ProductId,
+            s.SerialNo,
+            s.Note
+        })
+    });
+});
+
+app.MapPost("/api/inventory-in-fg", async (CreateInventoryInFGDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.WorkshopName)) return Results.BadRequest(new { error = "Cần WorkshopName." });
+    if (dto.Lines == null || dto.Lines.Count == 0) return Results.BadRequest(new { error = "Cần ít nhất 1 dòng thành phẩm." });
+
+    try
+    {
+        var doc = new InventoryInFG
+        {
+            WarehouseId = dto.WarehouseId,
+            FormType = dto.FormType,
+            WorkshopName = dto.WorkshopName.Trim(),
+            WorkOrderNo = dto.WorkOrderNo?.Trim(),
+            ShiftLeader = dto.ShiftLeader?.Trim(),
+            Date = dto.Date ?? DateTime.Today,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+
+        var lines = dto.Lines.Select(l => (l.ProductId, l.PlanQty, l.ActualQty, l.DefectQty, l.UnitCost, (DateTime?)null, l.Note)).ToList();
+        var serials = dto.Serials != null
+            ? dto.Serials.Select(s => (s.ProductId, s.SerialNo, s.Note)).ToList()
+            : new List<(int, string, string?)>();
+
+        var id = await svc.CreateInventoryInFGAsync(doc, lines, serials);
+        return Results.Ok(new { id, code = doc.Code, status = doc.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/inventory-in-fg/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveInventoryInFGAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-in-fg/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.CancelInventoryInFGAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -923,3 +1033,6 @@ record GenerateCartonBatchDto(int WarehouseId, string? CartonType, int Count, do
 record PackCartonDto(int ProductId, int Quantity, string? LotNo, double GrossWeightKg, string? PackerName, string? Note);
 record ShipCartonDto(string RefDocNo);
 record UnpackCartonDto(string? Reason);
+record CreateInventoryInFGDto(int WarehouseId, InvInFGFormType FormType, string WorkshopName, string? WorkOrderNo, string? ShiftLeader, DateTime? Date, string? Remark, List<InventoryInFGLineDto> Lines, List<InventoryInFGSerialDto>? Serials);
+record InventoryInFGLineDto(int ProductId, int PlanQty, int ActualQty, int DefectQty, decimal UnitCost, string? Note);
+record InventoryInFGSerialDto(int ProductId, string SerialNo, string? Note);

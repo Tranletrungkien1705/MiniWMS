@@ -1130,13 +1130,126 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Quản lý Nhập kho thành phẩm sản xuất (InventoryInFG - port từ InvF_InventoryInFG Skycic)
+        if (!await db.InventoryInFGs.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001");
+            var today = DateTime.Today;
+
+            if (whHn != null && ao != null && quan != null && vay != null)
+            {
+                // Phiếu nhập kho StockDoc cho phiếu nhập TP IFFG2603-001 đã duyệt
+                var pnFG = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = whHn.Id,
+                    Code = "PNSEED-005",
+                    Status = DocStatus.Posted,
+                    Date = today.AddDays(-3),
+                    RefNo = "IFFG2603-001",
+                    Note = "Nhập kho thành phẩm theo phiếu IFFG2603-001 - Lệnh SX: LSX-2026-0312 từ Phân xưởng May Xuất Khẩu 1",
+                    CreatedBy = "seed"
+                };
+                pnFG.Lines.Add(new StockDocLine { ProductId = ao.Id, Quantity = 48 });
+                pnFG.Lines.Add(new StockDocLine { ProductId = quan.Id, Quantity = 30 });
+                db.Docs.Add(pnFG);
+                await db.SaveChangesAsync();
+
+                // 1. Phiếu ĐÃ DUYỆT & NHẬP KHO (Approved)
+                var fg1 = new InventoryInFG
+                {
+                    Code = "IFFG2603-001",
+                    WarehouseId = whHn.Id,
+                    FormType = InvInFGFormType.InternalProduction,
+                    WorkshopName = "Phân xưởng May Xuất Khẩu 1",
+                    WorkOrderNo = "LSX-2026-0312",
+                    ShiftLeader = "Nguyễn Văn Thắng (Quản đốc)",
+                    Date = today.AddDays(-3),
+                    Status = InvInFGStatus.Approved,
+                    StockDocId = pnFG.Id,
+                    CreatedAt = today.AddDays(-3),
+                    ApprovedAt = today.AddDays(-3).AddHours(2),
+                    ApprovedBy = "admin",
+                    Remark = "Nhập kho thành phẩm hoàn thành theo kế hoạch đơn hàng xuất khẩu quý 1",
+                    CreatedBy = "seed"
+                };
+
+                fg1.Lines.Add(new InventoryInFGLine
+                {
+                    ProductId = ao.Id,
+                    PlanQty = 50,
+                    ActualQty = 48,
+                    DefectQty = 2,
+                    UnitCost = 145000m,
+                    ProductionDate = today.AddDays(-4),
+                    Note = "48 áo sơ mi đạt chuẩn KCS xuất khẩu loại 1; 2 áo lệch khuy chuyển sửa lại xưởng"
+                });
+
+                fg1.Lines.Add(new InventoryInFGLine
+                {
+                    ProductId = quan.Id,
+                    PlanQty = 30,
+                    ActualQty = 30,
+                    DefectQty = 0,
+                    UnitCost = 270000m,
+                    ProductionDate = today.AddDays(-4),
+                    Note = "100% đạt chuẩn thông số kỹ thuật xuất xưởng"
+                });
+
+                fg1.Serials.Add(new InventoryInFGSerial { ProductId = ao.Id, SerialNo = "AO2603-001", Note = "Áo sơ mi size M" });
+                fg1.Serials.Add(new InventoryInFGSerial { ProductId = ao.Id, SerialNo = "AO2603-002", Note = "Áo sơ mi size L" });
+                fg1.Serials.Add(new InventoryInFGSerial { ProductId = ao.Id, SerialNo = "AO2603-003", Note = "Áo sơ mi size XL" });
+                fg1.Serials.Add(new InventoryInFGSerial { ProductId = quan.Id, SerialNo = "QJ2603-001", Note = "Quần jeans size 31" });
+                fg1.Serials.Add(new InventoryInFGSerial { ProductId = quan.Id, SerialNo = "QJ2603-002", Note = "Quần jeans size 32" });
+
+                db.InventoryInFGs.Add(fg1);
+
+                // 2. Phiếu ĐANG CHỜ DUYỆT KCS (Pending)
+                var fg2 = new InventoryInFG
+                {
+                    Code = "IFFG2603-002",
+                    WarehouseId = whHn.Id,
+                    FormType = InvInFGFormType.Outsourced,
+                    WorkshopName = "Xưởng Gia Công May Đo Tân Tiến",
+                    WorkOrderNo = "LSX-2026-0318",
+                    ShiftLeader = "Phạm Hồng Quân (Giám sát OEM)",
+                    Date = today,
+                    Status = InvInFGStatus.Pending,
+                    CreatedAt = today,
+                    Remark = "Nhập kho thành phẩm váy đầm công sở từ đối tác OEM Tân Tiến, đang chờ kiểm tra nghiệm thu KCS",
+                    CreatedBy = "seed"
+                };
+
+                fg2.Lines.Add(new InventoryInFGLine
+                {
+                    ProductId = vay.Id,
+                    PlanQty = 40,
+                    ActualQty = 38,
+                    DefectQty = 2,
+                    UnitCost = 310000m,
+                    ProductionDate = today.AddDays(-1),
+                    Note = "38 váy đầm dạ hội đạt chuẩn đóng gói, 2 váy sờn mép chỉ trả đối tác dệt lại"
+                });
+
+                fg2.Serials.Add(new InventoryInFGSerial { ProductId = vay.Id, SerialNo = "VD2603-001", Note = "Váy đầm dạ hội size S" });
+                fg2.Serials.Add(new InventoryInFGSerial { ProductId = vay.Id, SerialNo = "VD2603-002", Note = "Váy đầm dạ hội size M" });
+
+                db.InventoryInFGs.Add(fg2);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -1385,7 +1498,54 @@ public static class Seeder
                 CONSTRAINT ""FK_InventoryCartons_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE SET NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryCartons_OrgId_CartonCode"" ON ""InventoryCartons"" (""OrgId"", ""CartonCode"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryCartons_OrgId_WarehouseId_Status"" ON ""InventoryCartons"" (""OrgId"", ""WarehouseId"", ""Status"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryCartons_OrgId_WarehouseId_Status"" ON ""InventoryCartons"" (""OrgId"", ""WarehouseId"", ""Status"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryInFGs"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""FormType"" INTEGER NOT NULL DEFAULT 0,
+                ""WorkshopName"" TEXT NOT NULL,
+                ""WorkOrderNo"" TEXT NULL,
+                ""ShiftLeader"" TEXT NULL,
+                ""Date"" TEXT NOT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""Status"" INTEGER NOT NULL DEFAULT 0,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""ApprovedAt"" TEXT NULL,
+                ""ApprovedBy"" TEXT NULL,
+                ""Remark"" TEXT NULL,
+                ""StockDocId"" INTEGER NULL,
+                CONSTRAINT ""FK_InventoryInFGs_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_InventoryInFGs_Docs_StockDocId"" FOREIGN KEY (""StockDocId"") REFERENCES ""Docs"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryInFGs_OrgId_Code"" ON ""InventoryInFGs"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryInFGs_OrgId_WarehouseId_Status"" ON ""InventoryInFGs"" (""OrgId"", ""WarehouseId"", ""Status"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryInFGLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""InventoryInFGId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""PlanQty"" INTEGER NOT NULL,
+                ""ActualQty"" INTEGER NOT NULL,
+                ""DefectQty"" INTEGER NOT NULL DEFAULT 0,
+                ""UnitCost"" NUMERIC NOT NULL DEFAULT 0,
+                ""ProductionDate"" TEXT NULL,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryInFGLines_InventoryInFGs_InventoryInFGId"" FOREIGN KEY (""InventoryInFGId"") REFERENCES ""InventoryInFGs"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_InventoryInFGLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryInFGSerials"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""InventoryInFGId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""SerialNo"" TEXT NOT NULL,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryInFGSerials_InventoryInFGs_InventoryInFGId"" FOREIGN KEY (""InventoryInFGId"") REFERENCES ""InventoryInFGs"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_InventoryInFGSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryInFGSerials_OrgId_InventoryInFGId_ProductId_SerialNo"" ON ""InventoryInFGSerials"" (""OrgId"", ""InventoryInFGId"", ""ProductId"", ""SerialNo"");"
         };
         foreach (var s in sql)
         {

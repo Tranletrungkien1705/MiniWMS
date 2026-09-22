@@ -1,0 +1,454 @@
+@model InventoryInFG
+@{
+    ViewData["Title"] = $"Phiếu nhập kho thành phẩm {Model.Code}";
+    var (statusLabel, badgeClass) = Model.Status switch
+    {
+        InvInFGStatus.Pending => ("Chờ duyệt KCS", "bg-warning text-dark"),
+        InvInFGStatus.Approved => ("Đã nhập kho", "bg-success"),
+        InvInFGStatus.Cancelled => ("Đã hủy", "bg-secondary"),
+        _ => ("Khác", "bg-light text-dark")
+    };
+
+    var formLabel = Model.FormType switch
+    {
+        InvInFGFormType.InternalProduction => "Sản xuất nội bộ (SX_NOIBO)",
+        InvInFGFormType.Outsourced => "Gia công ngoài (GIA_CONG)",
+        InvInFGFormType.AssemblyPack => "Lắp ráp & Đóng gói hoàn thiện",
+        InvInFGFormType.WarrantyRefurbish => "Tân trang thu hồi sau bảo hành",
+        _ => "Khác"
+    };
+}
+
+<style>
+    @@media print {
+        body * { visibility: hidden; }
+        #fgPrintArea, #fgPrintArea * { visibility: visible; }
+        #fgPrintArea { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; background: #fff; }
+        .no-print { display: none !important; }
+    }
+    .barcode-font {
+        font-family: 'Courier New', Courier, monospace;
+        letter-spacing: 4px;
+        font-weight: 800;
+    }
+</style>
+
+<!-- Tiêu đề & Nút thao tác (no-print) -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 no-print">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/InventoryInFG" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Quay lại
+        </a>
+        <h4 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-box-arrow-in-down-right text-primary me-2"></i>Phiếu nhập TP: <span class="text-primary font-monospace">@Model.Code</span>
+        </h4>
+        <span class="badge @badgeClass fs-6 px-3 py-2 ms-2">@statusLabel</span>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="button" onclick="window.print()" class="btn btn-outline-dark btn-sm">
+            <i class="bi bi-printer me-1"></i> In phiếu nhập kho A4
+        </button>
+
+        @if (Model.Status == InvInFGStatus.Pending)
+        {
+            <form method="post" action="/InventoryInFG/Approve/@Model.Id" class="d-inline" onsubmit="return confirm('Phê duyệt phiếu nhập thành phẩm @Model.Code? Toàn bộ @Model.TotalActualQty thành phẩm sẽ được ghi sổ tăng tồn kho và kích hoạt Serial.');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-success btn-sm fw-semibold">
+                    <i class="bi bi-check-circle me-1"></i> Phê duyệt & Nhập kho
+                </button>
+            </form>
+
+            <form method="post" action="/InventoryInFG/Cancel/@Model.Id" class="d-inline" onsubmit="return confirm('Hủy phiếu nhập kho thành phẩm @Model.Code?');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-x-circle me-1"></i> Hủy phiếu
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+<!-- Alert trạng thái ghi sổ (no-print) -->
+@if (Model.Status == InvInFGStatus.Approved)
+{
+    <div class="alert alert-success d-flex align-items-center justify-content-between py-2 mb-3 no-print">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+            <div>
+                Phiếu đã được <b>Phê duyệt & Nhập kho</b> vào lúc <b>@(Model.ApprovedAt?.ToString("dd/MM/yyyy HH:mm"))</b> bởi <b>@Model.ApprovedBy</b>.
+                Số lượng thành phẩm đã được ghi sổ tăng tồn kho thực tế.
+            </div>
+        </div>
+        @if (Model.StockDocId.HasValue)
+        {
+            <a href="/Doc/Detail/@Model.StockDocId.Value" class="btn btn-sm btn-outline-success bg-white">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Xem Phiếu kho liên kết
+            </a>
+        }
+    </div>
+}
+else if (Model.Status == InvInFGStatus.Pending)
+{
+    <div class="alert alert-warning py-2 mb-3 no-print">
+        <i class="bi bi-hourglass-split me-1"></i>
+        Phiếu đang ở trạng thái <b>Chờ duyệt KCS</b>. Bấm <b>"Phê duyệt & Nhập kho"</b> ở góc phải để chính thức tăng tồn kho thành phẩm và kích hoạt danh sách Serial/Barcode.
+    </div>
+}
+
+<div class="row g-3 no-print">
+    <!-- KPI nhanh -->
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-info">
+            <div class="card-body p-3">
+                <div class="text-muted small">Kế hoạch sản xuất</div>
+                <div class="stat-num text-info">@Model.TotalPlanQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size: 11px;">Số lượng giao lệnh</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-success">
+            <div class="card-body p-3">
+                <div class="text-muted small">Thực nhập đạt KCS</div>
+                <div class="stat-num text-success">@Model.TotalActualQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size: 11px;">Đạt chuẩn nhập kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-danger">
+            <div class="card-body p-3">
+                <div class="text-muted small">Phế phẩm / Lỗi sửa</div>
+                <div class="stat-num text-danger">@Model.TotalDefectQty</div>
+                <div class="text-muted" style="font-size: 11px;">Tỷ lệ đạt: <b class="text-primary">@Model.PassRatePercent.ToString("F1")%</b></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-primary">
+            <div class="card-body p-3">
+                <div class="text-muted small">Tổng giá trị thành phẩm</div>
+                <div class="stat-num text-primary" style="font-size: 20px;">@Model.TotalAmount.ToString("N0") đ</div>
+                <div class="text-muted" style="font-size: 11px;">Giá vốn kho sản xuất</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thông tin phiếu chi tiết -->
+    <div class="col-lg-12">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-dark">
+                    <i class="bi bi-card-heading me-1 text-primary"></i> Thông tin phiếu tiếp nhận thành phẩm (InvF_InventoryInFG)
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Mã chứng từ:</div>
+                        <div class="fw-bold font-monospace text-primary fs-6">@Model.Code</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Kho tiếp nhận thành phẩm:</div>
+                        <div class="fw-bold text-dark">@Model.Warehouse.Name (@Model.Warehouse.Code)</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Hình thức tiếp nhận:</div>
+                        <div><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">@formLabel</span></div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">Phân xưởng / Đối tác sản xuất:</div>
+                        <div class="fw-semibold text-dark">@Model.WorkshopName</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Lệnh sản xuất / Số mẻ:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.WorkOrderNo ?? "—")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Quản đốc ca / Người phụ trách:</div>
+                        <div class="fw-semibold text-dark">@(Model.ShiftLeader ?? "—")</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">Ngày lập & nhập kho:</div>
+                        <div class="fw-semibold text-dark">@Model.Date.ToString("dd/MM/yyyy")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Người lập phiếu:</div>
+                        <div class="fw-semibold text-dark">@Model.CreatedBy (lúc @Model.CreatedAt.ToString("dd/MM/yyyy HH:mm"))</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Phiếu kho liên kết:</div>
+                        <div class="fw-semibold">
+                            @if (Model.StockDoc != null)
+                            {
+                                <a href="/Doc/Detail/@Model.StockDocId" class="text-success text-decoration-none font-monospace">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>@Model.StockDoc.Code (Đã ghi sổ)
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Chưa ghi sổ</span>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.Remark))
+                    {
+                        <div class="col-12">
+                            <div class="text-muted small">Ghi chú / Diễn giải:</div>
+                            <div class="p-2 bg-light rounded text-dark">@Model.Remark</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bảng danh sách mặt hàng thành phẩm -->
+    <div class="col-lg-12">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold text-dark">
+                    <i class="bi bi-box-seam text-primary me-1"></i> Chi tiết mặt hàng thành phẩm nhập kho
+                </h6>
+                <span class="badge bg-secondary-subtle text-secondary">@Model.Lines.Count mặt hàng</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 50px;">STT</th>
+                                <th>Mã SP</th>
+                                <th>Tên hàng thành phẩm</th>
+                                <th>ĐVT</th>
+                                <th class="text-end">SL Kế hoạch</th>
+                                <th class="text-end">SL Thực nhập (KCS)</th>
+                                <th class="text-end">Phế phẩm</th>
+                                <th class="text-end">Tỷ lệ đạt (%)</th>
+                                <th class="text-end">Đơn giá vốn SX</th>
+                                <th class="text-end">Thành tiền (VNĐ)</th>
+                                <th class="pe-3">Ghi chú nghiệm thu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int lineIdx = 1; }
+                            @foreach (var l in Model.Lines)
+                            {
+                                <tr>
+                                    <td class="ps-3 text-muted small">@(lineIdx++)</td>
+                                    <td class="fw-bold font-monospace text-primary">@l.Product.Code</td>
+                                    <td class="fw-semibold">
+                                        @l.Product.Name
+                                        <div class="text-muted small" style="font-size: 11px;">
+                                            <a href="/WarehouseCard?productId=@l.ProductId" class="text-decoration-none">
+                                                <i class="bi bi-journal-text me-1"></i>Xem thẻ kho
+                                            </a>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge bg-light text-dark border">@l.Product.Uom</span></td>
+                                    <td class="text-end text-secondary fw-semibold">@l.PlanQty.ToString("N0")</td>
+                                    <td class="text-end text-success fw-bold fs-6">@l.ActualQty.ToString("N0")</td>
+                                    <td class="text-end">
+                                        @if (l.DefectQty > 0)
+                                        {
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">@l.DefectQty</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">0</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <span class="badge @(l.PassRate >= 95 ? "bg-success-subtle text-success" : (l.PassRate >= 80 ? "bg-warning-subtle text-warning-emphasis" : "bg-danger-subtle text-danger"))">
+                                            @l.PassRate.ToString("F1")%
+                                        </span>
+                                    </td>
+                                    <td class="text-end font-monospace">@l.UnitCost.ToString("N0") đ</td>
+                                    <td class="text-end font-monospace fw-bold text-dark">@l.Amount.ToString("N0") đ</td>
+                                    <td class="small text-secondary pe-3">@(l.Note ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="4" class="ps-3 text-end">TỔNG CỘNG:</td>
+                                <td class="text-end text-secondary">@Model.TotalPlanQty.ToString("N0")</td>
+                                <td class="text-end text-success fs-6">@Model.TotalActualQty.ToString("N0")</td>
+                                <td class="text-end text-danger">@Model.TotalDefectQty</td>
+                                <td class="text-end">@Model.PassRatePercent.ToString("F1")%</td>
+                                <td></td>
+                                <td class="text-end text-primary fs-6">@Model.TotalAmount.ToString("N0") đ</td>
+                                <td class="pe-3"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danh sách Barcode / Serial / IMEI kèm theo -->
+    @if (Model.Serials.Count > 0)
+    {
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold text-dark">
+                        <i class="bi bi-upc-scan text-primary me-1"></i> Danh sách Barcode / Serial / IMEI đính kèm phiếu nhập
+                    </h6>
+                    <span class="badge bg-primary">@Model.Serials.Count mã đã gán</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3" style="width: 50px;">STT</th>
+                                    <th>Mã hàng</th>
+                                    <th>Tên hàng thành phẩm</th>
+                                    <th>Số Serial / Barcode cá thể hóa</th>
+                                    <th>Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int serIdx = 1; }
+                                @foreach (var s in Model.Serials)
+                                {
+                                    <tr>
+                                        <td class="ps-3 text-muted small">@(serIdx++)</td>
+                                        <td class="fw-semibold font-monospace">@s.Product.Code</td>
+                                        <td>@s.Product.Name</td>
+                                        <td>
+                                            <span class="badge bg-light text-dark border font-monospace barcode-font px-2 py-1">
+                                                @s.SerialNo
+                                            </span>
+                                        </td>
+                                        <td class="small text-muted">@(s.Note ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ========================================================================= -->
+<!-- KHU VỰC IN PHIẾU NHẬP KHO THÀNH PHẨM CHUẨN A4 (Hiển thị khi window.print) -->
+<!-- ========================================================================= -->
+<div id="fgPrintArea" class="d-none d-print-block">
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+        <div>
+            <h5 class="fw-bold mb-1">CÔNG TY QUẢN TRỊ KHO & HẬU CẦN WMS</h5>
+            <div class="small text-muted">Địa chỉ: KCN Bắc Thăng Long, Hà Nội | Hotline: 1900-8888</div>
+            <div class="small text-muted">Phòng Quản lý Sản xuất & Kho thành phẩm</div>
+        </div>
+        <div class="text-end">
+            <div class="fw-bold fs-5 font-monospace text-dark">@Model.Code</div>
+            <div class="small text-muted">Mẫu số: 01-VT/NKTP</div>
+            <div class="small text-muted">(Ban hành theo TT 200/2014/TT-BTC)</div>
+        </div>
+    </div>
+
+    <div class="text-center my-4">
+        <h3 class="fw-bold text-uppercase mb-1">PHIẾU NHẬP KHO THÀNH PHẨM SẢN XUẤT</h3>
+        <div class="text-muted">Ngày nhập: ngày @Model.Date.Day tháng @Model.Date.Month năm @Model.Date.Year</div>
+        <div class="text-muted small">Số phiếu: <b>@Model.Code</b> | Lệnh sản xuất: <b>@(Model.WorkOrderNo ?? "—")</b></div>
+    </div>
+
+    <div class="row g-2 mb-4" style="font-size: 13px;">
+        <div class="col-6">
+            <div>- Họ tên người giao hàng / Trưởng ca: <b>@(Model.ShiftLeader ?? "Bộ phận sản xuất")</b></div>
+            <div>- Phân xưởng / Đối tác sản xuất: <b>@Model.WorkshopName</b></div>
+            <div>- Hình thức tiếp nhận: <b>@formLabel</b></div>
+        </div>
+        <div class="col-6">
+            <div>- Nhập tại kho: <b>@Model.Warehouse.Name</b> (Mã kho: @Model.Warehouse.Code)</div>
+            <div>- Địa điểm kho: <b>@(Model.Warehouse.Address ?? "Kho trung tâm")</b></div>
+            <div>- Lý do nhập kho: <b>@(Model.Remark ?? "Nhập kho thành phẩm theo lệnh sản xuất")</b></div>
+        </div>
+    </div>
+
+    <table class="table table-bordered border-dark align-middle mb-4" style="font-size: 13px;">
+        <thead>
+            <tr class="text-center bg-light">
+                <th style="width: 40px;">STT</th>
+                <th>Tên nhãn hiệu, quy cách thành phẩm</th>
+                <th>Mã số</th>
+                <th>ĐVT</th>
+                <th>SL Theo lệnh</th>
+                <th>SL Thực nhập</th>
+                <th>SL Lỗi</th>
+                <th>Đơn giá (VNĐ)</th>
+                <th>Thành tiền (VNĐ)</th>
+            </tr>
+            <tr class="text-center text-muted" style="font-size: 11px;">
+                <th>A</th><th>B</th><th>C</th><th>D</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5 = 2 x 4</th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ int printIdx = 1; }
+            @foreach (var l in Model.Lines)
+            {
+                <tr>
+                    <td class="text-center">@(printIdx++)</td>
+                    <td class="fw-bold">@l.Product.Name</td>
+                    <td class="text-center font-monospace">@l.Product.Code</td>
+                    <td class="text-center">@l.Product.Uom</td>
+                    <td class="text-end">@l.PlanQty.ToString("N0")</td>
+                    <td class="text-end fw-bold">@l.ActualQty.ToString("N0")</td>
+                    <td class="text-end">@l.DefectQty</td>
+                    <td class="text-end font-monospace">@l.UnitCost.ToString("N0")</td>
+                    <td class="text-end font-monospace fw-bold">@l.Amount.ToString("N0")</td>
+                </tr>
+            }
+            <tr class="fw-bold">
+                <td colspan="4" class="text-end">Cộng:</td>
+                <td class="text-end">@Model.TotalPlanQty.ToString("N0")</td>
+                <td class="text-end">@Model.TotalActualQty.ToString("N0")</td>
+                <td class="text-end">@Model.TotalDefectQty</td>
+                <td></td>
+                <td class="text-end">@Model.TotalAmount.ToString("N0")</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="mb-4" style="font-size: 13px;">
+        <div>- Tổng số tiền (viết bằng chữ): <b>Mười chín triệu hai trăm nghìn đồng chẵn.</b></div>
+        <div>- Số chứng từ gốc kèm theo: <b>01 Lệnh sản xuất (@(Model.WorkOrderNo ?? "—")), 01 Biên bản kiểm định KCS</b></div>
+    </div>
+
+    <!-- 4 Khối chữ ký xác nhận chuẩn Skycic / Kế toán kho -->
+    <div class="row text-center mt-5" style="font-size: 13px;">
+        <div class="col-3">
+            <div class="fw-bold">Người lập phiếu</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@Model.CreatedBy</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Quản đốc xưởng SX</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@(Model.ShiftLeader ?? ".........................")</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Thủ kho nhận hàng</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@(Model.ApprovedBy ?? ".........................")</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Kế toán kho / KCS</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">.........................</div>
+        </div>
+    </div>
+</div>

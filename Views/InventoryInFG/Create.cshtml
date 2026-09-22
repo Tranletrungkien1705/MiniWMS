@@ -1,0 +1,236 @@
+@{
+    ViewData["Title"] = "Lập phiếu nhập kho thành phẩm sản xuất";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var prods = (List<Product>)ViewBag.Products;
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/InventoryInFG" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Quay lại
+        </a>
+        <h4 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-box-arrow-in-down-right text-primary me-2"></i>Lập phiếu nhập kho thành phẩm mới
+        </h4>
+    </div>
+</div>
+
+<form method="post" action="/InventoryInFG/Create" id="createFgForm">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-3">
+        <!-- Thông tin chung phiếu nhập -->
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-primary">
+                        <i class="bi bi-info-circle me-1"></i> 1. Thông tin chung phiếu nhập kho thành phẩm (InvF_InventoryInFG)
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Kho tiếp nhận thành phẩm <span class="text-danger">*</span></label>
+                            <select name="warehouseId" class="form-select" required>
+                                <option value="">-- Chọn kho nhận hàng --</option>
+                                @foreach (var w in whs)
+                                {
+                                    <option value="@w.Id">@w.Name (@w.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Hình thức nhập kho <span class="text-danger">*</span></label>
+                            <select name="formType" class="form-select" required>
+                                <option value="0">Sản xuất nội bộ (SX_NOIBO)</option>
+                                <option value="1">Gia công ngoài / OEM (GIA_CONG)</option>
+                                <option value="2">Lắp ráp & Đóng gói hoàn thiện (DONG_GOI)</option>
+                                <option value="3">Tân trang thu hồi sau bảo hành (BAO_HANH)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Ngày nhập kho <span class="text-danger">*</span></label>
+                            <input type="date" name="date" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Phân xưởng / Đối tác sản xuất <span class="text-danger">*</span></label>
+                            <input type="text" name="workshopName" class="form-control" placeholder="vd: Phân xưởng May Xuất Khẩu 1" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Lệnh sản xuất / Số mẻ (WorkOrderNo)</label>
+                            <input type="text" name="workOrderNo" class="form-control" placeholder="vd: LSX-2026-0325" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Quản đốc / Trưởng ca phụ trách</label>
+                            <input type="text" name="shiftLeader" class="form-control" placeholder="vd: Nguyễn Văn Quản Đốc" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold small text-muted">Ghi chú / Diễn giải nhập kho thành phẩm</label>
+                            <textarea name="remark" class="form-control" rows="2" placeholder="Ghi chú điều kiện nghiệm thu, lý do phát sinh..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chi tiết các mặt hàng thành phẩm -->
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold text-primary">
+                        <i class="bi bi-list-check me-1"></i> 2. Danh mục mặt hàng thành phẩm & Nghiệm thu KCS
+                    </h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">
+                        <i class="bi bi-plus-lg me-1"></i> Thêm mặt hàng
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle mb-0" id="linesTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 30%;">Mặt hàng thành phẩm <span class="text-danger">*</span></th>
+                                    <th style="width: 12%;" class="text-end">SL Kế hoạch</th>
+                                    <th style="width: 12%;" class="text-end">SL Thực nhập (KCS) <span class="text-danger">*</span></th>
+                                    <th style="width: 10%;" class="text-end">SL Phế phẩm</th>
+                                    <th style="width: 14%;" class="text-end">Đơn giá vốn SX (VNĐ)</th>
+                                    <th style="width: 16%;">Ghi chú dòng</th>
+                                    <th style="width: 6%;" class="text-center">Xóa</th>
+                                </tr>
+                            </thead>
+                            <tbody id="linesTbody">
+                                <tr>
+                                    <td>
+                                        <select name="productIds" class="form-select prod-select" required>
+                                            <option value="">-- Chọn thành phẩm --</option>
+                                            @foreach (var p in prods)
+                                            {
+                                                <option value="@p.Id" data-cost="@p.CostPrice">@p.Code — @p.Name (@p.Uom)</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" name="planQtys" class="form-control text-end plan-qty" min="1" value="50" required />
+                                    </td>
+                                    <td>
+                                        <input type="number" name="actualQtys" class="form-control text-end fw-bold text-success actual-qty" min="1" value="50" required />
+                                    </td>
+                                    <td>
+                                        <input type="number" name="defectQtys" class="form-control text-end text-danger defect-qty" min="0" value="0" />
+                                    </td>
+                                    <td>
+                                        <input type="number" name="unitCosts" class="form-control text-end unit-cost" min="0" step="1000" value="150000" />
+                                    </td>
+                                    <td>
+                                        <input type="text" name="notes" class="form-control" placeholder="vd: Đạt chuẩn xuất xưởng" />
+                                    </td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Xóa dòng">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Khai báo Barcode / Serial / IMEI thành phẩm -->
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-primary">
+                        <i class="bi bi-upc-scan me-1"></i> 3. Danh sách Barcode / Serial / IMEI cá thể hóa (Tùy chọn)
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="alert alert-info small py-2 mb-3">
+                        <i class="bi bi-lightbulb me-1"></i>
+                        <b>Gợi ý:</b> Nhập hoặc dán danh sách mã Serial/IMEI từ máy quét mã vạch hoặc bảng Excel (mỗi mã một dòng hoặc cách nhau bởi dấu chấm phẩy).
+                        Khi phiếu được <b>Phê duyệt & Nhập kho</b>, toàn bộ Serial này sẽ tự động được ghi nhận vào kho dữ liệu <b>Serial khả dụng</b> để sẵn sàng xuất bán!
+                    </div>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold text-muted">Danh sách Serial / Barcode</label>
+                            <textarea name="serialsInput" class="form-control font-monospace" rows="4" placeholder="vd:
+AO2603-001
+AO2603-002
+AO2603-003"></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded border h-100">
+                                <div class="fw-semibold small text-dark mb-2">Quy tắc định dạng:</div>
+                                <ul class="small text-muted ps-3 mb-0">
+                                    <li>Mỗi dòng là 1 mã Serial: <code>AO2603-001</code></li>
+                                    <li>Hoặc chỉ định mã hàng: <code>AO-001: AO2603-001</code></li>
+                                    <li>Không bắt buộc nếu sản phẩm quản lý số lượng chung.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thanh nút bấm hành động -->
+        <div class="col-12 d-flex justify-content-end gap-2 mb-5">
+            <a href="/InventoryInFG" class="btn btn-outline-secondary px-4">
+                Hủy bỏ
+            </a>
+            <button type="submit" class="btn btn-primary px-4 fw-semibold">
+                <i class="bi bi-check-circle me-1"></i> Lưu phiếu nhập TP (Chờ duyệt KCS)
+            </button>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const tbody = document.getElementById('linesTbody');
+        const addBtn = document.getElementById('addRowBtn');
+
+        // Bắt sự kiện chọn mặt hàng để tự điền đơn giá vốn
+        tbody.addEventListener('change', function (e) {
+            if (e.target.classList.contains('prod-select')) {
+                const opt = e.target.selectedOptions[0];
+                const cost = opt.getAttribute('data-cost') || 0;
+                const row = e.target.closest('tr');
+                const costInput = row.querySelector('.unit-cost');
+                if (costInput && (!costInput.value || costInput.value === '0')) {
+                    costInput.value = cost;
+                }
+            }
+        });
+
+        // Bắt sự kiện xóa dòng
+        tbody.addEventListener('click', function (e) {
+            if (e.target.closest('.remove-row')) {
+                const rows = tbody.querySelectorAll('tr');
+                if (rows.length > 1) {
+                    e.target.closest('tr').remove();
+                } else {
+                    alert('Cần có ít nhất 1 dòng mặt hàng thành phẩm.');
+                }
+            }
+        });
+
+        // Thêm dòng mới
+        addBtn.addEventListener('click', function () {
+            const firstRow = tbody.querySelector('tr');
+            const newRow = firstRow.cloneNode(true);
+            newRow.querySelector('.prod-select').selectedIndex = 0;
+            newRow.querySelector('.plan-qty').value = '50';
+            newRow.querySelector('.actual-qty').value = '50';
+            newRow.querySelector('.defect-qty').value = '0';
+            newRow.querySelector('.unit-cost').value = '150000';
+            newRow.querySelector('input[name="notes"]').value = '';
+            tbody.appendChild(newRow);
+        });
+    });
+</script>
+}

@@ -903,6 +903,141 @@ public record CartonReport(
     List<CartonRow> Rows
 );
 
+/// <summary>Hình thức nhập kho thành phẩm (port từ InvF_InventoryInFG - FormInType Skycic).</summary>
+public enum InvInFGFormType
+{
+    InternalProduction = 0, // Sản xuất hoàn thành nhập kho nội bộ (SX_NOIBO)
+    Outsourced = 1,         // Nhập từ đơn vị gia công / OEM (GIA_CONG)
+    AssemblyPack = 2,       // Nhập từ hoàn thiện đóng gói / Kẹp chì (DONG_GOI)
+    WarrantyRefurbish = 3   // Nhập thu hồi tân trang sau bảo hành (BAO_HANH)
+}
+
+/// <summary>Trạng thái phiếu nhập kho thành phẩm (port từ InvF_InventoryInFG - IF_InvInFGStatus Skycic).</summary>
+public enum InvInFGStatus
+{
+    Pending = 0,   // Mới tạo / Chờ KCS & Quản đốc duyệt nhập kho
+    Approved = 1,  // Đã duyệt & Nhập kho (tự động tăng tồn kho, ghi thẻ kho & kích hoạt Serial)
+    Cancelled = 2  // Đã hủy phiếu
+}
+
+/// <summary>Phiếu nhập kho thành phẩm sản xuất (port từ InvF_InventoryInFG Skycic). Quản lý tiếp nhận thành phẩm hoàn thành từ xưởng sản xuất / gia công vào kho thành phẩm.</summary>
+public class InventoryInFG : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";                                 // Mã phiếu nhập TP (IF_InvInFGNo, vd: IFFG2603-001)
+    public int WarehouseId { get; set; }                                   // Kho nhập thành phẩm (InvCode)
+    public InvInFGFormType FormType { get; set; } = InvInFGFormType.InternalProduction; // Hình thức nhập (FormInType)
+    public string WorkshopName { get; set; } = "";                         // Phân xưởng / Nhà máy sản xuất (DLCode / MST)
+    public string? WorkOrderNo { get; set; }                               // Số lệnh sản xuất / Lô sản xuất (WorkOrderNo / BatchNo)
+    public string? ShiftLeader { get; set; }                               // Quản đốc / Trưởng ca sản xuất phụ trách
+    public DateTime Date { get; set; } = DateTime.Now;                     // Ngày nhập kho
+    public string CreatedBy { get; set; } = "";                            // Người lập phiếu
+    public InvInFGStatus Status { get; set; } = InvInFGStatus.Pending;     // Trạng thái phiếu
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }                              // Thời điểm phê duyệt
+    public string? ApprovedBy { get; set; }                                // Người phê duyệt KCS / Thủ kho
+    public string? Remark { get; set; }                                    // Diễn giải / Ghi chú
+    public int? StockDocId { get; set; }                                   // Phiếu nhập kho tự động sinh ra khi duyệt (StockDoc.Type = In)
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<InventoryInFGLine> Lines { get; set; } = [];
+    public List<InventoryInFGSerial> Serials { get; set; } = [];
+
+    public int TotalPlanQty => Lines.Sum(l => l.PlanQty);
+    public int TotalActualQty => Lines.Sum(l => l.ActualQty);
+    public int TotalDefectQty => Lines.Sum(l => l.DefectQty);
+    public decimal TotalAmount => Lines.Sum(l => l.Amount);
+    public int TotalSerialsCount => Serials.Count;
+    public double PassRatePercent => TotalPlanQty > 0 ? Math.Round((double)TotalActualQty / TotalPlanQty * 100, 1) : 100.0;
+}
+
+/// <summary>Dòng chi tiết mặt hàng thành phẩm trong phiếu nhập kho (port từ InvF_InventoryInFGDtl Skycic).</summary>
+public class InventoryInFGLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryInFGId { get; set; }
+    public int ProductId { get; set; }
+    public int PlanQty { get; set; }                                       // Số lượng theo lệnh sản xuất
+    public int ActualQty { get; set; }                                     // Số lượng thực nhập đạt chuẩn KCS
+    public int DefectQty { get; set; } = 0;                                // Số lượng lỗi / phế phẩm loại ra
+    public decimal UnitCost { get; set; }                                  // Đơn giá thành phẩm / Chi phí sản xuất đơn vị
+    public DateTime? ProductionDate { get; set; }                          // Ngày sản xuất
+    public string? Note { get; set; }                                      // Ghi chú chi tiết
+
+    public InventoryInFG InventoryInFG { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    public decimal Amount => ActualQty * UnitCost;
+    public double PassRate => PlanQty > 0 ? Math.Round((double)ActualQty / PlanQty * 100, 1) : 100.0;
+}
+
+/// <summary>Danh sách Barcode / Serial / IMEI cá thể hóa gắn với phiếu nhập kho thành phẩm (port từ InvF_InventoryInFGInstSerial Skycic).</summary>
+public class InventoryInFGSerial : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryInFGId { get; set; }
+    public int ProductId { get; set; }
+    public string SerialNo { get; set; } = "";                             // Số Barcode / Serial / IMEI (SerialNo)
+    public string? Note { get; set; }                                      // Ghi chú
+
+    public InventoryInFG InventoryInFG { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng hiển thị danh sách phiếu nhập kho thành phẩm.</summary>
+public record InventoryInFGRow(
+    int Id,
+    string Code,
+    int WarehouseId,
+    string WarehouseName,
+    InvInFGFormType FormType,
+    string FormTypeLabel,
+    string WorkshopName,
+    string? WorkOrderNo,
+    string? ShiftLeader,
+    DateTime Date,
+    InvInFGStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    int TotalPlanQty,
+    int TotalActualQty,
+    int TotalDefectQty,
+    double PassRatePercent,
+    decimal TotalAmount,
+    int TotalSerialsCount,
+    int? StockDocId,
+    string? StockDocCode,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    string? ApprovedBy
+);
+
+/// <summary>Báo cáo & Tổng hợp danh sách Phiếu nhập kho thành phẩm.</summary>
+public record InventoryInFGReport(
+    int? WarehouseId,
+    string WarehouseName,
+    InvInFGStatus? StatusFilter,
+    InvInFGFormType? FormTypeFilter,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    string? Keyword,
+    int TotalReceipts,
+    int PendingCount,
+    int ApprovedCount,
+    int CancelledCount,
+    int TotalPlanQty,
+    int TotalActualQty,
+    int TotalDefectQty,
+    decimal TotalAmount,
+    List<InventoryInFGRow> Rows
+);
+
 
 
 
