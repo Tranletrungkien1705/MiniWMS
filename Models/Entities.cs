@@ -1038,6 +1038,154 @@ public record InventoryInFGReport(
     List<InventoryInFGRow> Rows
 );
 
+/// <summary>Hình thức xuất kho thành phẩm (port từ InvF_InventoryOutFG - FormOutType Skycic).</summary>
+public enum InvOutFGFormType
+{
+    QuantityOnly = 0,  // Không mã vạch / Xuất theo số lượng thông thường (KHONGMAVACH)
+    BarcodeSerial = 1  // Quét mã vạch / Serial cá thể hóa (MAVACH)
+}
+
+/// <summary>Loại nghiệp vụ xuất kho thành phẩm (port từ InvF_InventoryOutFG - InvFOutType Skycic).</summary>
+public enum InvOutFGType
+{
+    Commercial = 0,    // Xuất thương mại / Đại lý phân phối bán buôn (OUTTHUONGMAI)
+    EndCustomer = 1,   // Xuất khách hàng lẻ / Công trình dự án (OUTENDCUS)
+    BranchTransfer = 2,// Xuất điều chuyển chi nhánh / Showroom trưng bày (TRANSFER)
+    WarrantyScrap = 3  // Xuất bảo hành / Đổi trả / Hủy mẫu thử lỗi (WARRANTY)
+}
+
+/// <summary>Trạng thái phiếu xuất kho thành phẩm (port từ InvF_InventoryOutFG - IF_InvOutFGStatus Skycic).</summary>
+public enum InvOutFGStatus
+{
+    Pending = 0,   // Mới lập / Chờ thủ kho & bảo vệ duyệt xuất hàng
+    Approved = 1,  // Đã duyệt xuất kho (tự động trừ tồn kho, ghi thẻ kho & xuất Serial)
+    Cancelled = 2  // Đã hủy phiếu
+}
+
+/// <summary>Phiếu xuất kho thành phẩm sản xuất & phân phối (port từ InvF_InventoryOutFG Skycic). Quản lý xuất hàng giao đại lý, vận chuyển xe tải, container & xuất serial.</summary>
+public class InventoryOutFG : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";                                 // Mã phiếu xuất TP (IF_InvOutFGNo, vd: IFOFG2603-001)
+    public int WarehouseId { get; set; }                                   // Kho xuất thành phẩm (InvCode)
+    public InvOutFGType OutType { get; set; } = InvOutFGType.Commercial;   // Loại hình xuất (InvFOutType)
+    public InvOutFGFormType FormType { get; set; } = InvOutFGFormType.QuantityOnly; // Hình thức xuất (FormOutType)
+    public string CustomerName { get; set; } = "";                         // Tên khách hàng / Đại lý nhận hàng (CustomerName)
+    public string? AgentCode { get; set; }                                 // Mã đại lý / Khách hàng (AgentCode / MST)
+    public string? DeliveryAddress { get; set; }                           // Địa chỉ nhận hàng / Công trình
+    public string? DriverName { get; set; }                                // Tên lái xe giao nhận (DriverName)
+    public string? DriverPhone { get; set; }                               // SĐT lái xe (DriverPhoneNo)
+    public string? PlateNo { get; set; }                                   // Biển số xe vận chuyển (PlateNo)
+    public string? MoocNo { get; set; }                                    // Biển số rơ-moóc / Container (MoocNo)
+    public string? OrderNo { get; set; }                                   // Số đơn hàng / Hợp đồng mua bán
+    public DateTime Date { get; set; } = DateTime.Now;                     // Ngày xuất kho
+    public string CreatedBy { get; set; } = "";                            // Người lập phiếu
+    public InvOutFGStatus Status { get; set; } = InvOutFGStatus.Pending;   // Trạng thái phiếu
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }                              // Thời điểm phê duyệt xuất kho
+    public string? ApprovedBy { get; set; }                                // Người phê duyệt xuất kho
+    public string? Remark { get; set; }                                    // Diễn giải / Ghi chú
+    public int? StockDocId { get; set; }                                   // Phiếu xuất kho tự động sinh ra khi duyệt (StockDoc.Type = Out)
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<InventoryOutFGLine> Lines { get; set; } = [];
+    public List<InventoryOutFGSerial> Serials { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Qty);
+    public decimal TotalAmount => Lines.Sum(l => l.Amount);
+    public int TotalSerialsCount => Serials.Count;
+    public int TotalItemsCount => Lines.Count;
+}
+
+/// <summary>Dòng chi tiết mặt hàng thành phẩm trong phiếu xuất kho (port từ InvF_InventoryOutFGDtl Skycic).</summary>
+public class InventoryOutFGLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryOutFGId { get; set; }
+    public int ProductId { get; set; }
+    public int Qty { get; set; }                                           // Số lượng xuất kho
+    public decimal UnitCost { get; set; }                                  // Giá vốn đơn vị (UPInv)
+    public decimal UnitPrice { get; set; }                                 // Đơn giá xuất / Giá bán phân phối
+    public string? Note { get; set; }                                      // Ghi chú chi tiết
+
+    public InventoryOutFG InventoryOutFG { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    public decimal Amount => Qty * UnitPrice;
+    public decimal CostAmount => Qty * UnitCost;
+}
+
+/// <summary>Danh sách Barcode / Serial / IMEI gắn với phiếu xuất kho thành phẩm (port từ InvF_InventoryOutFGInstSerial Skycic).</summary>
+public class InventoryOutFGSerial : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryOutFGId { get; set; }
+    public int ProductId { get; set; }
+    public string SerialNo { get; set; } = "";                             // Số Barcode / Serial / IMEI xuất kho (SerialNo)
+    public string? Note { get; set; }                                      // Ghi chú
+
+    public InventoryOutFG InventoryOutFG { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng hiển thị danh sách phiếu xuất kho thành phẩm.</summary>
+public record InventoryOutFGRow(
+    int Id,
+    string Code,
+    int WarehouseId,
+    string WarehouseName,
+    InvOutFGType OutType,
+    string OutTypeLabel,
+    InvOutFGFormType FormType,
+    string FormTypeLabel,
+    string CustomerName,
+    string? AgentCode,
+    string? DeliveryAddress,
+    string? DriverName,
+    string? DriverPhone,
+    string? PlateNo,
+    string? MoocNo,
+    string? OrderNo,
+    DateTime Date,
+    InvOutFGStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    int TotalQty,
+    decimal TotalAmount,
+    int TotalSerialsCount,
+    int? StockDocId,
+    string? StockDocCode,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    string? ApprovedBy
+);
+
+/// <summary>Báo cáo & Tổng hợp danh sách Phiếu xuất kho thành phẩm.</summary>
+public record InventoryOutFGReport(
+    int? WarehouseId,
+    string WarehouseName,
+    InvOutFGStatus? StatusFilter,
+    InvOutFGType? OutTypeFilter,
+    InvOutFGFormType? FormTypeFilter,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    string? Keyword,
+    int TotalOrders,
+    int PendingCount,
+    int ApprovedCount,
+    int CancelledCount,
+    int TotalQty,
+    decimal TotalAmount,
+    int TotalSerialsCount,
+    List<InventoryOutFGRow> Rows
+);
+
 
 
 

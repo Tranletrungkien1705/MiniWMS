@@ -1557,6 +1557,179 @@ public class InventoryInFGController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryOutFGController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.OutType = outType;
+        ViewBag.FormType = formType;
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryOutFGsAsync(warehouseId, status, outType, formType, fromDate, toDate, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> Create()
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Products = await svc.ProductsAsync();
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, InvOutFGType outType, InvOutFGFormType formType,
+        string customerName, string? agentCode, string? deliveryAddress, string? driverName, string? driverPhone,
+        string? plateNo, string? moocNo, string? orderNo, DateTime? date, string? remark,
+        int[]? productIds, int[]? qtys, decimal[]? unitPrices, decimal[]? unitCosts, string[]? notes, string? serialsInput)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho xuất thành phẩm.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (string.IsNullOrWhiteSpace(customerName))
+        {
+            TempData["Error"] = "Vui lòng nhập tên khách hàng / đại lý nhận hàng.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        var lines = new List<(int productId, int qty, decimal unitPrice, decimal unitCost, string? note)>();
+        if (productIds != null)
+        {
+            for (int i = 0; i < productIds.Length; i++)
+            {
+                var pid = productIds[i];
+                var q = (qtys != null && i < qtys.Length) ? qtys[i] : 0;
+                var price = (unitPrices != null && i < unitPrices.Length) ? unitPrices[i] : 0m;
+                var cost = (unitCosts != null && i < unitCosts.Length) ? unitCosts[i] : 0m;
+                var note = (notes != null && i < notes.Length) ? notes[i] : null;
+                if (pid > 0 && q > 0)
+                {
+                    lines.Add((pid, q, price, cost, note));
+                }
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 dòng mặt hàng thành phẩm có số lượng xuất > 0.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        // Tách danh sách Serial / IMEI nếu có nhập
+        var serials = new List<(int productId, string serialNo, string? note)>();
+        if (!string.IsNullOrWhiteSpace(serialsInput))
+        {
+            var linesArr = serialsInput.Split(new[] { '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var firstPid = lines.First().productId;
+            foreach (var item in linesArr)
+            {
+                var trimmed = item.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                if (trimmed.Contains(':'))
+                {
+                    var parts = trimmed.Split(':', 2);
+                    var prodCode = parts[0].Trim();
+                    var serNo = parts[1].Trim();
+                    var matchedProd = (await svc.ProductsAsync()).FirstOrDefault(p => p.Code.Equals(prodCode, StringComparison.OrdinalIgnoreCase));
+                    var targetPid = matchedProd?.Id ?? firstPid;
+                    serials.Add((targetPid, serNo, null));
+                }
+                else
+                {
+                    serials.Add((firstPid, trimmed, null));
+                }
+            }
+        }
+
+        try
+        {
+            var doc = new InventoryOutFG
+            {
+                WarehouseId = warehouseId,
+                OutType = outType,
+                FormType = formType,
+                CustomerName = customerName.Trim(),
+                AgentCode = agentCode?.Trim(),
+                DeliveryAddress = deliveryAddress?.Trim(),
+                DriverName = driverName?.Trim(),
+                DriverPhone = driverPhone?.Trim(),
+                PlateNo = plateNo?.Trim(),
+                MoocNo = moocNo?.Trim(),
+                OrderNo = orderNo?.Trim(),
+                Date = date ?? DateTime.Today,
+                Remark = remark?.Trim(),
+                CreatedBy = "admin"
+            };
+
+            var id = await svc.CreateInventoryOutFGAsync(doc, lines, serials);
+            TempData["Success"] = $"Đã lập phiếu xuất thành phẩm {doc.Code} (Chờ duyệt xuất). Bấm 'Phê duyệt & Xuất kho' để trừ tồn kho.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+            return RedirectToAction(nameof(Create));
+        }
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var doc = await svc.GetInventoryOutFGAsync(id);
+        if (doc == null) return NotFound();
+        return View(doc);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApproveInventoryOutFGAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        var (ok, msg) = await svc.CancelInventoryOutFGAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.InventoryOutFGsAsync(warehouseId, status, outType, formType, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BẢNG KÊ QUẢN LÝ PHIẾU XUẤT KHO THÀNH PHẨM & VẬN CHUYỂN PHÂN PHỐI");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Từ ngày:;{(report.FromDate.HasValue ? report.FromDate.Value.ToString("dd/MM/yyyy") : "Tất cả")};Đến ngày:;{(report.ToDate.HasValue ? report.ToDate.Value.ToString("dd/MM/yyyy") : "Tất cả")}");
+        sb.AppendLine($"Trạng thái lọc:;{(status.HasValue ? status.Value.ToString() : "Tất cả")};Nghiệp vụ xuất:;{(outType.HasValue ? outType.Value.ToString() : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phiếu;Ngày xuất;Kho thành phẩm;Nghiệp vụ xuất;Hình thức xuất;Khách hàng / Đại lý;Mã đại lý;Địa chỉ nhận;Lái xe;SĐT lái xe;Biển số xe;Số moóc;Số đơn hàng;Tổng SL xuất;Tổng giá trị xuất (VNĐ);Số lượng Serial;Trạng thái;Phiếu kho liên kết;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var dateStr = r.Date.ToString("dd/MM/yyyy");
+            sb.AppendLine($"{stt++};\"{r.Code}\";{dateStr};\"{r.WarehouseName}\";\"{r.OutTypeLabel}\";\"{r.FormTypeLabel}\";\"{r.CustomerName}\";\"{r.AgentCode ?? "—"}\";\"{r.DeliveryAddress ?? "—"}\";\"{r.DriverName ?? "—"}\";\"{r.DriverPhone ?? "—"}\";\"{r.PlateNo ?? "—"}\";\"{r.MoocNo ?? "—"}\";\"{r.OrderNo ?? "—"}\";{r.TotalQty};{r.TotalAmount:F0};{r.TotalSerialsCount};\"{r.StatusLabel}\";\"{r.StockDocCode ?? "—"}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;;;;;;;TỔNG CỘNG:;{report.TotalQty};{report.TotalAmount:F0};;Chờ duyệt: {report.PendingCount};Đã xuất kho: {report.ApprovedCount};Đã hủy: {report.CancelledCount}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_XuatKhoThanhPham_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 
 
 

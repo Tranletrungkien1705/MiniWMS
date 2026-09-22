@@ -26,6 +26,7 @@
         <a href="/CostPrice" class="btn btn-outline-success"><i class="bi bi-calculator me-1"></i>Giá vốn kho</a>
         <a href="/Carton" class="btn btn-outline-secondary"><i class="bi bi-box-seam-fill me-1"></i>Thùng carton / Đóng kiện</a>
         <a href="/InventoryInFG" class="btn btn-outline-primary"><i class="bi bi-box-arrow-in-down-right me-1"></i>Nhập thành phẩm SX</a>
+        <a href="/InventoryOutFG" class="btn btn-outline-primary"><i class="bi bi-box-arrow-up-right me-1"></i>Xuất thành phẩm</a>
         <a href="/InventoryInOut" class="btn btn-primary"><i class="bi bi-graph-up-arrow me-1"></i>Báo cáo NXT</a>
     </div>
     @if (d.DamagedSerials > 0) { <div class="alert alert-danger mt-3 mb-0 small"><i class="bi bi-exclamation-octagon me-1"></i>Có <b>@d.DamagedSerials</b> serial/sản phẩm báo lỗi hỏng (NG) cần thẩm định/bảo hành. <a href="/StockSerial?status=2" class="fw-semibold text-danger text-decoration-underline">Kiểm tra danh sách Serial NG ngay</a></div> }
@@ -38,4 +39,5 @@
     @if (d.PendingReturns > 0) { <div class="alert alert-warning mt-2 mb-0 small"><i class="bi bi-arrow-counterclockwise me-1"></i>Có <b>@d.PendingReturns</b> phiếu xuất trả hàng NCC đang chờ duyệt & xuất kho. <a href="/ReturnSup?status=0" class="fw-semibold">Xem ngay</a></div> }
     @if (d.PendingCustomerReturns > 0) { <div class="alert alert-info mt-2 mb-0 small"><i class="bi bi-arrow-return-left me-1"></i>Có <b>@d.PendingCustomerReturns</b> phiếu khách hàng trả lại đang chờ nhận hàng & nhập kho. <a href="/CustomerReturn?status=0" class="fw-semibold">Xem ngay</a></div> }
     @if (d.PendingInFGs > 0) { <div class="alert alert-warning mt-2 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.PendingInFGs</b> phiếu nhập kho thành phẩm sản xuất đang chờ duyệt KCS & nhập kho. <a href="/InventoryInFG?status=0" class="fw-semibold text-dark text-decoration-underline">Xem ngay</a></div> }
+    @if (d.PendingOutFGs > 0) { <div class="alert alert-warning mt-2 mb-0 small"><i class="bi bi-truck me-1"></i>Có <b>@d.PendingOutFGs</b> phiếu xuất kho thành phẩm đang chờ duyệt xuất kho & giao hàng. <a href="/InventoryOutFG?status=0" class="fw-semibold text-dark text-decoration-underline">Xem ngay</a></div> }
 </div></div>

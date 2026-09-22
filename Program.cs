@@ -998,6 +998,122 @@ app.MapPost("/api/inventory-in-fg/{id:int}/cancel", async (int id, IWmsService s
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Xuất kho thành phẩm & Vận chuyển phân phối (port từ InvF_InventoryOutFG Skycic)
+app.MapGet("/api/inventory-out-fg", async (int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryOutFGsAsync(warehouseId, status, outType, formType, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-out-fg/{id:int}", async (int id, IWmsService svc) =>
+{
+    var doc = await svc.GetInventoryOutFGAsync(id);
+    if (doc == null) return Results.NotFound(new { error = "Không tìm thấy phiếu xuất kho thành phẩm." });
+    return Results.Ok(new
+    {
+        doc.Id,
+        doc.Code,
+        Warehouse = doc.Warehouse.Name,
+        doc.WarehouseId,
+        OutType = doc.OutType.ToString(),
+        FormType = doc.FormType.ToString(),
+        doc.CustomerName,
+        doc.AgentCode,
+        doc.DeliveryAddress,
+        doc.DriverName,
+        doc.DriverPhone,
+        doc.PlateNo,
+        doc.MoocNo,
+        doc.OrderNo,
+        Date = doc.Date.ToString("yyyy-MM-dd"),
+        Status = doc.Status.ToString(),
+        doc.TotalQty,
+        doc.TotalAmount,
+        doc.TotalSerialsCount,
+        doc.StockDocId,
+        StockDocCode = doc.StockDoc?.Code,
+        doc.Remark,
+        doc.CreatedBy,
+        doc.CreatedAt,
+        ApprovedAt = doc.ApprovedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        doc.ApprovedBy,
+        Lines = doc.Lines.Select(l => new
+        {
+            l.Id,
+            ProductCode = l.Product.Code,
+            ProductName = l.Product.Name,
+            l.Product.Uom,
+            l.ProductId,
+            l.Qty,
+            l.UnitPrice,
+            l.UnitCost,
+            l.Amount,
+            l.Note
+        }),
+        Serials = doc.Serials.Select(s => new
+        {
+            s.Id,
+            ProductCode = s.Product.Code,
+            ProductName = s.Product.Name,
+            s.ProductId,
+            s.SerialNo,
+            s.Note
+        })
+    });
+});
+
+app.MapPost("/api/inventory-out-fg", async (CreateInventoryOutFGDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.CustomerName)) return Results.BadRequest(new { error = "Cần CustomerName." });
+    if (dto.Lines == null || dto.Lines.Count == 0) return Results.BadRequest(new { error = "Cần ít nhất 1 dòng thành phẩm." });
+
+    try
+    {
+        var doc = new InventoryOutFG
+        {
+            WarehouseId = dto.WarehouseId,
+            OutType = dto.OutType,
+            FormType = dto.FormType,
+            CustomerName = dto.CustomerName.Trim(),
+            AgentCode = dto.AgentCode?.Trim(),
+            DeliveryAddress = dto.DeliveryAddress?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            PlateNo = dto.PlateNo?.Trim(),
+            MoocNo = dto.MoocNo?.Trim(),
+            OrderNo = dto.OrderNo?.Trim(),
+            Date = dto.Date ?? DateTime.Today,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+
+        var lines = dto.Lines.Select(l => (l.ProductId, l.Qty, l.UnitPrice, l.UnitCost, l.Note)).ToList();
+        var serials = dto.Serials != null
+            ? dto.Serials.Select(s => (s.ProductId, s.SerialNo, s.Note)).ToList()
+            : new List<(int, string, string?)>();
+
+        var id = await svc.CreateInventoryOutFGAsync(doc, lines, serials);
+        return Results.Ok(new { id, code = doc.Code, status = doc.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/inventory-out-fg/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveInventoryOutFGAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-out-fg/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.CancelInventoryOutFGAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -1036,3 +1152,6 @@ record UnpackCartonDto(string? Reason);
 record CreateInventoryInFGDto(int WarehouseId, InvInFGFormType FormType, string WorkshopName, string? WorkOrderNo, string? ShiftLeader, DateTime? Date, string? Remark, List<InventoryInFGLineDto> Lines, List<InventoryInFGSerialDto>? Serials);
 record InventoryInFGLineDto(int ProductId, int PlanQty, int ActualQty, int DefectQty, decimal UnitCost, string? Note);
 record InventoryInFGSerialDto(int ProductId, string SerialNo, string? Note);
+record CreateInventoryOutFGDto(int WarehouseId, InvOutFGType OutType, InvOutFGFormType FormType, string CustomerName, string? AgentCode, string? DeliveryAddress, string? DriverName, string? DriverPhone, string? PlateNo, string? MoocNo, string? OrderNo, DateTime? Date, string? Remark, List<InventoryOutFGLineDto> Lines, List<InventoryOutFGSerialDto>? Serials);
+record InventoryOutFGLineDto(int ProductId, int Qty, decimal UnitPrice, decimal UnitCost, string? Note);
+record InventoryOutFGSerialDto(int ProductId, string SerialNo, string? Note);

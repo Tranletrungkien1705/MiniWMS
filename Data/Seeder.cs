@@ -1243,13 +1243,106 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Quản lý Xuất kho thành phẩm & Vận chuyển phân phối (InventoryOutFG - port từ InvF_InventoryOutFG Skycic)
+        if (!await db.InventoryOutFGs.AnyAsync())
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO01") ?? await db.Warehouses.FirstAsync();
+            var ao = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP01");
+            var quan = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP02");
+
+            if (ao != null && quan != null)
+            {
+                // 1. Phiếu ĐÃ DUYỆT XUẤT KHO (Approved)
+                var outFg1 = new InventoryOutFG
+                {
+                    Code = "IFOFG260328-001",
+                    WarehouseId = wh.Id,
+                    OutType = InvOutFGType.Commercial,
+                    FormType = InvOutFGFormType.BarcodeSerial,
+                    CustomerName = "Công ty Cổ phần Thương mại & Thời trang Hà Nội",
+                    AgentCode = "DL-HN-001",
+                    DeliveryAddress = "Kho Tổng Đông Anh, Km 12 Quốc lộ 3, Hà Nội",
+                    DriverName = "Trần Văn Vận Chuyển",
+                    DriverPhone = "0912.888.999",
+                    PlateNo = "29C-888.66",
+                    MoocNo = "29R-012.34",
+                    OrderNo = "DH-2026-0328-01",
+                    Date = DateTime.Today.AddDays(-2),
+                    CreatedBy = "admin",
+                    Status = InvOutFGStatus.Approved,
+                    CreatedAt = DateTime.Now.AddDays(-2),
+                    ApprovedAt = DateTime.Now.AddDays(-2).AddHours(2),
+                    ApprovedBy = "admin",
+                    Remark = "Xuất giao hàng đợt 1 theo hợp đồng phân phối đại lý miền Bắc"
+                };
+
+                outFg1.Lines.Add(new InventoryOutFGLine
+                {
+                    ProductId = ao.Id,
+                    Qty = 20,
+                    UnitPrice = 250_000m,
+                    UnitCost = ao.CostPrice > 0 ? ao.CostPrice : 150_000m,
+                    Note = "Áo sơ mi nam cao cấp"
+                });
+
+                outFg1.Lines.Add(new InventoryOutFGLine
+                {
+                    ProductId = quan.Id,
+                    Qty = 15,
+                    UnitPrice = 380_000m,
+                    UnitCost = quan.CostPrice > 0 ? quan.CostPrice : 220_000m,
+                    Note = "Quần jeans nam slimfit"
+                });
+
+                outFg1.Serials.Add(new InventoryOutFGSerial { ProductId = ao.Id, SerialNo = "AO2603-001", Note = "Đã xuất kho cho DL-HN-001" });
+                outFg1.Serials.Add(new InventoryOutFGSerial { ProductId = ao.Id, SerialNo = "AO2603-002", Note = "Đã xuất kho cho DL-HN-001" });
+                outFg1.Serials.Add(new InventoryOutFGSerial { ProductId = quan.Id, SerialNo = "QJ2603-001", Note = "Đã xuất kho cho DL-HN-001" });
+
+                db.InventoryOutFGs.Add(outFg1);
+
+                // 2. Phiếu ĐANG CHỜ DUYỆT XUẤT (Pending)
+                var outFg2 = new InventoryOutFG
+                {
+                    Code = "IFOFG260330-002",
+                    WarehouseId = wh.Id,
+                    OutType = InvOutFGType.EndCustomer,
+                    FormType = InvOutFGFormType.QuantityOnly,
+                    CustomerName = "Dự án Đồng phục Công sở Tập đoàn Viễn thông VNPT",
+                    AgentCode = "DA-VNPT-02",
+                    DeliveryAddress = "Tòa nhà VNPT, 57 Huỳnh Thúc Kháng, Đống Đa, Hà Nội",
+                    DriverName = "Nguyễn Văn Lái Xe",
+                    DriverPhone = "0988.765.432",
+                    PlateNo = "30E-678.90",
+                    MoocNo = null,
+                    OrderNo = "HDBD-2026-0330",
+                    Date = DateTime.Today,
+                    CreatedBy = "admin",
+                    Status = InvOutFGStatus.Pending,
+                    CreatedAt = DateTime.Now,
+                    Remark = "Giao hàng trực tiếp tại kho dự án, kiểm đếm tại chân công trình"
+                };
+
+                outFg2.Lines.Add(new InventoryOutFGLine
+                {
+                    ProductId = ao.Id,
+                    Qty = 10,
+                    UnitPrice = 240_000m,
+                    UnitCost = ao.CostPrice > 0 ? ao.CostPrice : 150_000m,
+                    Note = "Áo sơ mi đồng phục size chuẩn"
+                });
+
+                db.InventoryOutFGs.Add(outFg2);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -1545,7 +1638,58 @@ public static class Seeder
                 CONSTRAINT ""FK_InventoryInFGSerials_InventoryInFGs_InventoryInFGId"" FOREIGN KEY (""InventoryInFGId"") REFERENCES ""InventoryInFGs"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_InventoryInFGSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
             );",
-            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryInFGSerials_OrgId_InventoryInFGId_ProductId_SerialNo"" ON ""InventoryInFGSerials"" (""OrgId"", ""InventoryInFGId"", ""ProductId"", ""SerialNo"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryInFGSerials_OrgId_InventoryInFGId_ProductId_SerialNo"" ON ""InventoryInFGSerials"" (""OrgId"", ""InventoryInFGId"", ""ProductId"", ""SerialNo"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryOutFGs"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""OutType"" INTEGER NOT NULL DEFAULT 0,
+                ""FormType"" INTEGER NOT NULL DEFAULT 0,
+                ""CustomerName"" TEXT NOT NULL,
+                ""AgentCode"" TEXT NULL,
+                ""DeliveryAddress"" TEXT NULL,
+                ""DriverName"" TEXT NULL,
+                ""DriverPhone"" TEXT NULL,
+                ""PlateNo"" TEXT NULL,
+                ""MoocNo"" TEXT NULL,
+                ""OrderNo"" TEXT NULL,
+                ""Date"" TEXT NOT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""Status"" INTEGER NOT NULL DEFAULT 0,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""ApprovedAt"" TEXT NULL,
+                ""ApprovedBy"" TEXT NULL,
+                ""Remark"" TEXT NULL,
+                ""StockDocId"" INTEGER NULL,
+                CONSTRAINT ""FK_InventoryOutFGs_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_InventoryOutFGs_Docs_StockDocId"" FOREIGN KEY (""StockDocId"") REFERENCES ""Docs"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryOutFGs_OrgId_Code"" ON ""InventoryOutFGs"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryOutFGs_OrgId_WarehouseId_Status"" ON ""InventoryOutFGs"" (""OrgId"", ""WarehouseId"", ""Status"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryOutFGLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""InventoryOutFGId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""Qty"" INTEGER NOT NULL,
+                ""UnitCost"" NUMERIC NOT NULL DEFAULT 0,
+                ""UnitPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryOutFGLines_InventoryOutFGs_InventoryOutFGId"" FOREIGN KEY (""InventoryOutFGId"") REFERENCES ""InventoryOutFGs"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_InventoryOutFGLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryOutFGSerials"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""InventoryOutFGId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""SerialNo"" TEXT NOT NULL,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryOutFGSerials_InventoryOutFGs_InventoryOutFGId"" FOREIGN KEY (""InventoryOutFGId"") REFERENCES ""InventoryOutFGs"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_InventoryOutFGSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryOutFGSerials_OrgId_InventoryOutFGId_ProductId_SerialNo"" ON ""InventoryOutFGSerials"" (""OrgId"", ""InventoryOutFGId"", ""ProductId"", ""SerialNo"");"
         };
         foreach (var s in sql)
         {
