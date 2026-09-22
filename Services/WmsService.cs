@@ -107,6 +107,7 @@ public interface IWmsService
     Task<InventoryInDtlReport> InventoryInDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? keyword);
     Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
     Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
+    Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -5022,6 +5023,307 @@ public class WmsService(AppDbContext db) : IWmsService
             overMaxCount,
             urgentReplenishCount,
             avgAvailRate,
+            rows
+        );
+    }
+
+    /// <summary>Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho (port từ Rpt_Inv_InventoryBalance_ByValue & Rpt_Inv_InventoryBalance Skycic).</summary>
+    public async Task<InventoryValuationReport> InventoryValuationReportAsync(
+        int? warehouseId,
+        InventoryValuationAbcClass? abcClass,
+        bool onlyHasStock = true,
+        string? keyword = null,
+        DateTime? asOfDate = null)
+    {
+        string whName = "Toàn hệ thống";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        DateTime targetDate = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+
+        // 1. Tồn vật lý thực tế từ các phiếu ĐÃ GHI SỔ tính đến mốc thời gian targetDate
+        var postedDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= targetDate)
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var mapPhysical = new Dictionary<(int whId, int prodId), int>();
+        void AddPhysical(int wh, int pid, int q)
+        {
+            mapPhysical.TryGetValue((wh, pid), out var cur);
+            mapPhysical[(wh, pid)] = cur + q;
+        }
+
+        foreach (var d in postedDocs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to) AddPhysical(to, l.ProductId, l.Quantity);
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr) AddPhysical(fr, l.ProductId, -l.Quantity);
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } f) AddPhysical(f, l.ProductId, -l.Quantity);
+                    if (d.ToWarehouseId is { } t) AddPhysical(t, l.ProductId, l.Quantity);
+                }
+            }
+        }
+
+        // 2. Số lượng hàng bị tạm khóa / phong tỏa vốn (QtyBlockOK)
+        var mapBlock = new Dictionary<(int whId, int prodId), int>();
+        void AddBlock(int wh, int pid, int q)
+        {
+            if (q <= 0) return;
+            mapBlock.TryGetValue((wh, pid), out var cur);
+            mapBlock[(wh, pid)] = cur + q;
+        }
+
+        var serials = await db.StockSerials
+            .Where(s => (s.Status == StockSerialStatus.Locked || s.Status == StockSerialStatus.DamagedNG) && s.InDate <= targetDate)
+            .ToListAsync();
+        foreach (var s in serials) AddBlock(s.WarehouseId, s.ProductId, 1);
+
+        var draftOutDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Draft && (d.Type == DocType.Out || d.Type == DocType.Transfer) && d.Date <= targetDate)
+            .Include(d => d.Lines)
+            .ToListAsync();
+        foreach (var d in draftOutDocs)
+        {
+            if (d.FromWarehouseId is { } fWh)
+            {
+                foreach (var l in d.Lines) AddBlock(fWh, l.ProductId, l.Quantity);
+            }
+        }
+
+        var pendingMoveOrders = await db.MoveOrders
+            .Where(m => (m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved) && m.Date <= targetDate)
+            .Include(m => m.Lines)
+            .ToListAsync();
+        foreach (var m in pendingMoveOrders)
+        {
+            foreach (var l in m.Lines) AddBlock(m.FromWarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var draftRetSups = await db.ReturnToSuppliers
+            .Where(r => r.Status == ReturnSupStatus.Draft && r.Date <= targetDate)
+            .Include(r => r.Lines)
+            .ToListAsync();
+        foreach (var r in draftRetSups)
+        {
+            foreach (var l in r.Lines) AddBlock(r.WarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var pendingOutFGs = await db.InventoryOutFGs
+            .Where(f => f.Status == InvOutFGStatus.Pending && f.Date <= targetDate)
+            .Include(f => f.Lines)
+            .ToListAsync();
+        foreach (var f in pendingOutFGs)
+        {
+            foreach (var l in f.Lines) AddBlock(f.WarehouseId, l.ProductId, l.Qty);
+        }
+
+        // Lấy giá vốn kho hiện hành hoặc tại thời điểm targetDate từ CostPriceHist
+        var currentCostPrices = await db.CostPriceHists
+            .Where(c => c.EffectDate <= targetDate)
+            .OrderByDescending(c => c.EffectDate)
+            .ThenByDescending(c => c.Id)
+            .ToListAsync();
+
+        var costPriceLookup = new Dictionary<(int? whId, int prodId), decimal>();
+        foreach (var c in currentCostPrices)
+        {
+            if (!costPriceLookup.ContainsKey((c.WarehouseId, c.ProductId)))
+                costPriceLookup[(c.WarehouseId, c.ProductId)] = c.CostPrice;
+        }
+
+        var allLotProdIds = (await db.StockLots.Select(l => l.ProductId).Distinct().ToListAsync()).ToHashSet();
+        var allSerialProdIds = (await db.StockSerials.Select(s => s.ProductId).Distinct().ToListAsync()).ToHashSet();
+
+        // 3. Xây dựng danh sách sơ bộ các mặt hàng
+        var candidateList = new List<(
+            Product Prod,
+            Warehouse Wh,
+            int TotalOk,
+            int BlockOk,
+            int AvailOk,
+            double AvailRate,
+            decimal CostPrice,
+            decimal TotalValMixBase,
+            decimal TotalValAvail,
+            decimal TotalValBlock
+        )>();
+
+        foreach (var wh in targetWarehouses)
+        {
+            foreach (var prod in allProducts)
+            {
+                int totalOk = mapPhysical.GetValueOrDefault((wh.Id, prod.Id), 0);
+                int rawBlockOk = mapBlock.GetValueOrDefault((wh.Id, prod.Id), 0);
+                int blockOk = Math.Min(totalOk > 0 ? totalOk : 0, rawBlockOk);
+                int availOk = Math.Max(0, totalOk - blockOk);
+                double availRate = totalOk > 0 ? Math.Round(availOk * 100.0 / totalOk, 1) : 100.0;
+
+                // Giá vốn ưu tiên: CostPriceHist của kho -> CostPriceHist toàn hệ thống -> Product.CostPrice
+                decimal cost = prod.CostPrice;
+                if (costPriceLookup.TryGetValue((wh.Id, prod.Id), out var whCost) && whCost > 0)
+                    cost = whCost;
+                else if (costPriceLookup.TryGetValue((null, prod.Id), out var sysCost) && sysCost > 0)
+                    cost = sysCost;
+
+                if (cost <= 0) cost = 100000m; // Fallback giá danh nghĩa
+
+                decimal totalValMixBase = totalOk * cost;
+                decimal totalValAvail = availOk * cost;
+                decimal totalValBlock = blockOk * cost;
+
+                if (onlyHasStock && totalOk <= 0 && totalValMixBase <= 0)
+                    continue;
+
+                candidateList.Add((prod, wh, totalOk, blockOk, availOk, availRate, cost, totalValMixBase, totalValAvail, totalValBlock));
+            }
+        }
+
+        // 4. Sắp xếp giảm dần theo Tổng giá trị để phân bổ tỷ trọng và phân hạng ABC
+        var sortedCandidates = candidateList.OrderByDescending(c => c.TotalValMixBase).ToList();
+        decimal grandTotalValMixBase = sortedCandidates.Sum(c => c.TotalValMixBase);
+
+        var rows = new List<InventoryValuationRow>();
+        double cumulativeShare = 0.0;
+
+        foreach (var item in sortedCandidates)
+        {
+            double share = grandTotalValMixBase > 0
+                ? Math.Round((double)(item.TotalValMixBase / grandTotalValMixBase * 100m), 2)
+                : 0.0;
+
+            cumulativeShare += share;
+
+            InventoryValuationAbcClass itemAbc;
+            string abcLabel, abcBadge;
+
+            if (cumulativeShare <= 70.0 || (rows.Count == 0 && share > 0))
+            {
+                itemAbc = InventoryValuationAbcClass.ClassA;
+                abcLabel = "Hạng A (Giá trị cao)";
+                abcBadge = "bg-danger text-white";
+            }
+            else if (cumulativeShare <= 90.0)
+            {
+                itemAbc = InventoryValuationAbcClass.ClassB;
+                abcLabel = "Hạng B (Trung bình)";
+                abcBadge = "bg-warning text-dark";
+            }
+            else
+            {
+                itemAbc = InventoryValuationAbcClass.ClassC;
+                abcLabel = "Hạng C (Giá trị thấp)";
+                abcBadge = "bg-secondary text-white";
+            }
+
+            string riskStatus, riskBadge;
+            if (item.TotalValBlock > 0)
+            {
+                riskStatus = "Chôn vốn tạm khóa";
+                riskBadge = "bg-danger text-white";
+            }
+            else if (itemAbc == InventoryValuationAbcClass.ClassA && item.TotalOk > 50)
+            {
+                riskStatus = "Tồn vốn trọng điểm";
+                riskBadge = "bg-primary text-white";
+            }
+            else
+            {
+                riskStatus = "An toàn luân chuyển";
+                riskBadge = "bg-success text-white";
+            }
+
+            rows.Add(new InventoryValuationRow(
+                item.Prod.Id,
+                item.Prod.Code,
+                item.Prod.Name,
+                item.Prod.Uom,
+                item.Wh.Id,
+                item.Wh.Name,
+                item.TotalOk,
+                item.BlockOk,
+                item.AvailOk,
+                item.AvailRate,
+                item.CostPrice,
+                item.TotalValMixBase,
+                item.TotalValAvail,
+                item.TotalValBlock,
+                share,
+                itemAbc,
+                abcLabel,
+                abcBadge,
+                riskStatus,
+                riskBadge,
+                allLotProdIds.Contains(item.Prod.Id),
+                allSerialProdIds.Contains(item.Prod.Id)
+            ));
+        }
+
+        // Lọc theo AbcFilter
+        if (abcClass.HasValue && abcClass.Value != InventoryValuationAbcClass.All)
+        {
+            rows = rows.Where(r => r.AbcClass == abcClass.Value).ToList();
+        }
+
+        // Lọc theo từ khóa
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var k = keyword.Trim().ToLowerInvariant();
+            rows = rows.Where(r => r.ProductCode.ToLowerInvariant().Contains(k) ||
+                                   r.ProductName.ToLowerInvariant().Contains(k) ||
+                                   r.WarehouseName.ToLowerInvariant().Contains(k)).ToList();
+        }
+
+        // KPI thống kê
+        int totalItems = rows.Count;
+        int totalPhysicalQty = rows.Sum(r => r.QtyTotalOK);
+        int totalBlockedQty = rows.Sum(r => r.QtyBlockOK);
+        int totalAvailableQty = rows.Sum(r => r.QtyAvailOK);
+        decimal sumTotalVal = rows.Sum(r => r.TotalValMixBase);
+        decimal sumValAvail = rows.Sum(r => r.TotalValAvail);
+        decimal sumValBlock = rows.Sum(r => r.TotalValBlock);
+        double availRatio = sumTotalVal > 0 ? Math.Round((double)(sumValAvail / sumTotalVal * 100m), 1) : 100.0;
+
+        int classACount = rows.Count(r => r.AbcClass == InventoryValuationAbcClass.ClassA);
+        decimal classAVal = rows.Where(r => r.AbcClass == InventoryValuationAbcClass.ClassA).Sum(r => r.TotalValMixBase);
+        int classBCount = rows.Count(r => r.AbcClass == InventoryValuationAbcClass.ClassB);
+        decimal classBVal = rows.Where(r => r.AbcClass == InventoryValuationAbcClass.ClassB).Sum(r => r.TotalValMixBase);
+        int classCCount = rows.Count(r => r.AbcClass == InventoryValuationAbcClass.ClassC);
+        decimal classCVal = rows.Where(r => r.AbcClass == InventoryValuationAbcClass.ClassC).Sum(r => r.TotalValMixBase);
+
+        return new InventoryValuationReport(
+            warehouseId,
+            whName,
+            asOfDate ?? DateTime.Today,
+            abcClass,
+            onlyHasStock,
+            keyword,
+            totalItems,
+            totalPhysicalQty,
+            totalBlockedQty,
+            totalAvailableQty,
+            sumTotalVal,
+            sumValAvail,
+            sumValBlock,
+            availRatio,
+            classACount,
+            classAVal,
+            classBCount,
+            classBVal,
+            classCCount,
+            classCVal,
             rows
         );
     }

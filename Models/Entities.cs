@@ -1598,6 +1598,67 @@ public record StockExtendReport(
     List<StockExtendRow> Rows
 );
 
+/// <summary>Phân loại nhóm giá trị ABC trong đánh giá giá trị tồn kho (port từ Rpt_Inv_InventoryBalance_ByValue Skycic).</summary>
+public enum InventoryValuationAbcClass
+{
+    All = 0,
+    ClassA = 1, // Nhóm A - Giá trị cao (chiếm ~70% giá trị tồn kho, cần quản lý kiểm soát nghiêm ngặt rủi ro vốn)
+    ClassB = 2, // Nhóm B - Giá trị trung bình (chiếm ~20% giá trị tồn kho)
+    ClassC = 3  // Nhóm C - Giá trị thấp (chiếm ~10% giá trị tồn kho)
+}
+
+/// <summary>Dòng báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho (port từ Rpt_Inv_InventoryBalance_ByValue & Rpt_Inv_InventoryBalance Skycic).</summary>
+public record InventoryValuationRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int QtyTotalOK,          // Số lượng tồn vật lý (Physical On-hand)
+    int QtyBlockOK,          // Số lượng tạm khóa / phong tỏa (Blocked / Reserved)
+    int QtyAvailOK,          // Số lượng khả dụng sẵn sàng xuất bán (Available to Promise = QtyTotalOK - QtyBlockOK)
+    double AvailRate,        // Tỷ lệ khả dụng % = QtyAvailOK / QtyTotalOK * 100
+    decimal CostPrice,       // Đơn giá vốn kho / định giá (ValMixBase / UPInv)
+    decimal TotalValMixBase, // Tổng giá trị tồn vật lý = QtyTotalOK * CostPrice (TotalValMixBase Skycic)
+    decimal TotalValAvail,   // Tổng giá trị hàng khả dụng = QtyAvailOK * CostPrice
+    decimal TotalValBlock,   // Tổng giá trị hàng bị tạm khóa / chôn vốn = QtyBlockOK * CostPrice
+    double SharePercent,     // Tỷ trọng % giá trị so với tổng tài sản kho (InvPercent Skycic)
+    InventoryValuationAbcClass AbcClass, // Phân hạng ABC
+    string AbcClassLabel,    // Hạng A / Hạng B / Hạng C
+    string AbcBadgeClass,    // badge color
+    string CapitalRiskStatus,// Trạng thái rủi ro vốn (Bình thường / Chôn vốn tạm khóa / Giá trị cao cần giải phóng)
+    string RiskBadgeClass,   // badge color
+    bool HasLot,             // Quản lý lô
+    bool HasSerial           // Quản lý Serial
+);
+
+/// <summary>Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho tổng hợp (port từ Rpt_Inv_InventoryBalance_ByValue Skycic).</summary>
+public record InventoryValuationReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,
+    InventoryValuationAbcClass? AbcFilter,
+    bool OnlyHasStock,
+    string? Keyword,
+    int TotalItems,              // Tổng số mặt hàng
+    int TotalPhysicalQty,        // Tổng số lượng tồn vật lý
+    int TotalBlockedQty,         // Tổng số lượng tạm khóa
+    int TotalAvailableQty,       // Tổng số lượng khả dụng
+    decimal GrandTotalValMixBase,// Tổng giá trị tồn kho thực tế (VNĐ)
+    decimal GrandTotalValAvail,  // Tổng giá trị tồn kho khả dụng (VNĐ)
+    decimal GrandTotalValBlock,  // Tổng giá trị hàng tạm khóa (VNĐ)
+    double AvailValueRatio,      // Tỷ lệ giá trị khả dụng % = GrandTotalValAvail / GrandTotalValMixBase * 100
+    int ClassACount,             // Số mặt hàng nhóm A
+    decimal ClassAValue,         // Giá trị tồn nhóm A
+    int ClassBCount,             // Số mặt hàng nhóm B
+    decimal ClassBValue,         // Giá trị tồn nhóm B
+    int ClassCCount,             // Số mặt hàng nhóm C
+    decimal ClassCValue,         // Giá trị tồn nhóm C
+    List<InventoryValuationRow> Rows
+);
+
+
 
 
 

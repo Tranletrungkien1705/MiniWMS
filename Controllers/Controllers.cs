@@ -2232,6 +2232,52 @@ public class StockExtendController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryValuationController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? q = null, DateTime? asOfDate = null)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.AbcClass = abcClass;
+        ViewBag.OnlyHasStock = onlyHasStock;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.AsOfDate = (asOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+
+        var report = await svc.InventoryValuationReportAsync(warehouseId, abcClass, onlyHasStock, q, asOfDate);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? q = null, DateTime? asOfDate = null)
+    {
+        var report = await svc.InventoryValuationReportAsync(warehouseId, abcClass, onlyHasStock, q, asOfDate);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị tiếng Việt chuẩn
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO ĐÁNH GIÁ GIÁ TRỊ TỒN KHO & CƠ CẤU TÀI SẢN KHO (PORT TỪ RPT_INV_INVENTORYBALANCE_BYVALUE)");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Ngày chốt số liệu:;{report.AsOfDate:dd/MM/yyyy};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Phân hạng ABC:;{(abcClass.HasValue ? abcClass.Value.ToString() : "Tất cả")};Chỉ hiện có tồn:;{(onlyHasStock ? "Có" : "Không")};Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng số mặt hàng:;{report.TotalItems};Tổng tồn vật lý:;{report.TotalPhysicalQty};Tổng tạm khóa:;{report.TotalBlockedQty};Tổng tồn khả dụng:;{report.TotalAvailableQty};Tổng giá trị tồn kho:;{report.GrandTotalValMixBase:N0} đ;Giá trị khả dụng:;{report.GrandTotalValAvail:N0} đ;Giá trị tạm khóa:;{report.GrandTotalValBlock:N0} đ;Tỷ lệ giá trị khả dụng:;{report.AvailValueRatio:F1}%");
+        sb.AppendLine($"Cơ cấu ABC:;Nhóm A: {report.ClassACount} sp ({report.ClassAValue:N0} đ);Nhóm B: {report.ClassBCount} sp ({report.ClassBValue:N0} đ);Nhóm C: {report.ClassCCount} sp ({report.ClassCValue:N0} đ)");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng hoá;Tên hàng hoá;ĐVT;Kho lưu trữ;Tồn vật lý (On-hand);Tạm khóa (Blocked);Tồn khả dụng (Avail);Tỷ lệ khả dụng (%);Đơn giá vốn kho (đ);Tổng giá trị tồn vật lý (đ);Giá trị hàng khả dụng (đ);Giá trị hàng tạm khóa (đ);Tỷ trọng tài sản (%);Phân hạng ABC;Cảnh báo rủi ro vốn;Quản lý Lô;Quản lý Serial");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.QtyTotalOK};{r.QtyBlockOK};{r.QtyAvailOK};{r.AvailRate:F1}%;{r.CostPrice:F0};{r.TotalValMixBase:F0};{r.TotalValAvail:F0};{r.TotalValBlock:F0};{r.SharePercent:F2}%;\"{r.AbcClassLabel}\";\"{r.CapitalRiskStatus}\";\"{(r.HasLot ? "Có" : "Không")}\";\"{(r.HasSerial ? "Có" : "Không")}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalPhysicalQty};{report.TotalBlockedQty};{report.TotalAvailableQty};;{report.GrandTotalValMixBase:F0};{report.GrandTotalValAvail:F0};{report.GrandTotalValBlock:F0};100.0%;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_DinhGiaTonKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

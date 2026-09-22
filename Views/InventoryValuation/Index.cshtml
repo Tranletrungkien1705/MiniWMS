@@ -1,0 +1,313 @@
+@model InventoryValuationReport
+@{
+    ViewData["Title"] = "Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedAbc = (InventoryValuationAbcClass?)ViewBag.AbcClass;
+    var onlyHasStock = (bool)ViewBag.OnlyHasStock;
+    var keyword = (string)ViewBag.Keyword;
+    var asOfDate = (string)ViewBag.AsOfDate;
+
+    // Tính % phân bổ ABC cho thanh tiến trình
+    decimal grandTotal = Model.GrandTotalValMixBase > 0 ? Model.GrandTotalValMixBase : 1m;
+    double pctA = Math.Round((double)(Model.ClassAValue / grandTotal * 100m), 1);
+    double pctB = Math.Round((double)(Model.ClassBValue / grandTotal * 100m), 1);
+    double pctC = Math.Max(0.0, Math.Round(100.0 - pctA - pctB, 1));
+}
+
+<style>
+    @@media print {
+        .sidebar, .topbar, .no-print, .btn, form { display: none !important; }
+        .content-area { padding: 0 !important; }
+        body { background: #fff !important; font-size: 11px !important; }
+        .card { border: none !important; box-shadow: none !important; }
+        .table { font-size: 10px !important; }
+        .print-header { display: block !important; }
+        .print-signatures { display: flex !important; }
+        @@page { size: landscape; margin: 10mm; }
+    }
+    .print-header, .print-signatures { display: none; }
+    .stat-num { font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+    .progress-bar-abc { height: 10px; border-radius: 5px; }
+</style>
+
+<!-- Tiêu đề trang & Nút hành động -->
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-cash-stack text-success me-2"></i>Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Inv_InventoryBalance_ByValue</code> & <code>Rpt_Inv_InventoryBalance</code> (Skycic) — Định giá tồn kho thực tế, tồn khả dụng, phân tích tỷ trọng ABC & cảnh báo chôn vốn</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/InventoryValuation/ExportCsv?warehouseId=@selectedWid&abcClass=@selectedAbc&onlyHasStock=@onlyHasStock&q=@Uri.EscapeDataString(keyword ?? "")&asOfDate=@asOfDate" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo (A4 ngang)
+        </button>
+        <a href="/CostPrice" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-calculator me-1"></i> Quản lý giá vốn
+        </a>
+    </div>
+</div>
+
+<!-- Tiêu đề khi in ấn -->
+<div class="print-header mb-4">
+    <div class="text-center">
+        <h3 class="fw-bold text-uppercase mb-1">Báo Cáo Đánh Giá Giá Trị Tồn Kho & Cơ Cấu Tài Sản Kho</h3>
+        <div class="text-muted">Kho áp dụng: <strong>@Model.WarehouseName</strong> | Mốc chốt số liệu: <strong>@Model.AsOfDate.ToString("dd/MM/yyyy")</strong> | Thời điểm in: <strong>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</strong></div>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI thống kê tài chính kho -->
+<div class="row g-3 mb-3 no-print">
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-primary border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Tổng tồn vật lý (On-hand)</div>
+            <div class="stat-num text-primary mt-1">@Model.TotalPhysicalQty.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Số SKU định giá:</span>
+                <strong class="text-dark">@Model.TotalItems mặt hàng</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-success border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Tổng giá trị tồn kho (VND)</div>
+            <div class="stat-num text-success mt-1">@Model.GrandTotalValMixBase.ToString("N0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Giá trị khả dụng:</span>
+                <strong class="text-success">@Model.GrandTotalValAvail.ToString("N0") đ (@Model.AvailValueRatio.ToString("F1")%)</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-danger border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Hàng tạm khóa / Chôn vốn</div>
+            <div class="stat-num text-danger mt-1">@Model.GrandTotalValBlock.ToString("N0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Lượng tạm khóa:</span>
+                <strong class="text-danger">@Model.TotalBlockedQty.ToString("N0") sp</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-info border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Cơ cấu phân bổ ABC</div>
+            <div class="stat-num text-info mt-1">@Model.ClassACount <span class="fs-6 fw-normal text-muted">sp hạng A</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Hạng B: <strong>@Model.ClassBCount</strong></span>
+                <span>Hạng C: <strong>@Model.ClassCCount</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Thanh biểu đồ phân bổ tỷ trọng cơ cấu giá trị ABC -->
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-semibold text-muted text-uppercase">Biểu đồ cơ cấu tài sản tồn kho theo phân loại ABC (Pareto Principle)</span>
+            <span class="small text-muted">Tổng giá trị: <strong>@Model.GrandTotalValMixBase.ToString("N0") đ</strong></span>
+        </div>
+        <div class="progress progress-bar-abc mb-2" style="background-color: #e9ecef;">
+            <div class="progress-bar bg-danger" role="progressbar" style="width: @pctA%" title="Hạng A: @pctA% giá trị (@Model.ClassAValue.ToString("N0") đ)"></div>
+            <div class="progress-bar bg-warning" role="progressbar" style="width: @pctB%" title="Hạng B: @pctB% giá trị (@Model.ClassBValue.ToString("N0") đ)"></div>
+            <div class="progress-bar bg-secondary" role="progressbar" style="width: @pctC%" title="Hạng C: @pctC% giá trị (@Model.ClassCValue.ToString("N0") đ)"></div>
+        </div>
+        <div class="d-flex gap-4 small">
+            <div><span class="badge bg-danger me-1">Hạng A</span> Giá trị cao (~70% vốn): <strong>@Model.ClassAValue.ToString("N0") đ</strong> (@pctA%) — @Model.ClassACount sp</div>
+            <div><span class="badge bg-warning text-dark me-1">Hạng B</span> Giá trị TB (~20% vốn): <strong>@Model.ClassBValue.ToString("N0") đ</strong> (@pctB%) — @Model.ClassBCount sp</div>
+            <div><span class="badge bg-secondary me-1">Hạng C</span> Giá trị thấp (~10% vốn): <strong>@Model.ClassCValue.ToString("N0") đ</strong> (@pctC%) — @Model.ClassCCount sp</div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Toàn bộ hệ thống —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Phân hạng ABC</label>
+                <select name="abcClass" class="form-select form-select-sm">
+                    <option value="" selected="@(!selectedAbc.HasValue || selectedAbc == InventoryValuationAbcClass.All)">— Tất cả phân hạng —</option>
+                    <option value="ClassA" selected="@(selectedAbc == InventoryValuationAbcClass.ClassA)">🔴 Hạng A - Giá trị cao (@Model.ClassACount)</option>
+                    <option value="ClassB" selected="@(selectedAbc == InventoryValuationAbcClass.ClassB)">🟡 Hạng B - Giá trị vừa (@Model.ClassBCount)</option>
+                    <option value="ClassC" selected="@(selectedAbc == InventoryValuationAbcClass.ClassC)">⚪ Hạng C - Giá trị thấp (@Model.ClassCCount)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Mốc chốt số liệu</label>
+                <input type="date" name="asOfDate" value="@asOfDate" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Tìm kiếm</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Mã hàng, tên sản phẩm, kho..." />
+                </div>
+            </div>
+            <div class="col-md-2 d-flex align-items-center pb-1">
+                <div class="form-check form-switch small">
+                    <input class="form-check-input" type="checkbox" name="onlyHasStock" value="true" id="chkOnlyHasStock" @(onlyHasStock ? "checked" : "") onchange="document.getElementById('filterForm').submit()">
+                    <label class="form-check-label text-muted" for="chkOnlyHasStock">Chỉ hiện có tồn</label>
+                </div>
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="Áp dụng bộ lọc">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                <a href="/InventoryValuation" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu chi tiết định giá tồn kho -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-table me-2 text-primary"></i>Bảng kê chi tiết Định giá tồn kho & Cơ cấu tài sản
+            <span class="badge bg-light text-dark ms-2 fw-normal border">@Model.TotalItems mặt hàng</span>
+        </h6>
+        <div class="small text-muted no-print">
+            Đơn vị tính tiền: <strong>VNĐ</strong> | Phương pháp định giá: <strong>Bình quân gia quyền / Giá vốn hiện hành</strong>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 40px;">STT</th>
+                    <th style="width: 120px;">Mã hàng</th>
+                    <th style="min-width: 180px;">Tên hàng hoá</th>
+                    <th class="text-center" style="width: 55px;">ĐVT</th>
+                    <th style="width: 110px;">Kho lưu</th>
+                    <th class="text-end" style="width: 90px;" title="Tổng tồn kho vật lý thực tế">Tồn vật lý<br/><small class="fw-normal text-muted">(Total OK)</small></th>
+                    <th class="text-end text-danger" style="width: 85px;" title="Lượng hàng bị tạm khóa phong tỏa">Tạm khóa<br/><small class="fw-normal text-muted">(Blocked)</small></th>
+                    <th class="text-end text-success fw-bold" style="width: 90px;" title="Lượng tồn khả dụng có thể xuất bán">Khả dụng<br/><small class="fw-normal text-muted">(Avail OK)</small></th>
+                    <th class="text-center" style="width: 80px;" title="Tỷ lệ khả dụng">Tỷ lệ K/D</th>
+                    <th class="text-end" style="width: 110px;" title="Đơn giá vốn định giá">Đơn giá vốn<br/><small class="fw-normal text-muted">(UPInv)</small></th>
+                    <th class="text-end fw-bold text-primary" style="width: 130px;" title="Tổng giá trị tồn vật lý">Tổng giá trị tồn<br/><small class="fw-normal text-muted">(TotalValMixBase)</small></th>
+                    <th class="text-end text-success" style="width: 125px;" title="Giá trị tồn kho khả dụng">Giá trị khả dụng<br/><small class="fw-normal text-muted">(Val Avail)</small></th>
+                    <th class="text-end text-danger" style="width: 120px;" title="Giá trị hàng bị tạm khóa / chôn vốn">Giá trị tạm khóa<br/><small class="fw-normal text-muted">(Val Blocked)</small></th>
+                    <th class="text-end fw-bold" style="width: 80px;" title="Tỷ trọng giá trị đóng góp trên tổng kho">Tỷ trọng %<br/><small class="fw-normal text-muted">(InvPercent)</small></th>
+                    <th class="text-center" style="width: 110px;">Phân loại ABC</th>
+                    <th class="text-center" style="width: 130px;">Rủi ro tài chính</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="16" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                            Không có dữ liệu định giá tồn kho phù hợp với điều kiện lọc.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="text-center text-muted small">@(stt++)</td>
+                            <td>
+                                <span class="fw-semibold font-monospace text-primary">@r.ProductCode</span>
+                                @if (r.HasLot) { <span class="badge bg-light text-secondary border ms-1" title="Hàng quản lý Lô">Lô</span> }
+                                @if (r.HasSerial) { <span class="badge bg-light text-secondary border ms-1" title="Hàng quản lý Serial">SN</span> }
+                            </td>
+                            <td>
+                                <span class="fw-medium text-dark">@r.ProductName</span>
+                            </td>
+                            <td class="text-center text-muted small">@r.Uom</td>
+                            <td class="small text-muted">@r.WarehouseName</td>
+                            <td class="text-end fw-semibold">@r.QtyTotalOK.ToString("N0")</td>
+                            <td class="text-end @(r.QtyBlockOK > 0 ? "text-danger fw-bold" : "text-muted")">
+                                @r.QtyBlockOK.ToString("N0")
+                            </td>
+                            <td class="text-end fw-bold text-success">@r.QtyAvailOK.ToString("N0")</td>
+                            <td class="text-center">
+                                @if (r.QtyTotalOK > 0)
+                                {
+                                    <span class="badge @(r.AvailRate >= 90 ? "bg-success-subtle text-success" : (r.AvailRate >= 50 ? "bg-warning-subtle text-warning" : "bg-danger-subtle text-danger")) border">
+                                        @r.AvailRate.ToString("F1")%
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
+                                }
+                            </td>
+                            <td class="text-end text-muted font-monospace small">@r.CostPrice.ToString("N0") đ</td>
+                            <td class="text-end fw-bold text-primary font-monospace">@r.TotalValMixBase.ToString("N0") đ</td>
+                            <td class="text-end text-success font-monospace">@r.TotalValAvail.ToString("N0") đ</td>
+                            <td class="text-end font-monospace @(r.TotalValBlock > 0 ? "text-danger fw-bold" : "text-muted")">
+                                @(r.TotalValBlock > 0 ? r.TotalValBlock.ToString("N0") + " đ" : "0 đ")
+                            </td>
+                            <td class="text-end fw-bold text-dark font-monospace">
+                                @r.SharePercent.ToString("F2")%
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.AbcBadgeClass">@r.AbcClassLabel</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.RiskBadgeClass">@r.CapitalRiskStatus</span>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                <tfoot class="table-light fw-bold border-top-2">
+                    <tr>
+                        <td colspan="5" class="text-end text-uppercase">TỔNG CỘNG (@Model.TotalItems mặt hàng):</td>
+                        <td class="text-end text-primary">@Model.TotalPhysicalQty.ToString("N0")</td>
+                        <td class="text-end text-danger">@Model.TotalBlockedQty.ToString("N0")</td>
+                        <td class="text-end text-success">@Model.TotalAvailableQty.ToString("N0")</td>
+                        <td class="text-center text-muted">—</td>
+                        <td class="text-end text-muted">—</td>
+                        <td class="text-end text-primary font-monospace fs-6">@Model.GrandTotalValMixBase.ToString("N0") đ</td>
+                        <td class="text-end text-success font-monospace">@Model.GrandTotalValAvail.ToString("N0") đ</td>
+                        <td class="text-end text-danger font-monospace">@Model.GrandTotalValBlock.ToString("N0") đ</td>
+                        <td class="text-end font-monospace">100.0%</td>
+                        <td colspan="2" class="text-center text-muted small">Tỷ lệ K/D: @Model.AvailValueRatio.ToString("F1")%</td>
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    </div>
+</div>
+
+<!-- Khối chữ ký khi in ấn chuẩn kế toán WMS -->
+<div class="print-signatures row mt-5 pt-4 text-center">
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Người lập biểu</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên)</div>
+        <div class="fw-semibold">Admin / WMS Operator</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Kế toán kho / Thủ kho</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên)</div>
+        <div class="fw-semibold">Thủ kho trưởng</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Giám đốc / Kế toán trưởng</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên & đóng dấu)</div>
+        <div class="fw-semibold">Phê duyệt</div>
+    </div>
+</div>

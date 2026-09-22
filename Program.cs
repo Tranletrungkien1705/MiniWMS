@@ -1396,6 +1396,40 @@ app.MapGet("/api/reports/inventory-balance-extend", async (int? warehouseId, Sto
     return Results.Ok(report);
 });
 
+// API Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho (port từ Rpt_Inv_InventoryBalance_ByValue & Rpt_Inv_InventoryBalance Skycic)
+app.MapGet("/api/reports/inventory-balance-by-value", async (int? warehouseId, InventoryValuationAbcClass? abcClass, bool? onlyHasStock, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.InventoryValuationReportAsync(warehouseId, abcClass, onlyHasStock ?? true, q, asOfDate);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/reports/inventory-valuation", async (int? warehouseId, InventoryValuationAbcClass? abcClass, bool? onlyHasStock, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.InventoryValuationReportAsync(warehouseId, abcClass, onlyHasStock ?? true, q, asOfDate);
+    return Results.Ok(new
+    {
+        warehouse = report.WarehouseName,
+        warehouseId = report.WarehouseId,
+        asOfDate = report.AsOfDate.ToString("yyyy-MM-dd"),
+        summary = new
+        {
+            totalItems = report.TotalItems,
+            totalPhysicalQty = report.TotalPhysicalQty,
+            totalBlockedQty = report.TotalBlockedQty,
+            totalAvailableQty = report.TotalAvailableQty,
+            grandTotalValMixBase = report.GrandTotalValMixBase,
+            grandTotalValAvail = report.GrandTotalValAvail,
+            grandTotalValBlock = report.GrandTotalValBlock,
+            availValueRatio = report.AvailValueRatio,
+            classA = new { count = report.ClassACount, value = report.ClassAValue },
+            classB = new { count = report.ClassBCount, value = report.ClassBValue },
+            classC = new { count = report.ClassCCount, value = report.ClassCValue }
+        },
+        items = report.Rows
+    });
+});
+
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
