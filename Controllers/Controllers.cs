@@ -2037,6 +2037,44 @@ public class SupplierController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryOutDtlController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.FromDate = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).ToString("yyyy-MM-dd");
+        ViewBag.ToDate = (toDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+        ViewBag.OutType = outType ?? "";
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryOutDtlReportAsync(warehouseId, fromDate, toDate, outType, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? q)
+    {
+        var report = await svc.InventoryOutDtlReportAsync(warehouseId, fromDate, toDate, outType, q);
+
+        var sb = new System.Text.StringBuilder();
+        // Thêm UTF-8 BOM để Excel hiển thị tiếng Việt không bị lỗi font
+        sb.Append('\uFEFF');
+        sb.AppendLine("STT;Số phiếu xuất;Ngày xuất;Loại xuất;Mã chứng từ gốc;Kho xuất;Bên nhận / Khách hàng;Mã vật tư;Tên vật tư;ĐVT;Số lượng xuất;Đơn giá vốn (đ);Tổng giá vốn (đ);Người xuất;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Items)
+        {
+            var dateStr = r.DocDate.ToString("dd/MM/yyyy HH:mm");
+            sb.AppendLine($"{stt++};\"{r.DocNo}\";{dateStr};\"{r.OutTypeName}\";\"{r.RefNo ?? "—"}\";\"{r.WarehouseName}\";\"{r.CustomerName}\";\"{r.ProductCode}\";\"{r.ProductName}\";\"{r.UnitName}\";{r.Quantity};{r.UnitPrice:F0};{r.TotalAmount:F0};\"{r.CreatedBy}\";\"{r.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_ChiTietXuatKho_{report.FromDate:yyyyMMdd}_{report.ToDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

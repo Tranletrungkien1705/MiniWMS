@@ -1361,6 +1361,47 @@ public record BoxReport(
     List<BoxRow> Rows
 );
 
+/// <summary>Dòng báo cáo chi tiết xuất kho (port từ Rpt_InvF_InventoryOutDtl Skycic).</summary>
+public record InventoryOutDtlItem(
+    int Id,
+    string DocNo,
+    DateTime DocDate,
+    string OutType,
+    string OutTypeName,
+    string? RefNo,
+    string? RefType,
+    int WarehouseId,
+    string WarehouseName,
+    string? CustomerCode,
+    string CustomerName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string UnitName,
+    int Quantity,
+    decimal UnitPrice,
+    decimal TotalAmount,
+    string CreatedBy,
+    string? Note,
+    string? DocUrl
+);
+
+/// <summary>Báo cáo tổng hợp xuất kho chi tiết (port từ Rpt_InvF_InventoryOutDtl Skycic).</summary>
+public record InventoryOutDtlReport(
+    DateTime FromDate,
+    DateTime ToDate,
+    int? WarehouseId,
+    string WarehouseName,
+    string? OutTypeFilter,
+    string? Keyword,
+    List<InventoryOutDtlItem> Items,
+    int TotalDocsCount,
+    int TotalQty,
+    decimal TotalCostAmount,
+    int DistinctProductsCount
+);
+
+
 
 
 

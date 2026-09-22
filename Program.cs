@@ -1351,6 +1351,13 @@ app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
     return Results.Ok(new { orgId = org.Id, apiKey = org.ApiKey });
 });
 
+// API Báo cáo Tổng hợp Xuất kho Chi tiết (port từ Rpt_InvF_InventoryOutDtl Skycic)
+app.MapGet("/api/reports/inventory-out-detail", async (int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryOutDtlReportAsync(warehouseId, fromDate, toDate, outType, q);
+    return Results.Ok(report);
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 

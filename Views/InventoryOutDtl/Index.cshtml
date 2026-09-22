@@ -1,0 +1,319 @@
+@model InventoryOutDtlReport
+@{
+    ViewData["Title"] = "Báo cáo Chi tiết Xuất kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    var outType = (string)ViewBag.OutType;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-box-arrow-up-right text-primary me-2"></i>Báo cáo Tổng hợp Xuất kho Chi tiết</h5>
+        <div class="text-muted small">Port từ <code>Rpt_InvF_InventoryOutDtl</code> (Skycic) — Chi tiết từng dòng vật tư/thành phẩm xuất kho theo kỳ, loại xuất, giá vốn và đối tác nhận</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/InventoryOutDtl/ExportCsv?warehouseId=@selectedWid&fromDate=@fromDate&toDate=@toDate&outType=@Uri.EscapeDataString(outType ?? "")&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo
+        </button>
+        <a href="/Doc/Create?type=1" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-up me-1"></i> Xuất kho mới
+        </a>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho xuất hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Hình thức xuất</label>
+                <select name="outType" class="form-select form-select-sm">
+                    <option value="">— Tất cả hình thức xuất —</option>
+                    <option value="COMMERCIAL" selected="@(outType == "COMMERCIAL")">Xuất bán buôn / Thương mại</option>
+                    <option value="OUT_FG" selected="@(outType == "OUT_FG")">Xuất thành phẩm (giao ĐL/dự án)</option>
+                    <option value="RETURNSUP" selected="@(outType == "RETURNSUP")">Xuất trả hàng nhà cung cấp</option>
+                    <option value="TRANSFER" selected="@(outType == "TRANSFER")">Xuất điều chuyển kho</option>
+                    <option value="AUDIT_DIFF" selected="@(outType == "AUDIT_DIFF")">Xuất cân bằng hao hụt kiểm kê</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Từ ngày <span class="text-danger">*</span></label>
+                <input type="date" id="inputFromDate" name="fromDate" value="@fromDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Đến ngày <span class="text-danger">*</span></label>
+                <input type="date" id="inputToDate" name="toDate" value="@toDate" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc dữ liệu
+                </button>
+                <a href="/InventoryOutDtl" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+            <div class="col-md-6 mt-2">
+                <input type="text" name="q" value="@keyword" placeholder="Tìm theo số phiếu, mã hàng, tên hàng, đối tác nhận, RefNo..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-6 mt-2 d-flex gap-2 align-items-center justify-content-md-end flex-wrap">
+                <span class="small text-muted me-1">Kỳ nhanh:</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('today')">Hôm nay</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('last7days')">7 ngày qua</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisMonth')">Tháng này</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('lastMonth')">Tháng trước</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold text-uppercase">Lượt phiếu xuất</span>
+                    <i class="bi bi-journals text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalDocsCount.ToString("N0")</div>
+                <div class="text-muted small">Phiếu xuất trong kỳ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold text-uppercase">Tổng lượng xuất</span>
+                    <i class="bi bi-box-seam text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.TotalQty.ToString("N0")</div>
+                <div class="text-muted small">Đơn vị sản phẩm / kiện</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold text-uppercase">Tổng giá vốn xuất</span>
+                    <i class="bi bi-cash-stack text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.TotalCostAmount.ToString("N0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-muted small">Chi phí giá vốn kho (UPInv)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold text-uppercase">Mặt hàng xuất</span>
+                    <i class="bi bi-tags text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@Model.DistinctProductsCount</div>
+                <div class="text-muted small">Mặt hàng khác nhau</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu chi tiết xuất kho -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+        <div class="fw-semibold text-dark small text-uppercase">
+            <i class="bi bi-table me-1 text-primary"></i> Danh sách dòng hàng xuất kho (@Model.Items.Count dòng)
+        </div>
+        <div class="small text-muted">
+            Kỳ báo cáo: <strong class="text-dark">@Model.FromDate.ToString("dd/MM/yyyy")</strong> đến <strong class="text-dark">@Model.ToDate.ToString("dd/MM/yyyy")</strong>
+            @if (Model.WarehouseId.HasValue)
+            {
+                <span class="ms-1">| Kho: <strong class="text-dark">@Model.WarehouseName</strong></span>
+            }
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0 font-sans" id="tblOutDtl" style="font-size:12.5px;">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width:45px">STT</th>
+                    <th>Số phiếu</th>
+                    <th>Ngày xuất</th>
+                    <th>Loại hình xuất</th>
+                    <th>RefNo / Lệnh gốc</th>
+                    <th>Kho xuất</th>
+                    <th>Khách hàng / Đối tác nhận</th>
+                    <th>Mã hàng</th>
+                    <th>Tên hàng hóa</th>
+                    <th class="text-center">ĐVT</th>
+                    <th class="text-end">Số lượng</th>
+                    <th class="text-end">Đơn giá vốn</th>
+                    <th class="text-end">Tổng giá vốn (đ)</th>
+                    <th>Người lập</th>
+                </tr>
+                @if (Model.Items.Count > 0)
+                {
+                    <tr class="table-warning fw-bold text-dark border-bottom-2">
+                        <td colspan="10" class="text-end text-uppercase small">Tổng cộng toàn kỳ (@Model.Items.Count dòng):</td>
+                        <td class="text-end font-monospace text-primary">@Model.TotalQty.ToString("N0")</td>
+                        <td class="text-end text-muted">—</td>
+                        <td class="text-end font-monospace text-danger">@Model.TotalCostAmount.ToString("N0")</td>
+                        <td></td>
+                    </tr>
+                }
+            </thead>
+            <tbody>
+                @if (Model.Items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="14" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                            Không có phát sinh xuất kho nào thỏa mãn điều kiện lọc.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var item in Model.Items)
+                    {
+                        var badgeClass = item.OutType switch
+                        {
+                            "COMMERCIAL" => "bg-primary",
+                            "OUT_FG" => "bg-success",
+                            "RETURNSUP" => "bg-warning text-dark",
+                            "TRANSFER" => "bg-info text-dark",
+                            "AUDIT_DIFF" => "bg-secondary",
+                            _ => "bg-dark"
+                        };
+
+                        <tr>
+                            <td class="text-center text-muted small">@stt</td>
+                            <td class="font-monospace fw-semibold">
+                                @if (!string.IsNullOrEmpty(item.DocUrl))
+                                {
+                                    <a href="@item.DocUrl" class="text-decoration-none fw-bold" title="Xem chi tiết chứng từ">@item.DocNo</a>
+                                }
+                                else
+                                {
+                                    <span>@item.DocNo</span>
+                                }
+                            </td>
+                            <td class="small text-nowrap">@item.DocDate.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                <span class="badge @badgeClass fw-normal">@item.OutTypeName</span>
+                            </td>
+                            <td class="small font-monospace text-muted">
+                                @(string.IsNullOrWhiteSpace(item.RefNo) ? "—" : item.RefNo)
+                                @if (!string.IsNullOrWhiteSpace(item.RefType))
+                                {
+                                    <div class="text-muted" style="font-size:10.5px">@item.RefType</div>
+                                }
+                            </td>
+                            <td class="small fw-semibold text-dark">@item.WarehouseName</td>
+                            <td>
+                                <div class="fw-semibold text-dark">@item.CustomerName</div>
+                                @if (!string.IsNullOrWhiteSpace(item.CustomerCode))
+                                {
+                                    <span class="badge bg-light text-secondary border font-monospace" style="font-size:10px">@item.CustomerCode</span>
+                                }
+                            </td>
+                            <td class="font-monospace fw-semibold text-primary">@item.ProductCode</td>
+                            <td class="fw-semibold text-dark">
+                                @item.ProductName
+                                @if (!string.IsNullOrWhiteSpace(item.Note))
+                                {
+                                    <div class="text-muted small fw-normal" style="font-size:11px"><em>@item.Note</em></div>
+                                }
+                            </td>
+                            <td class="text-center text-muted small">@item.UnitName</td>
+                            <td class="text-end font-monospace fw-bold text-dark">@item.Quantity.ToString("N0")</td>
+                            <td class="text-end font-monospace text-muted">@item.UnitPrice.ToString("N0")</td>
+                            <td class="text-end font-monospace fw-bold text-danger">@item.TotalAmount.ToString("N0")</td>
+                            <td class="small text-muted">@(string.IsNullOrWhiteSpace(item.CreatedBy) ? "—" : item.CreatedBy)</td>
+                        </tr>
+                        stt++;
+                    }
+                }
+            </tbody>
+            @if (Model.Items.Count > 0)
+            {
+                <tfoot class="table-light">
+                    <tr class="fw-bold text-dark">
+                        <td colspan="10" class="text-end text-uppercase small">Tổng cộng cuối trang:</td>
+                        <td class="text-end font-monospace text-primary">@Model.TotalQty.ToString("N0")</td>
+                        <td class="text-end text-muted">—</td>
+                        <td class="text-end font-monospace text-danger">@Model.TotalCostAmount.ToString("N0") đ</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function setPeriod(type) {
+        var today = new Date();
+        var from = new Date();
+        var to = new Date();
+
+        if (type === 'today') {
+            from = today;
+            to = today;
+        } else if (type === 'last7days') {
+            from.setDate(today.getDate() - 6);
+            to = today;
+        } else if (type === 'thisMonth') {
+            from = new Date(today.getFullYear(), today.getMonth(), 1);
+            to = today;
+        } else if (type === 'lastMonth') {
+            from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            to = new Date(today.getFullYear(), today.getMonth(), 0);
+        }
+
+        document.getElementById('inputFromDate').value = formatDate(from);
+        document.getElementById('inputToDate').value = formatDate(to);
+        document.getElementById('filterForm').submit();
+    }
+
+    function formatDate(d) {
+        var month = '' + (d.getMonth() + 1);
+        var day = '' + d.getDate();
+        var year = d.getFullYear();
+        if (month.length < 2) month = '0' + month;
+        if (day.length < 2) day = '0' + day;
+        return [year, month, day].join('-');
+    }
+</script>
+
+<style>
+    @@media print {
+        @@page { size: landscape; margin: 10mm; }
+        .sidebar, .topbar, .btn, form, .badge { display: none !important; }
+        .main-content { margin: 0 !important; padding: 0 !important; }
+        .card { border: none !important; shadow: none !important; }
+        .table-responsive { overflow: visible !important; }
+        table { font-size: 11px !important; width: 100% !important; }
+        th, td { padding: 4px !important; }
+    }
+</style>
+}

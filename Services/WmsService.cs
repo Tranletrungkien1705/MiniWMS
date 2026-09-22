@@ -103,6 +103,7 @@ public interface IWmsService
     Task<(bool ok, string msg)> ApproveInventoryOutFGAsync(int id);
     Task<(bool ok, string msg)> CancelInventoryOutFGAsync(int id);
     Task<SummaryInReturnSupReport> SummaryInReturnSupReportAsync(int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<InventoryOutDtlReport> InventoryOutDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? keyword);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -3752,6 +3753,340 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
         return (true, existing.IsActive ? "Đã kích hoạt nhà cung cấp." : "Đã tạm dừng nhà cung cấp.");
+    }
+
+    /// <summary>Báo cáo tổng hợp xuất kho chi tiết (port từ Rpt_InvF_InventoryOutDtl Skycic).</summary>
+    public async Task<InventoryOutDtlReport> InventoryOutDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? keyword)
+    {
+        var start = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var end = (toDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allProducts = await db.Products.ToListAsync();
+        var prodDict = allProducts.ToDictionary(p => p.Id, p => p);
+
+        // Giá vốn hiện hành để làm fallback cho đơn giá xuất
+        var costHists = await db.CostPriceHists
+            .Where(c => c.IsCurrent)
+            .OrderByDescending(c => c.WarehouseId.HasValue)
+            .ThenByDescending(c => c.EffectDate)
+            .ToListAsync();
+
+        decimal ResolveCost(int prodId, int? whId)
+        {
+            var match = costHists.FirstOrDefault(c => c.ProductId == prodId && (c.WarehouseId == whId || !c.WarehouseId.HasValue));
+            if (match != null && match.CostPrice > 0) return match.CostPrice;
+            if (prodDict.TryGetValue(prodId, out var prod) && prod.CostPrice > 0) return prod.CostPrice;
+            return 0m;
+        }
+
+        var rawItems = new List<InventoryOutDtlItem>();
+        int seq = 1;
+
+        // 1. Nguồn StockDoc (Posted Out & Transfer)
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date >= start && d.Date <= end &&
+                        (d.Type == DocType.Out || d.Type == DocType.Transfer))
+            .Include(d => d.Lines)
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.ToWarehouse)
+            .OrderByDescending(d => d.Date)
+            .ThenByDescending(d => d.Id)
+            .ToListAsync();
+
+        // Nạp bảng tham chiếu để đối chiếu RefNo và StockDocId
+        var retSups = await db.ReturnToSuppliers.Include(r => r.Lines).ToListAsync();
+        var retDictByDocId = retSups.Where(r => r.StockDocId.HasValue).ToDictionary(r => r.StockDocId!.Value, r => r);
+        var retDictByCode = retSups.ToDictionary(r => r.Code, r => r);
+
+        var outFGs = await db.InventoryOutFGs.Include(f => f.Lines).ToListAsync();
+        var fgDictByDocId = outFGs.Where(f => f.StockDocId.HasValue).ToDictionary(f => f.StockDocId!.Value, f => f);
+        var fgDictByCode = outFGs.ToDictionary(f => f.Code, f => f);
+
+        var audits = await db.Audits.Include(a => a.Lines).ToListAsync();
+        var auditDictByDocId = audits.Where(a => a.OutDocId.HasValue).ToDictionary(a => a.OutDocId!.Value, a => a);
+        var auditDictByCode = audits.ToDictionary(a => a.Code, a => a);
+
+        foreach (var doc in docs)
+        {
+            int whId = doc.FromWarehouseId ?? 0;
+            if (warehouseId.HasValue && whId != warehouseId.Value) continue;
+
+            string whDocName = doc.FromWarehouse?.Name ?? "Kho xuất";
+
+            if (doc.Type == DocType.Out)
+            {
+                // Kiểm tra loại nghiệp vụ cụ thể
+                ReturnToSupplier? ret = null;
+                if (retDictByDocId.TryGetValue(doc.Id, out var r1)) ret = r1;
+                else if (!string.IsNullOrEmpty(doc.RefNo) && retDictByCode.TryGetValue(doc.RefNo, out var r2)) ret = r2;
+
+                InventoryOutFG? fg = null;
+                if (fgDictByDocId.TryGetValue(doc.Id, out var f1)) fg = f1;
+                else if (!string.IsNullOrEmpty(doc.RefNo) && fgDictByCode.TryGetValue(doc.RefNo, out var f2)) fg = f2;
+
+                StockAudit? audit = null;
+                if (auditDictByDocId.TryGetValue(doc.Id, out var a1)) audit = a1;
+                else if (!string.IsNullOrEmpty(doc.RefNo) && auditDictByCode.TryGetValue(doc.RefNo, out var a2)) audit = a2;
+
+                string oType;
+                string oTypeName;
+                string? refNo = doc.RefNo;
+                string? refType;
+                string? cusCode = null;
+                string cusName;
+                string docUrl;
+
+                if (ret != null)
+                {
+                    oType = "RETURNSUP";
+                    oTypeName = "Xuất trả hàng NCC";
+                    cusName = ret.SupplierName;
+                    cusCode = ret.SupplierCode;
+                    refNo = ret.Code;
+                    refType = "Phiếu trả NCC";
+                    docUrl = $"/ReturnSup/Detail/{ret.Id}";
+                }
+                else if (fg != null)
+                {
+                    oType = "OUT_FG";
+                    oTypeName = "Xuất thành phẩm";
+                    cusName = fg.CustomerName;
+                    cusCode = fg.AgentCode;
+                    refNo = fg.Code;
+                    refType = !string.IsNullOrWhiteSpace(fg.OrderNo) ? $"Đơn hàng {fg.OrderNo}" : "Lệnh xuất TP";
+                    docUrl = $"/InventoryOutFG/Detail/{fg.Id}";
+                }
+                else if (audit != null)
+                {
+                    oType = "AUDIT_DIFF";
+                    oTypeName = "Xuất cân bằng kiểm kê";
+                    cusName = "Hao hụt kiểm kê kho";
+                    refNo = audit.Code;
+                    refType = "Biên bản kiểm kê";
+                    docUrl = $"/Audit/Detail/{audit.Id}";
+                }
+                else
+                {
+                    oType = "COMMERCIAL";
+                    oTypeName = "Xuất bán buôn / Thương mại";
+                    cusName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName : "Khách hàng mua buôn";
+                    refType = "Hóa đơn / Đơn hàng";
+                    docUrl = $"/Doc/Detail/{doc.Id}";
+                }
+
+                foreach (var line in doc.Lines)
+                {
+                    if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                    decimal up = 0m;
+                    if (ret != null)
+                    {
+                        var rl = ret.Lines.FirstOrDefault(x => x.ProductId == line.ProductId);
+                        if (rl != null && rl.UnitPrice > 0) up = rl.UnitPrice;
+                    }
+                    else if (fg != null)
+                    {
+                        var fl = fg.Lines.FirstOrDefault(x => x.ProductId == line.ProductId);
+                        if (fl != null && fl.UnitPrice > 0) up = fl.UnitPrice;
+                    }
+                    if (up == 0m) up = ResolveCost(line.ProductId, whId);
+
+                    rawItems.Add(new InventoryOutDtlItem(
+                        seq++,
+                        doc.Code,
+                        doc.Date,
+                        oType,
+                        oTypeName,
+                        refNo,
+                        refType,
+                        whId,
+                        whDocName,
+                        cusCode,
+                        cusName,
+                        prod.Id,
+                        prod.Code,
+                        prod.Name,
+                        prod.Uom,
+                        line.Quantity,
+                        up,
+                        line.Quantity * up,
+                        doc.CreatedBy,
+                        doc.Note,
+                        docUrl
+                    ));
+                }
+            }
+            else if (doc.Type == DocType.Transfer)
+            {
+                string oType = "TRANSFER";
+                string oTypeName = "Xuất điều chuyển kho";
+                string cusName = doc.ToWarehouse != null ? $"Kho đích: {doc.ToWarehouse.Name}" : "Chuyển nội bộ";
+                string? refType = "Lệnh chuyển kho";
+                string docUrl = $"/Doc/Detail/{doc.Id}";
+
+                foreach (var line in doc.Lines)
+                {
+                    if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                    decimal up = ResolveCost(line.ProductId, whId);
+
+                    rawItems.Add(new InventoryOutDtlItem(
+                        seq++,
+                        doc.Code,
+                        doc.Date,
+                        oType,
+                        oTypeName,
+                        doc.RefNo,
+                        refType,
+                        whId,
+                        whDocName,
+                        null,
+                        cusName,
+                        prod.Id,
+                        prod.Code,
+                        prod.Name,
+                        prod.Uom,
+                        line.Quantity,
+                        up,
+                        line.Quantity * up,
+                        doc.CreatedBy,
+                        doc.Note,
+                        docUrl
+                    ));
+                }
+            }
+        }
+
+        // Bổ sung các phiếu InventoryOutFG đã Approved nếu chưa link StockDoc
+        var unlinkedOutFGs = outFGs
+            .Where(f => f.Status == InvOutFGStatus.Approved && !f.StockDocId.HasValue &&
+                        f.Date >= start && f.Date <= end &&
+                        (!warehouseId.HasValue || f.WarehouseId == warehouseId.Value))
+            .ToList();
+
+        foreach (var fg in unlinkedOutFGs)
+        {
+            var whTitle = fg.Warehouse?.Name ?? "Kho xuất";
+            foreach (var line in fg.Lines)
+            {
+                if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                decimal up = line.UnitPrice > 0 ? line.UnitPrice : ResolveCost(line.ProductId, fg.WarehouseId);
+
+                rawItems.Add(new InventoryOutDtlItem(
+                    seq++,
+                    fg.Code,
+                    fg.Date,
+                    "OUT_FG",
+                    "Xuất thành phẩm",
+                    fg.OrderNo,
+                    "Lệnh xuất TP",
+                    fg.WarehouseId,
+                    whTitle,
+                    fg.AgentCode,
+                    fg.CustomerName,
+                    prod.Id,
+                    prod.Code,
+                    prod.Name,
+                    prod.Uom,
+                    line.Qty,
+                    up,
+                    line.Qty * up,
+                    fg.CreatedBy ?? "system",
+                    fg.Remark,
+                    $"/InventoryOutFG/Detail/{fg.Id}"
+                ));
+            }
+        }
+
+        // Bổ sung các phiếu ReturnToSupplier đã Finished nếu chưa link StockDoc
+        var unlinkedRetSups = retSups
+            .Where(r => r.Status == ReturnSupStatus.Finished && !r.StockDocId.HasValue &&
+                        r.Date >= start && r.Date <= end &&
+                        (!warehouseId.HasValue || r.WarehouseId == warehouseId.Value))
+            .ToList();
+
+        foreach (var ret in unlinkedRetSups)
+        {
+            var whTitle = ret.Warehouse?.Name ?? "Kho xuất";
+            foreach (var line in ret.Lines)
+            {
+                if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                decimal up = line.UnitPrice > 0 ? line.UnitPrice : ResolveCost(line.ProductId, ret.WarehouseId);
+
+                rawItems.Add(new InventoryOutDtlItem(
+                    seq++,
+                    ret.Code,
+                    ret.Date,
+                    "RETURNSUP",
+                    "Xuất trả hàng NCC",
+                    ret.RefDocNo,
+                    "Phiếu trả NCC",
+                    ret.WarehouseId,
+                    whTitle,
+                    ret.SupplierCode,
+                    ret.SupplierName,
+                    prod.Id,
+                    prod.Code,
+                    prod.Name,
+                    prod.Uom,
+                    line.Quantity,
+                    up,
+                    line.Quantity * up,
+                    ret.CreatedBy,
+                    ret.Reason,
+                    $"/ReturnSup/Detail/{ret.Id}"
+                ));
+            }
+        }
+
+        // Lọc theo loại xuất (outType)
+        var filtered = rawItems.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(outType))
+        {
+            filtered = filtered.Where(i => i.OutType.Equals(outType.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Lọc theo từ khóa (keyword)
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            filtered = filtered.Where(i =>
+                i.DocNo.ToLower().Contains(kw) ||
+                (i.RefNo != null && i.RefNo.ToLower().Contains(kw)) ||
+                i.ProductCode.ToLower().Contains(kw) ||
+                i.ProductName.ToLower().Contains(kw) ||
+                i.CustomerName.ToLower().Contains(kw) ||
+                (i.CustomerCode != null && i.CustomerCode.ToLower().Contains(kw)) ||
+                i.WarehouseName.ToLower().Contains(kw) ||
+                i.CreatedBy.ToLower().Contains(kw) ||
+                (i.Note != null && i.Note.ToLower().Contains(kw)));
+        }
+
+        var finalItems = filtered.OrderByDescending(i => i.DocDate).ThenByDescending(i => i.Id).ToList();
+
+        int totalDocs = finalItems.Select(i => i.DocNo).Distinct().Count();
+        int totalQty = finalItems.Sum(i => i.Quantity);
+        decimal totalCost = finalItems.Sum(i => i.TotalAmount);
+        int distinctProds = finalItems.Select(i => i.ProductId).Distinct().Count();
+
+        return new InventoryOutDtlReport(
+            start,
+            end.Date,
+            warehouseId,
+            whName,
+            outType,
+            keyword,
+            finalItems,
+            totalDocs,
+            totalQty,
+            totalCost,
+            distinctProds
+        );
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
