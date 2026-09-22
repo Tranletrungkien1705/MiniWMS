@@ -1115,5 +1115,121 @@ public class CostPriceController(IWmsService svc) : Controller
     }
 }
 
+public class PeriodClosingController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, PeriodClosingStatus? status, int? year)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Year = year;
+
+        var list = await svc.PeriodClosingsAsync(warehouseId, status, year);
+
+        // Thống kê KPI
+        ViewBag.TotalClosings = list.Count;
+        ViewBag.ClosedCount = list.Count(c => c.Status == PeriodClosingStatus.Closed);
+        ViewBag.ReopenedCount = list.Count(c => c.Status == PeriodClosingStatus.Reopened);
+
+        var latestClosed = list.FirstOrDefault(c => c.Status == PeriodClosingStatus.Closed);
+        ViewBag.LatestClosingPeriod = latestClosed?.PeriodName ?? "Chưa có kỳ chốt";
+        ViewBag.LatestClosingValue = latestClosed?.TotalClosingValue ?? 0m;
+        ViewBag.LatestClosingQty = latestClosed?.TotalClosingQty ?? 0;
+
+        return View(list);
+    }
+
+    public async Task<IActionResult> Create(int? warehouseId, int? year, int? month)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+
+        var targetYear = year ?? (DateTime.Today.Month == 1 ? DateTime.Today.Year - 1 : DateTime.Today.Year);
+        var targetMonth = month ?? (DateTime.Today.Month == 1 ? 12 : DateTime.Today.Month - 1);
+
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Year = targetYear;
+        ViewBag.Month = targetMonth;
+
+        var preview = await svc.PreviewPeriodClosingAsync(warehouseId, targetYear, targetMonth);
+        return View(preview);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int? warehouseId, int year, int month, string? note)
+    {
+        if (year < 2000 || year > 2100 || month < 1 || month > 12)
+        {
+            TempData["Error"] = "Tháng hoặc năm chốt sổ không hợp lệ.";
+            return RedirectToAction(nameof(Create), new { warehouseId, year, month });
+        }
+
+        var (ok, msg, id) = await svc.CreateAndClosePeriodAsync(warehouseId, year, month, note, "admin");
+        TempData[ok ? "Success" : "Error"] = msg;
+
+        if (ok)
+        {
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+
+        return RedirectToAction(nameof(Create), new { warehouseId, year, month });
+    }
+
+    public async Task<IActionResult> Detail(int id, string? q)
+    {
+        var closing = await svc.GetPeriodClosingAsync(id);
+        if (closing == null) return NotFound();
+
+        ViewBag.Keyword = q ?? "";
+        return View(closing);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reopen(int id, string? reason)
+    {
+        var (ok, msg) = await svc.ReopenPeriodClosingAsync(id, reason ?? "Mở lại kỳ để kiểm tra");
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        var (ok, msg) = await svc.CancelPeriodClosingAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> ExportCsv(int id)
+    {
+        var closing = await svc.GetPeriodClosingAsync(id);
+        if (closing == null) return NotFound();
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine($"BẢNG KÊ CHI TIẾT CHỐT SỔ TỒN KHO THÁNG - {closing.PeriodName.ToUpper()}");
+        sb.AppendLine($"Mã kỳ chốt:;{closing.Code};Kho áp dụng:;{(closing.Warehouse != null ? closing.Warehouse.Name : "Toàn hệ thống")}");
+        sb.AppendLine($"Thời điểm chốt:;{closing.ClosedAt:dd/MM/yyyy HH:mm};Người chốt:;{closing.ClosedBy};Trạng thái:;{closing.Status}");
+        sb.AppendLine($"Ghi chú:;\"{closing.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã kho;Tên kho;Mã SP;Tên mặt hàng;ĐVT;Tồn đầu kỳ;Nhập trong kỳ;Đơn giá nhập;Tổng giá trị nhập;Xuất trong kỳ;Đơn giá xuất;Tổng giá trị xuất;Tồn cuối kỳ;Đơn giá vốn chốt;Giá trị tồn cuối kỳ (VNĐ);Ghi chú");
+
+        int stt = 1;
+        foreach (var l in closing.Lines.OrderBy(x => x.Warehouse.Code).ThenBy(x => x.Product.Code))
+        {
+            sb.AppendLine($"{stt++};\"{l.Warehouse.Code}\";\"{l.Warehouse.Name}\";\"{l.Product.Code}\";\"{l.Product.Name.Replace("\"", "\"\"")}\";\"{l.Product.Uom}\";{l.OpeningQty};{l.InQty};{l.LastInPrice:F0};{l.InAmount:F0};{l.OutQty};{l.LastOutPrice:F0};{l.OutAmount:F0};{l.ClosingQty};{l.CostPrice:F0};{l.ClosingValue:F0};\"{l.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;;{closing.TotalOpeningQty};{closing.TotalInQty};;{closing.Lines.Sum(x => x.InAmount):F0};{closing.TotalOutQty};;{closing.Lines.Sum(x => x.OutAmount):F0};{closing.TotalClosingQty};;{closing.TotalClosingValue:F0};");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_ChotTonKho_{closing.Code}_{DateTime.Now:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 

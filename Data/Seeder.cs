@@ -876,13 +876,122 @@ public static class Seeder
             db.CostPriceHists.AddRange(costPrices);
             await db.SaveChangesAsync();
         }
+
+        // Seed dữ liệu Kỳ chốt tồn kho & Snapshot số dư (PeriodClosing - port từ Rpt_In_Out_Inv Skycic)
+        if (!await db.PeriodClosings.AnyAsync())
+        {
+            var prods = await db.Products.ToListAsync();
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+
+            if (whHn != null && prods.Any())
+            {
+                // Kỳ 1: Chốt sổ Tháng 02/2026 (Đã chốt sổ thành công)
+                var closingFeb = new PeriodClosing
+                {
+                    Code = "CK2602-001",
+                    PeriodMonth = new DateTime(2026, 2, 1),
+                    PeriodName = "Kỳ chốt kho Tháng 02/2026 (Toàn hệ thống)",
+                    WarehouseId = null,
+                    Status = PeriodClosingStatus.Closed,
+                    ClosedAt = new DateTime(2026, 2, 28, 17, 30, 0),
+                    ClosedBy = "ketoankho",
+                    Note = "Chốt sổ tồn kho tháng 02/2026, số liệu đã đối soát khớp với Thẻ kho và Biên bản kiểm kê định kỳ",
+                    CreatedAt = new DateTime(2026, 2, 28, 17, 30, 0)
+                };
+
+                foreach (var p in prods)
+                {
+                    decimal cost = p.CostPrice > 0 ? p.CostPrice : 150000m;
+
+                    // Dòng tại Kho Hà Nội
+                    closingFeb.Lines.Add(new PeriodClosingLine
+                    {
+                        WarehouseId = whHn.Id,
+                        ProductId = p.Id,
+                        OpeningQty = 100,
+                        InQty = 20,
+                        LastInPrice = cost,
+                        InAmount = 20 * cost,
+                        OutQty = 15,
+                        LastOutPrice = cost,
+                        OutAmount = 15 * cost,
+                        ClosingQty = 105,
+                        CostPrice = cost,
+                        ClosingValue = 105 * cost,
+                        Note = "Chốt số dư tháng 02/2026"
+                    });
+
+                    // Dòng tại Kho TP.HCM (nếu có)
+                    if (whHcm != null)
+                    {
+                        closingFeb.Lines.Add(new PeriodClosingLine
+                        {
+                            WarehouseId = whHcm.Id,
+                            ProductId = p.Id,
+                            OpeningQty = 20,
+                            InQty = 10,
+                            LastInPrice = cost,
+                            InAmount = 10 * cost,
+                            OutQty = 5,
+                            LastOutPrice = cost,
+                            OutAmount = 5 * cost,
+                            ClosingQty = 25,
+                            CostPrice = cost,
+                            ClosingValue = 25 * cost,
+                            Note = "Chốt số dư tháng 02/2026"
+                        });
+                    }
+                }
+
+                db.PeriodClosings.Add(closingFeb);
+
+                // Kỳ 2: Chốt sổ Tháng 01/2026 (Kỳ đầu năm)
+                var closingJan = new PeriodClosing
+                {
+                    Code = "CK2601-001",
+                    PeriodMonth = new DateTime(2026, 1, 1),
+                    PeriodName = "Kỳ chốt kho Tháng 01/2026 (Toàn hệ thống)",
+                    WarehouseId = null,
+                    Status = PeriodClosingStatus.Closed,
+                    ClosedAt = new DateTime(2026, 1, 31, 18, 0, 0),
+                    ClosedBy = "ketoankho",
+                    Note = "Chốt sổ kỳ đầu năm 2026, bàn giao số dư năm tài chính mới",
+                    CreatedAt = new DateTime(2026, 1, 31, 18, 0, 0)
+                };
+
+                foreach (var p in prods)
+                {
+                    decimal cost = p.CostPrice > 0 ? p.CostPrice : 150000m;
+                    closingJan.Lines.Add(new PeriodClosingLine
+                    {
+                        WarehouseId = whHn.Id,
+                        ProductId = p.Id,
+                        OpeningQty = 90,
+                        InQty = 30,
+                        LastInPrice = cost,
+                        InAmount = 30 * cost,
+                        OutQty = 20,
+                        LastOutPrice = cost,
+                        OutAmount = 20 * cost,
+                        ClosingQty = 100,
+                        CostPrice = cost,
+                        ClosingValue = 100 * cost,
+                        Note = "Chốt số dư tháng 01/2026"
+                    });
+                }
+
+                db.PeriodClosings.Add(closingJan);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -1060,6 +1169,46 @@ public static class Seeder
                 CONSTRAINT ""FK_CostPriceHists_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );",
             @"CREATE INDEX IF NOT EXISTS ""IX_CostPriceHists_OrgId_WarehouseId_ProductId_EffectDate"" ON ""CostPriceHists"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""EffectDate"");",
+            @"CREATE TABLE IF NOT EXISTS ""PeriodClosings"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""PeriodMonth"" TEXT NOT NULL,
+                ""PeriodName"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NULL,
+                ""Status"" INTEGER NOT NULL DEFAULT 1,
+                ""ClosedAt"" TEXT NULL,
+                ""ClosedBy"" TEXT NOT NULL,
+                ""Note"" TEXT NULL,
+                ""ReopenReason"" TEXT NULL,
+                ""ReopenedAt"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_PeriodClosings_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PeriodClosings_OrgId_Code"" ON ""PeriodClosings"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_PeriodClosings_OrgId_PeriodMonth_WarehouseId"" ON ""PeriodClosings"" (""OrgId"", ""PeriodMonth"", ""WarehouseId"");",
+            @"CREATE TABLE IF NOT EXISTS ""PeriodClosingLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""PeriodClosingId"" INTEGER NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""OpeningQty"" INTEGER NOT NULL,
+                ""InQty"" INTEGER NOT NULL,
+                ""LastInPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""InAmount"" NUMERIC NOT NULL DEFAULT 0,
+                ""OutQty"" INTEGER NOT NULL,
+                ""LastOutPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""OutAmount"" NUMERIC NOT NULL DEFAULT 0,
+                ""ClosingQty"" INTEGER NOT NULL,
+                ""CostPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""ClosingValue"" NUMERIC NOT NULL DEFAULT 0,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_PeriodClosingLines_PeriodClosings_PeriodClosingId"" FOREIGN KEY (""PeriodClosingId"") REFERENCES ""PeriodClosings"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_PeriodClosingLines_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_PeriodClosingLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
+            );",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
             @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
         };

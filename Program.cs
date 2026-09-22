@@ -658,6 +658,113 @@ app.MapPost("/api/customer-returns/{id:int}/cancel", async (int id, IWmsService 
     }
 });
 
+// API Kỳ chốt sổ tồn kho & Lưu vết Snapshot số dư (port từ Rpt_In_Out_Inv & 20200407.ChotTonKho.sql Skycic)
+app.MapGet("/api/period-closings", async (int? warehouseId, PeriodClosingStatus? status, int? year, IWmsService svc) =>
+{
+    var list = await svc.PeriodClosingsAsync(warehouseId, status, year);
+    return Results.Ok(list.Select(p => new
+    {
+        p.Id,
+        p.Code,
+        p.PeriodName,
+        PeriodMonth = p.PeriodMonth.ToString("yyyy-MM"),
+        Warehouse = p.Warehouse?.Name ?? "Toàn hệ thống",
+        p.WarehouseId,
+        Status = p.Status.ToString(),
+        TotalItems = p.TotalItems,
+        TotalOpeningQty = p.TotalOpeningQty,
+        TotalInQty = p.TotalInQty,
+        TotalOutQty = p.TotalOutQty,
+        TotalClosingQty = p.TotalClosingQty,
+        TotalClosingValue = p.TotalClosingValue,
+        ClosedAt = p.ClosedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        p.ClosedBy,
+        p.Note,
+        p.ReopenReason,
+        p.ReopenedAt,
+        p.CreatedAt
+    }));
+});
+
+app.MapGet("/api/period-closings/{id:int}", async (int id, IWmsService svc) =>
+{
+    var p = await svc.GetPeriodClosingAsync(id);
+    if (p == null) return Results.NotFound(new { error = "Không tìm thấy kỳ chốt kho." });
+    return Results.Ok(new
+    {
+        p.Id,
+        p.Code,
+        p.PeriodName,
+        PeriodMonth = p.PeriodMonth.ToString("yyyy-MM"),
+        Warehouse = p.Warehouse?.Name ?? "Toàn hệ thống",
+        p.WarehouseId,
+        Status = p.Status.ToString(),
+        TotalItems = p.TotalItems,
+        TotalOpeningQty = p.TotalOpeningQty,
+        TotalInQty = p.TotalInQty,
+        TotalOutQty = p.TotalOutQty,
+        TotalClosingQty = p.TotalClosingQty,
+        TotalClosingValue = p.TotalClosingValue,
+        ClosedAt = p.ClosedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        p.ClosedBy,
+        p.Note,
+        p.ReopenReason,
+        p.ReopenedAt,
+        p.CreatedAt,
+        Lines = p.Lines.Select(l => new
+        {
+            l.Id,
+            Warehouse = l.Warehouse.Name,
+            l.WarehouseId,
+            ProductCode = l.Product.Code,
+            ProductName = l.Product.Name,
+            l.Product.Uom,
+            l.ProductId,
+            l.OpeningQty,
+            l.InQty,
+            l.LastInPrice,
+            l.InAmount,
+            l.OutQty,
+            l.LastOutPrice,
+            l.OutAmount,
+            l.ClosingQty,
+            l.CostPrice,
+            l.ClosingValue,
+            l.Note
+        })
+    });
+});
+
+app.MapPost("/api/period-closings/preview", async (PreviewPeriodClosingDto dto, IWmsService svc) =>
+{
+    if (dto.Year < 2000 || dto.Year > 2100 || dto.Month < 1 || dto.Month > 12)
+        return Results.BadRequest(new { error = "Tháng hoặc năm không hợp lệ." });
+
+    var preview = await svc.PreviewPeriodClosingAsync(dto.WarehouseId, dto.Year, dto.Month);
+    return Results.Ok(preview);
+});
+
+app.MapPost("/api/period-closings", async (CreatePeriodClosingDto dto, IWmsService svc) =>
+{
+    if (dto.Year < 2000 || dto.Year > 2100 || dto.Month < 1 || dto.Month > 12)
+        return Results.BadRequest(new { error = "Tháng hoặc năm không hợp lệ." });
+
+    var (ok, msg, id) = await svc.CreateAndClosePeriodAsync(dto.WarehouseId, dto.Year, dto.Month, dto.Note, dto.ClosedBy ?? "api");
+    return ok ? Results.Ok(new { success = true, id, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/period-closings/{id:int}/reopen", async (int id, ReopenPeriodClosingDto dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ReopenPeriodClosingAsync(id, dto.Reason ?? "Mở lại kỳ");
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/period-closings/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.CancelPeriodClosingAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -685,3 +792,6 @@ record UpdateCostPriceDto(decimal CostPrice, string? Remark);
 record CalcCostPricePreviewDto(int? WarehouseId, DateTime? FromDate, DateTime? ToDate, string? CalcPeriodName, int[]? ProductIds);
 record ApplyCostPriceCalcDto(int? WarehouseId, DateTime? EffectDate, string? CalcPeriodName, List<ApplyCostPriceItemDto> Items);
 record ApplyCostPriceItemDto(int ProductId, decimal NewCostPrice, string? Note);
+record CreatePeriodClosingDto(int? WarehouseId, int Year, int Month, string? Note, string? ClosedBy);
+record PreviewPeriodClosingDto(int? WarehouseId, int Year, int Month);
+record ReopenPeriodClosingDto(string? Reason);

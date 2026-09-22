@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0);
 
 public interface IWmsService
 {
@@ -65,6 +65,12 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateCostPriceHistAsync(int id, decimal costPrice, string? remark);
     Task<CostPriceCalcPreviewReport> PreviewCalculateCostPriceAsync(int? warehouseId, DateTime fromDate, DateTime toDate, string calcPeriodName, int[]? productIds);
     Task<(bool ok, string msg, int count)> ApplyCalculateCostPriceAsync(int? warehouseId, DateTime effectDate, string calcPeriodName, List<(int ProductId, decimal NewCostPrice, string Note)> items);
+    Task<List<PeriodClosing>> PeriodClosingsAsync(int? warehouseId, PeriodClosingStatus? status, int? year);
+    Task<PeriodClosing?> GetPeriodClosingAsync(int id);
+    Task<PeriodClosingPreviewReport> PreviewPeriodClosingAsync(int? warehouseId, int year, int month);
+    Task<(bool ok, string msg, int id)> CreateAndClosePeriodAsync(int? warehouseId, int year, int month, string? note, string closedBy);
+    Task<(bool ok, string msg)> ReopenPeriodClosingAsync(int id, string reason);
+    Task<(bool ok, string msg)> CancelPeriodClosingAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1305,6 +1311,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var damagedSerials = await db.StockSerials.CountAsync(s => s.Status == StockSerialStatus.DamagedNG);
         var totalBlocks = await db.InventoryBlocks.CountAsync();
         var totalCostPrices = await db.CostPriceHists.CountAsync(c => c.IsCurrent);
+        var totalClosedPeriods = await db.PeriodClosings.CountAsync(p => p.Status == PeriodClosingStatus.Closed);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1321,7 +1328,8 @@ public class WmsService(AppDbContext db) : IWmsService
             stagnantItems,
             damagedSerials,
             totalBlocks,
-            totalCostPrices);
+            totalCostPrices,
+            totalClosedPeriods);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -1941,6 +1949,233 @@ public class WmsService(AppDbContext db) : IWmsService
 
         await db.SaveChangesAsync();
         return (true, $"Đã áp dụng và cập nhật giá vốn mới cho {appliedCount} mặt hàng thành công.", appliedCount);
+    }
+
+    /// <summary>Danh sách các kỳ chốt tồn kho (port từ Rpt_In_Out_Inv Skycic).</summary>
+    public async Task<List<PeriodClosing>> PeriodClosingsAsync(int? warehouseId, PeriodClosingStatus? status, int? year)
+    {
+        var q = db.PeriodClosings
+            .Include(p => p.Warehouse)
+            .Include(p => p.Lines).ThenInclude(l => l.Product)
+            .Include(p => p.Lines).ThenInclude(l => l.Warehouse)
+            .AsQueryable();
+
+        if (warehouseId.HasValue) q = q.Where(p => p.WarehouseId == warehouseId.Value);
+        if (status.HasValue) q = q.Where(p => p.Status == status.Value);
+        if (year.HasValue) q = q.Where(p => p.PeriodMonth.Year == year.Value);
+
+        return await q.OrderByDescending(p => p.PeriodMonth).ThenByDescending(p => p.CreatedAt).ToListAsync();
+    }
+
+    /// <summary>Chi tiết kỳ chốt tồn kho (port từ Rpt_In_Out_Inv Skycic).</summary>
+    public Task<PeriodClosing?> GetPeriodClosingAsync(int id) =>
+        db.PeriodClosings
+            .Include(p => p.Warehouse)
+            .Include(p => p.Lines).ThenInclude(l => l.Product)
+            .Include(p => p.Lines).ThenInclude(l => l.Warehouse)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    /// <summary>Tính toán và xem trước số liệu chốt kỳ tồn kho (port từ 20200407.ChotTonKho.sql Skycic).</summary>
+    public async Task<PeriodClosingPreviewReport> PreviewPeriodClosingAsync(int? warehouseId, int year, int month)
+    {
+        string whName = "Toàn bộ kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var periodMonth = new DateTime(year, month, 1);
+        var fromDate = periodMonth;
+        var toDate = fromDate.AddMonths(1).AddTicks(-1);
+        string periodName = $"Kỳ chốt kho Tháng {month:D2}/{year}" + (warehouseId.HasValue ? $" ({whName})" : " (Toàn hệ thống)");
+
+        var whList = warehouseId.HasValue
+            ? await db.Warehouses.Where(w => w.Id == warehouseId.Value).ToListAsync()
+            : await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+
+        var products = await db.Products.OrderBy(p => p.Code).ToListAsync();
+
+        // Lấy tất cả các phiếu kho đã Post phát sinh đến hết kỳ này
+        var allDocs = await db.Docs
+            .Include(d => d.Lines)
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= toDate)
+            .ToListAsync();
+
+        var previewItems = new List<PeriodClosingPreviewItem>();
+
+        foreach (var wh in whList)
+        {
+            foreach (var prod in products)
+            {
+                // Tồn đầu kỳ: biến động trước ngày fromDate
+                int inBefore = allDocs
+                    .Where(d => d.Date < fromDate && (d.ToWarehouseId == wh.Id))
+                    .SelectMany(d => d.Lines)
+                    .Where(l => l.ProductId == prod.Id)
+                    .Sum(l => l.Quantity);
+
+                int outBefore = allDocs
+                    .Where(d => d.Date < fromDate && (d.FromWarehouseId == wh.Id))
+                    .SelectMany(d => d.Lines)
+                    .Where(l => l.ProductId == prod.Id)
+                    .Sum(l => l.Quantity);
+
+                int openingQty = inBefore - outBefore;
+
+                // Phát sinh trong kỳ
+                int inQty = allDocs
+                    .Where(d => d.Date >= fromDate && d.Date <= toDate && (d.ToWarehouseId == wh.Id))
+                    .SelectMany(d => d.Lines)
+                    .Where(l => l.ProductId == prod.Id)
+                    .Sum(l => l.Quantity);
+
+                int outQty = allDocs
+                    .Where(d => d.Date >= fromDate && d.Date <= toDate && (d.FromWarehouseId == wh.Id))
+                    .SelectMany(d => d.Lines)
+                    .Where(l => l.ProductId == prod.Id)
+                    .Sum(l => l.Quantity);
+
+                int closingQty = openingQty + inQty - outQty;
+
+                // Chỉ đưa vào danh sách nếu có phát sinh hoặc có tồn kho
+                if (openingQty != 0 || inQty != 0 || outQty != 0 || closingQty != 0)
+                {
+                    decimal costPrice = prod.CostPrice > 0 ? prod.CostPrice : 100000m;
+                    decimal inAmount = inQty * costPrice;
+                    decimal outAmount = outQty * costPrice;
+                    decimal closingVal = closingQty * costPrice;
+
+                    previewItems.Add(new PeriodClosingPreviewItem(
+                        wh.Id,
+                        wh.Name,
+                        prod.Id,
+                        prod.Code,
+                        prod.Name,
+                        prod.Uom,
+                        openingQty,
+                        inQty,
+                        inAmount,
+                        outQty,
+                        outAmount,
+                        closingQty,
+                        costPrice,
+                        closingVal
+                    ));
+                }
+            }
+        }
+
+        int totalOpening = previewItems.Sum(i => i.OpeningQty);
+        int totalIn = previewItems.Sum(i => i.InQty);
+        int totalOut = previewItems.Sum(i => i.OutQty);
+        int totalClosing = previewItems.Sum(i => i.ClosingQty);
+        decimal totalClosingVal = previewItems.Sum(i => i.ClosingValue);
+
+        return new PeriodClosingPreviewReport(
+            warehouseId,
+            whName,
+            year,
+            month,
+            periodMonth,
+            fromDate,
+            toDate,
+            periodName,
+            previewItems.Count,
+            totalOpening,
+            totalIn,
+            totalOut,
+            totalClosing,
+            totalClosingVal,
+            previewItems
+        );
+    }
+
+    /// <summary>Thực hiện chốt sổ kỳ tồn kho & Lưu vết snapshot (port từ 20200407.ChotTonKho.sql Skycic).</summary>
+    public async Task<(bool ok, string msg, int id)> CreateAndClosePeriodAsync(int? warehouseId, int year, int month, string? note, string closedBy)
+    {
+        var periodMonth = new DateTime(year, month, 1);
+
+        // Kiểm tra xem kỳ này đã được chốt trước đó chưa
+        var exists = await db.PeriodClosings.AnyAsync(p =>
+            p.PeriodMonth.Year == year &&
+            p.PeriodMonth.Month == month &&
+            p.WarehouseId == warehouseId &&
+            p.Status == PeriodClosingStatus.Closed);
+
+        if (exists)
+        {
+            return (false, $"Kỳ tồn kho Tháng {month:D2}/{year} cho kho này đã được chốt sổ trước đó. Vui lòng mở lại kỳ nếu muốn chốt lại.", 0);
+        }
+
+        var preview = await PreviewPeriodClosingAsync(warehouseId, year, month);
+
+        var closing = new PeriodClosing
+        {
+            Code = $"CK{year % 100:D2}{month:D2}-{await db.PeriodClosings.CountAsync() + 1:D3}",
+            PeriodMonth = periodMonth,
+            PeriodName = preview.PeriodName,
+            WarehouseId = warehouseId,
+            Status = PeriodClosingStatus.Closed,
+            ClosedAt = DateTime.Now,
+            ClosedBy = string.IsNullOrWhiteSpace(closedBy) ? "admin" : closedBy.Trim(),
+            Note = note?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        foreach (var item in preview.Items)
+        {
+            closing.Lines.Add(new PeriodClosingLine
+            {
+                WarehouseId = item.WarehouseId,
+                ProductId = item.ProductId,
+                OpeningQty = item.OpeningQty,
+                InQty = item.InQty,
+                LastInPrice = item.CostPrice,
+                InAmount = item.InAmount,
+                OutQty = item.OutQty,
+                LastOutPrice = item.CostPrice,
+                OutAmount = item.OutAmount,
+                ClosingQty = item.ClosingQty,
+                CostPrice = item.CostPrice,
+                ClosingValue = item.ClosingValue,
+                Note = $"Chốt kỳ {month:D2}/{year}"
+            });
+        }
+
+        db.PeriodClosings.Add(closing);
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã chốt sổ thành công '{closing.PeriodName}' (Mã: {closing.Code}) với {closing.Lines.Count} mặt hàng.", closing.Id);
+    }
+
+    /// <summary>Mở lại kỳ chốt tồn kho để điều chỉnh số liệu (port từ Rpt_In_Out_Inv Skycic).</summary>
+    public async Task<(bool ok, string msg)> ReopenPeriodClosingAsync(int id, string reason)
+    {
+        var closing = await db.PeriodClosings.FirstOrDefaultAsync(p => p.Id == id);
+        if (closing == null) return (false, "Không tìm thấy kỳ chốt kho.");
+        if (closing.Status == PeriodClosingStatus.Cancelled) return (false, "Kỳ chốt kho này đã bị hủy bỏ.");
+
+        closing.Status = PeriodClosingStatus.Reopened;
+        closing.ReopenedAt = DateTime.Now;
+        closing.ReopenReason = string.IsNullOrWhiteSpace(reason) ? "Mở lại để kiểm tra và đối soát bổ sung" : reason.Trim();
+        closing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã mở lại '{closing.PeriodName}'. Trạng thái hiện tại: Đã mở lại.");
+    }
+
+    /// <summary>Hủy kỳ chốt kho.</summary>
+    public async Task<(bool ok, string msg)> CancelPeriodClosingAsync(int id)
+    {
+        var closing = await db.PeriodClosings.FirstOrDefaultAsync(p => p.Id == id);
+        if (closing == null) return (false, "Không tìm thấy kỳ chốt kho.");
+
+        closing.Status = PeriodClosingStatus.Cancelled;
+        closing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã hủy bỏ kỳ chốt kho '{closing.PeriodName}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

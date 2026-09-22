@@ -682,6 +682,131 @@ public record CostPriceCalcPreviewReport(
     List<CostPriceCalcItem> Items
 );
 
+/// <summary>Trạng thái kỳ chốt tồn kho (port từ 20200407.ChotTonKho.sql & Rpt_In_Out_Inv Skycic).</summary>
+public enum PeriodClosingStatus
+{
+    Draft = 0,     // Đang lập kỳ / Đang kiểm tra
+    Closed = 1,    // Đã chốt sổ & Khóa kỳ (khóa dữ liệu quá khứ)
+    Reopened = 2,  // Đã mở lại để điều chỉnh số liệu
+    Cancelled = 3  // Đã hủy bỏ
+}
+
+/// <summary>Kỳ chốt sổ tồn kho tháng & Lưu vết Snapshot số dư (port từ Rpt_In_Out_Inv & 20200407.ChotTonKho.sql Skycic).</summary>
+public class PeriodClosing : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";                                 // Mã kỳ chốt (vd: CK2603-001)
+    public DateTime PeriodMonth { get; set; } = DateTime.Today;            // Tháng chốt sổ (ngày đầu tháng, vd 2026-03-01)
+    public string PeriodName { get; set; } = "";                           // Tên kỳ chốt (vd: Kỳ chốt kho Tháng 03/2026)
+    public int? WarehouseId { get; set; }                                  // Kho áp dụng (null = Toàn bộ kho)
+    public PeriodClosingStatus Status { get; set; } = PeriodClosingStatus.Closed; // Trạng thái kỳ chốt
+    public DateTime? ClosedAt { get; set; } = DateTime.Now;                // Thời điểm chốt sổ
+    public string ClosedBy { get; set; } = "";                             // Người thực hiện chốt
+    public string? Note { get; set; }                                      // Ghi chú chốt sổ
+    public string? ReopenReason { get; set; }                              // Lý do mở lại kỳ
+    public DateTime? ReopenedAt { get; set; }                              // Thời điểm mở lại
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse? Warehouse { get; set; }
+    public List<PeriodClosingLine> Lines { get; set; } = [];
+
+    public int TotalItems => Lines.Count;
+    public int TotalOpeningQty => Lines.Sum(l => l.OpeningQty);
+    public int TotalInQty => Lines.Sum(l => l.InQty);
+    public int TotalOutQty => Lines.Sum(l => l.OutQty);
+    public int TotalClosingQty => Lines.Sum(l => l.ClosingQty);
+    public decimal TotalClosingValue => Lines.Sum(l => l.ClosingValue);
+}
+
+/// <summary>Dòng chi tiết lưu vết Snapshot số dư kho theo mặt hàng (port từ Rpt_In_Out_Inv Skycic).</summary>
+public class PeriodClosingLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int PeriodClosingId { get; set; }
+    public int WarehouseId { get; set; }
+    public int ProductId { get; set; }
+
+    public int OpeningQty { get; set; }                                    // Tồn đầu kỳ
+    public int InQty { get; set; }                                         // Nhập trong kỳ (TotalQtyIn)
+    public decimal LastInPrice { get; set; }                               // Đơn giá nhập cuối (ValLastIn)
+    public decimal InAmount { get; set; }                                  // Tổng giá trị nhập (TotalValIn)
+    public int OutQty { get; set; }                                        // Xuất trong kỳ (TotalQtyOut)
+    public decimal LastOutPrice { get; set; }                              // Đơn giá xuất cuối (ValLastOut)
+    public decimal OutAmount { get; set; }                                 // Tổng giá trị xuất (TotalValOut)
+    public int ClosingQty { get; set; }                                    // Tồn cuối kỳ chốt sổ
+    public decimal CostPrice { get; set; }                                 // Đơn giá vốn chốt kỳ
+    public decimal ClosingValue { get; set; }                              // Tổng giá trị tồn chốt sổ (= ClosingQty * CostPrice)
+    public string? Note { get; set; }                                      // Ghi chú
+
+    public PeriodClosing PeriodClosing { get; set; } = null!;
+    public Warehouse Warehouse { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng hiển thị chi tiết Snapshot chốt tồn kho của một mặt hàng.</summary>
+public record PeriodClosingRow(
+    int Id,
+    int WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int OpeningQty,
+    int InQty,
+    decimal LastInPrice,
+    decimal InAmount,
+    int OutQty,
+    decimal LastOutPrice,
+    decimal OutAmount,
+    int ClosingQty,
+    decimal CostPrice,
+    decimal ClosingValue,
+    string? Note
+);
+
+/// <summary>Dòng xem trước tính toán dữ liệu chốt kỳ kho.</summary>
+public record PeriodClosingPreviewItem(
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int OpeningQty,
+    int InQty,
+    decimal InAmount,
+    int OutQty,
+    decimal OutAmount,
+    int ClosingQty,
+    decimal CostPrice,
+    decimal ClosingValue
+);
+
+/// <summary>Báo cáo xem trước tính toán chốt kỳ tồn kho.</summary>
+public record PeriodClosingPreviewReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int Year,
+    int Month,
+    DateTime PeriodMonth,
+    DateTime FromDate,
+    DateTime ToDate,
+    string PeriodName,
+    int TotalProducts,
+    int TotalOpeningQty,
+    int TotalInQty,
+    int TotalOutQty,
+    int TotalClosingQty,
+    decimal TotalClosingValue,
+    List<PeriodClosingPreviewItem> Items
+);
+
+
 
 
 

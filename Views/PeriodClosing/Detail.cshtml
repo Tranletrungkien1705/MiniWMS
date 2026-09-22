@@ -1,0 +1,233 @@
+@model MiniWMS.Models.PeriodClosing
+@{
+    ViewData["Title"] = $"Chi tiết kỳ chốt: {Model.Code}";
+    var (statusLabel, statusBadge) = Model.Status switch
+    {
+        MiniWMS.Models.PeriodClosingStatus.Closed => ("Đã chốt sổ & Khóa kỳ", "bg-success"),
+        MiniWMS.Models.PeriodClosingStatus.Reopened => ("Đã mở lại", "bg-warning text-dark"),
+        MiniWMS.Models.PeriodClosingStatus.Draft => ("Nháp", "bg-secondary"),
+        MiniWMS.Models.PeriodClosingStatus.Cancelled => ("Đã hủy", "bg-dark"),
+        _ => (Model.Status.ToString(), "bg-light text-dark")
+    };
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-journal-bookmark text-primary me-2"></i>@Model.PeriodName</h4>
+            <span class="badge @statusBadge">@statusLabel</span>
+        </div>
+        <small class="text-muted">Mã kỳ: <strong class="text-dark">@Model.Code</strong> | Tháng chốt: <strong class="text-dark">Tháng @Model.PeriodMonth.ToString("MM/yyyy")</strong> | Kho: <strong>@(Model.Warehouse != null ? Model.Warehouse.Name : "Toàn bộ hệ thống kho")</strong></small>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/PeriodClosing/ExportCsv/@Model.Id" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-excel me-1"></i>Xuất CSV</a>
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="bi bi-printer me-1"></i>In bảng kê</button>
+        @if (Model.Status == MiniWMS.Models.PeriodClosingStatus.Closed)
+        {
+            <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#reopenModal">
+                <i class="bi bi-unlock me-1"></i>Mở lại kỳ
+            </button>
+        }
+        <a href="/PeriodClosing" class="btn btn-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Quay lại</a>
+    </div>
+</div>
+
+<!-- Thẻ thông tin kỳ chốt -->
+<div class="card mb-4 shadow-sm border-start border-4 border-primary">
+    <div class="card-body p-3">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <small class="text-muted d-block">Thời điểm chốt sổ</small>
+                <span class="fw-semibold text-dark"><i class="bi bi-clock-history me-1 text-primary"></i>@(Model.ClosedAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? "—")</span>
+            </div>
+            <div class="col-md-3">
+                <small class="text-muted d-block">Người thực hiện chốt</small>
+                <span class="fw-semibold text-dark"><i class="bi bi-person-check me-1 text-primary"></i>@Model.ClosedBy</span>
+            </div>
+            <div class="col-md-3">
+                <small class="text-muted d-block">Ghi chú chốt sổ</small>
+                <span class="text-dark">@(string.IsNullOrWhiteSpace(Model.Note) ? "—" : Model.Note)</span>
+            </div>
+            <div class="col-md-3">
+                <small class="text-muted d-block">Trạng thái dữ liệu</small>
+                <span class="badge @statusBadge">@statusLabel</span>
+                @if (Model.Status == MiniWMS.Models.PeriodClosingStatus.Reopened && !string.IsNullOrWhiteSpace(Model.ReopenReason))
+                {
+                    <div class="small text-danger mt-1">Lý do mở lại: @Model.ReopenReason (@Model.ReopenedAt?.ToString("dd/MM/yyyy HH:mm"))</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Thẻ KPI tổng kết số liệu Snapshot -->
+<div class="row g-3 mb-4">
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-secondary">
+            <div class="text-muted small fw-semibold text-uppercase">Mặt hàng chốt</div>
+            <div class="stat-num text-dark mt-1">@Model.TotalItems</div>
+            <small class="text-muted">dòng snapshot</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-info">
+            <div class="text-muted small fw-semibold text-uppercase">Tồn đầu kỳ</div>
+            <div class="stat-num text-info mt-1">@Model.TotalOpeningQty.ToString("N0")</div>
+            <small class="text-muted">đơn vị hàng</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-primary">
+            <div class="text-muted small fw-semibold text-uppercase">Nhập trong kỳ</div>
+            <div class="stat-num text-primary mt-1">+@Model.TotalInQty.ToString("N0")</div>
+            <small class="text-muted">nhập kho & chuyển đến</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-danger">
+            <div class="text-muted small fw-semibold text-uppercase">Xuất trong kỳ</div>
+            <div class="stat-num text-danger mt-1">-@Model.TotalOutQty.ToString("N0")</div>
+            <small class="text-muted">xuất kho & chuyển đi</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-success">
+            <div class="text-muted small fw-semibold text-uppercase">Tồn cuối kỳ chốt</div>
+            <div class="stat-num text-success mt-1">@Model.TotalClosingQty.ToString("N0")</div>
+            <small class="text-muted">snapshot số dư</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-warning">
+            <div class="text-muted small fw-semibold text-uppercase">Tổng giá trị tồn</div>
+            <div class="stat-num text-warning fs-5 mt-1">@Model.TotalClosingValue.ToString("N0") <span class="fs-6">đ</span></div>
+            <small class="text-muted">theo giá vốn kho</small>
+        </div>
+    </div>
+</div>
+
+<!-- Thanh tìm kiếm nhanh mặt hàng -->
+<div class="card mb-3 shadow-sm">
+    <div class="card-body p-2">
+        <div class="input-group input-group-sm">
+            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" id="searchInput" class="form-control border-start-0" placeholder="Tìm kiếm nhanh theo mã hàng, tên mặt hàng, kho lưu trữ..." onkeyup="filterRows()" />
+            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('searchInput').value=''; filterRows();"><i class="bi bi-x"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng chi tiết Snapshot từng mặt hàng -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+        <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2 text-primary"></i>Bảng kê chi tiết số dư chốt tồn kho</h6>
+        <span class="badge bg-secondary-subtle text-secondary border" id="rowCountBadge">Tổng cộng @Model.Lines.Count mặt hàng</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0" id="detailTable">
+            <thead class="table-light">
+                <tr>
+                    <th style="width: 50px;">STT</th>
+                    <th style="width: 130px;">Kho</th>
+                    <th style="width: 110px;">Mã hàng</th>
+                    <th>Tên mặt hàng</th>
+                    <th class="text-center" style="width: 70px;">ĐVT</th>
+                    <th class="text-end" style="width: 95px;">Tồn đầu</th>
+                    <th class="text-end text-primary" style="width: 95px;">Nhập kỳ</th>
+                    <th class="text-end text-primary small" style="width: 120px;">Trị giá nhập</th>
+                    <th class="text-end text-danger" style="width: 95px;">Xuất kỳ</th>
+                    <th class="text-end text-danger small" style="width: 120px;">Trị giá xuất</th>
+                    <th class="text-end text-success fw-bold" style="width: 100px;">Tồn cuối</th>
+                    <th class="text-end" style="width: 110px;">Đơn giá vốn</th>
+                    <th class="text-end fw-bold text-dark" style="width: 130px;">Trị giá tồn chốt</th>
+                    <th style="width: 130px;">Ghi chú</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var l in Model.Lines.OrderBy(x => x.Warehouse.Code).ThenBy(x => x.Product.Code))
+                {
+                    <tr class="item-row">
+                        <td>@(idx++)</td>
+                        <td><span class="badge bg-light text-dark border">@l.Warehouse.Name</span></td>
+                        <td class="fw-bold text-dark">@l.Product.Code</td>
+                        <td class="fw-semibold">@l.Product.Name</td>
+                        <td class="text-center text-muted">@l.Product.Uom</td>
+                        <td class="text-end">@l.OpeningQty.ToString("N0")</td>
+                        <td class="text-end text-primary fw-semibold">+@l.InQty.ToString("N0")</td>
+                        <td class="text-end text-primary small">@l.InAmount.ToString("N0") đ</td>
+                        <td class="text-end text-danger fw-semibold">-@l.OutQty.ToString("N0")</td>
+                        <td class="text-end text-danger small">@l.OutAmount.ToString("N0") đ</td>
+                        <td class="text-end text-success fw-bold fs-6">@l.ClosingQty.ToString("N0")</td>
+                        <td class="text-end text-muted">@l.CostPrice.ToString("N0") đ</td>
+                        <td class="text-end fw-bold text-dark">@l.ClosingValue.ToString("N0") đ</td>
+                        <td class="small text-muted">@(l.Note ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td colspan="5" class="text-end text-uppercase">TỔNG CỘNG:</td>
+                    <td class="text-end">@Model.TotalOpeningQty.ToString("N0")</td>
+                    <td class="text-end text-primary">+@Model.TotalInQty.ToString("N0")</td>
+                    <td class="text-end text-primary small">@Model.Lines.Sum(x => x.InAmount).ToString("N0") đ</td>
+                    <td class="text-end text-danger">-@Model.TotalOutQty.ToString("N0")</td>
+                    <td class="text-end text-danger small">@Model.Lines.Sum(x => x.OutAmount).ToString("N0") đ</td>
+                    <td class="text-end text-success fs-6">@Model.TotalClosingQty.ToString("N0")</td>
+                    <td></td>
+                    <td class="text-end text-success fs-6">@Model.TotalClosingValue.ToString("N0") đ</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Mở lại kỳ -->
+<div class="modal fade" id="reopenModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/PeriodClosing/Reopen/@Model.Id">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-warning"><i class="bi bi-unlock me-2"></i>Mở lại kỳ chốt tồn kho</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Khi mở lại kỳ chốt sổ <strong>@Model.PeriodName</strong>, trạng thái sẽ chuyển thành <em>Đã mở lại</em> để bạn có thể kiểm tra, hạch toán bổ sung và tiến hành chốt lại khi hoàn tất.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Lý do mở lại kỳ <span class="text-danger">*</span></label>
+                        <input type="text" name="reason" class="form-control" placeholder="Ví dụ: Cần điều chỉnh phiếu nhập bổ sung..." required />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning btn-sm fw-semibold"><i class="bi bi-unlock-fill me-1"></i>Xác nhận mở lại kỳ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function filterRows() {
+        var input = document.getElementById('searchInput').value.toLowerCase();
+        var rows = document.querySelectorAll('#detailTable tbody tr.item-row');
+        var visibleCount = 0;
+        rows.forEach(function(row) {
+            var text = row.innerText.toLowerCase();
+            if (text.indexOf(input) > -1) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        document.getElementById('rowCountBadge').innerText = 'Hiển thị ' + visibleCount + ' / ' + rows.length + ' mặt hàng';
+    }
+</script>
+}

@@ -25,6 +25,8 @@ public class AppDbContext : DbContext
     public DbSet<StockSerial> StockSerials => Set<StockSerial>();
     public DbSet<InventoryBlock> InventoryBlocks => Set<InventoryBlock>();
     public DbSet<CostPriceHist> CostPriceHists => Set<CostPriceHist>();
+    public DbSet<PeriodClosing> PeriodClosings => Set<PeriodClosing>();
+    public DbSet<PeriodClosingLine> PeriodClosingLines => Set<PeriodClosingLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -138,6 +140,32 @@ public class AppDbContext : DbContext
             e.Property(x => x.CostPrice).HasPrecision(18, 2);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<PeriodClosing>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.PeriodMonth, x.WarehouseId });
+            e.Ignore(x => x.TotalItems);
+            e.Ignore(x => x.TotalOpeningQty);
+            e.Ignore(x => x.TotalInQty);
+            e.Ignore(x => x.TotalOutQty);
+            e.Ignore(x => x.TotalClosingQty);
+            e.Ignore(x => x.TotalClosingValue);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<PeriodClosingLine>(e =>
+        {
+            e.Property(x => x.LastInPrice).HasPrecision(18, 2);
+            e.Property(x => x.InAmount).HasPrecision(18, 2);
+            e.Property(x => x.LastOutPrice).HasPrecision(18, 2);
+            e.Property(x => x.OutAmount).HasPrecision(18, 2);
+            e.Property(x => x.CostPrice).HasPrecision(18, 2);
+            e.Property(x => x.ClosingValue).HasPrecision(18, 2);
+            e.HasOne(x => x.PeriodClosing).WithMany(x => x.Lines).HasForeignKey(x => x.PeriodClosingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

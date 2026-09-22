@@ -1,0 +1,199 @@
+@model List<MiniWMS.Models.PeriodClosing>
+@{
+    ViewData["Title"] = "Chốt kỳ tồn kho & Snapshot số dư";
+    var warehouses = ViewBag.Warehouses as List<MiniWMS.Models.Warehouse> ?? [];
+    int? selectedWh = ViewBag.WarehouseId as int?;
+    MiniWMS.Models.PeriodClosingStatus? selectedStatus = ViewBag.Status as MiniWMS.Models.PeriodClosingStatus?;
+    int? selectedYear = ViewBag.Year as int?;
+    var currentYear = DateTime.Today.Year;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-check text-primary me-2"></i>Chốt kỳ tồn kho & Snapshot số dư</h4>
+        <small class="text-muted">Port từ nghiệp vụ Chốt sổ tồn kho tháng <code>Rpt_In_Out_Inv</code> & <code>20200407.ChotTonKho.sql</code> (Skycic.Inventory)</small>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/PeriodClosing/Create" class="btn btn-primary btn-sm"><i class="bi bi-lock me-1"></i>Chốt sổ kỳ mới</a>
+    </div>
+</div>
+
+<!-- Thẻ KPI tổng quan -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-primary">
+            <div class="text-muted small fw-semibold text-uppercase">Kỳ đã chốt sổ</div>
+            <div class="d-flex align-items-baseline justify-content-between mt-2">
+                <div class="stat-num text-primary">@ViewBag.ClosedCount</div>
+                <div class="badge bg-primary-subtle text-primary border border-primary-subtle">Tổng @ViewBag.TotalClosings kỳ</div>
+            </div>
+            <small class="text-muted mt-1"><i class="bi bi-shield-check me-1"></i>Đã khóa dữ liệu quá khứ</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-success">
+            <div class="text-muted small fw-semibold text-uppercase">Giá trị tồn kỳ mới nhất</div>
+            <div class="d-flex align-items-baseline justify-content-between mt-2">
+                <div class="stat-num text-success fs-4">@(((decimal)(ViewBag.LatestClosingValue ?? 0m)).ToString("N0")) <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <i class="bi bi-cash-stack fs-4 text-success opacity-50"></i>
+            </div>
+            <small class="text-muted mt-1">@ViewBag.LatestClosingPeriod</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-info">
+            <div class="text-muted small fw-semibold text-uppercase">Lượng tồn chốt kỳ gần nhất</div>
+            <div class="d-flex align-items-baseline justify-content-between mt-2">
+                <div class="stat-num text-info">@(((int)(ViewBag.LatestClosingQty ?? 0)).ToString("N0"))</div>
+                <span class="badge bg-info-subtle text-info border border-info-subtle">đơn vị sp</span>
+            </div>
+            <small class="text-muted mt-1"><i class="bi bi-boxes me-1"></i>Snapshot thẻ kho tự động</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 bg-white h-100 shadow-sm border-start border-4 border-warning">
+            <div class="text-muted small fw-semibold text-uppercase">Kỳ đang mở lại</div>
+            <div class="d-flex align-items-baseline justify-content-between mt-2">
+                <div class="stat-num text-warning">@ViewBag.ReopenedCount</div>
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Cần chốt lại</span>
+            </div>
+            <small class="text-muted mt-1"><i class="bi bi-arrow-repeat me-1"></i>Được phép đối soát lại</small>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-body p-3">
+        <form method="get" action="/PeriodClosing" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Kho áp dụng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">-- Tất cả kho --</option>
+                    @foreach (var w in warehouses)
+                    {
+                        <option value="@w.Id" selected="@(selectedWh == w.Id)">@w.Code — @w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Năm chốt sổ</label>
+                <select name="year" class="form-select form-select-sm">
+                    <option value="">-- Tất cả năm --</option>
+                    @for (int y = currentYear; y >= currentYear - 3; y--)
+                    {
+                        <option value="@y" selected="@(selectedYear == y)">Năm @y</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Trạng thái kỳ</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <option value="1" selected="@(selectedStatus == MiniWMS.Models.PeriodClosingStatus.Closed)">Đã chốt sổ (Closed)</option>
+                    <option value="2" selected="@(selectedStatus == MiniWMS.Models.PeriodClosingStatus.Reopened)">Đã mở lại (Reopened)</option>
+                    <option value="0" selected="@(selectedStatus == MiniWMS.Models.PeriodClosingStatus.Draft)">Nháp (Draft)</option>
+                    <option value="3" selected="@(selectedStatus == MiniWMS.Models.PeriodClosingStatus.Cancelled)">Đã hủy (Cancelled)</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-outline-primary btn-sm flex-fill"><i class="bi bi-filter me-1"></i>Lọc dữ liệu</button>
+                <a href="/PeriodClosing" class="btn btn-light btn-sm text-secondary" title="Đặt lại bộ lọc"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách các kỳ chốt sổ -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+        <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-journal-check me-2 text-primary"></i>Danh sách kỳ chốt sổ & Snapshot kho</h6>
+        <span class="badge bg-secondary-subtle text-secondary border">Tổng cộng @Model.Count kỳ</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width: 130px;">Mã kỳ</th>
+                    <th>Tên kỳ chốt sổ</th>
+                    <th style="width: 140px;">Kho áp dụng</th>
+                    <th class="text-center" style="width: 100px;">Tháng chốt</th>
+                    <th class="text-end" style="width: 100px;">Số mặt hàng</th>
+                    <th class="text-end" style="width: 110px;">Tổng tồn chốt</th>
+                    <th class="text-end" style="width: 150px;">Tổng giá trị tồn</th>
+                    <th style="width: 130px;">Trạng thái</th>
+                    <th style="width: 140px;">Người & Ngày chốt</th>
+                    <th class="text-center" style="width: 140px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Count == 0)
+                {
+                    <tr>
+                        <td colspan="10" class="text-center py-5 text-muted">
+                            <i class="bi bi-calendar-x fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                            Chưa có kỳ chốt tồn kho nào phù hợp điều kiện lọc.<br />
+                            <a href="/PeriodClosing/Create" class="btn btn-primary btn-sm mt-3"><i class="bi bi-lock me-1"></i>Tạo kỳ chốt sổ đầu tiên</a>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var c in Model)
+                    {
+                        var (statusLabel, statusBadge) = c.Status switch
+                        {
+                            MiniWMS.Models.PeriodClosingStatus.Closed => ("Đã chốt sổ", "bg-success"),
+                            MiniWMS.Models.PeriodClosingStatus.Reopened => ("Đã mở lại", "bg-warning text-dark"),
+                            MiniWMS.Models.PeriodClosingStatus.Draft => ("Nháp", "bg-secondary"),
+                            MiniWMS.Models.PeriodClosingStatus.Cancelled => ("Đã hủy", "bg-dark"),
+                            _ => (c.Status.ToString(), "bg-light text-dark")
+                        };
+
+                        <tr>
+                            <td>
+                                <a href="/PeriodClosing/Detail/@c.Id" class="fw-bold text-decoration-none">@c.Code</a>
+                            </td>
+                            <td>
+                                <div class="fw-semibold text-dark">@c.PeriodName</div>
+                                @if (!string.IsNullOrWhiteSpace(c.Note))
+                                {
+                                    <small class="text-muted text-truncate d-block" style="max-width: 250px;">@c.Note</small>
+                                }
+                            </td>
+                            <td>
+                                @if (c.Warehouse != null)
+                                {
+                                    <span class="badge bg-light text-dark border"><i class="bi bi-building me-1"></i>@c.Warehouse.Name</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-globe me-1"></i>Toàn hệ thống</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-light text-dark border">Tháng @c.PeriodMonth.ToString("MM/yyyy")</span>
+                            </td>
+                            <td class="text-end fw-semibold">@c.TotalItems.ToString("N0")</td>
+                            <td class="text-end fw-bold text-info">@c.TotalClosingQty.ToString("N0")</td>
+                            <td class="text-end fw-bold text-success">@c.TotalClosingValue.ToString("N0") đ</td>
+                            <td>
+                                <span class="badge @statusBadge">@statusLabel</span>
+                            </td>
+                            <td>
+                                <div class="small fw-semibold text-dark">@c.ClosedBy</div>
+                                <div class="small text-muted">@(c.ClosedAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="/PeriodClosing/Detail/@c.Id" class="btn btn-outline-primary" title="Xem bảng kê chi tiết"><i class="bi bi-eye"></i></a>
+                                    <a href="/PeriodClosing/ExportCsv/@c.Id" class="btn btn-outline-success" title="Xuất CSV bảng kê"><i class="bi bi-file-earmark-arrow-down"></i></a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
