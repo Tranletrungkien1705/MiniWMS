@@ -84,6 +84,13 @@ app.MapGet("/api/reports/in-out-inventory", async (int? warehouseId, DateTime? f
     return Results.Ok(report);
 });
 
+// API Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (Stock Minimum Alert - port từ Rpt_Inv_InventoryBalance_Minimum Skycic)
+app.MapGet("/api/reports/min-stock-alert", async (int? warehouseId, bool? onlyBelowMin, string? q, IWmsService svc) =>
+{
+    var report = await svc.StockMinimumReportAsync(warehouseId, onlyBelowMin ?? true, q);
+    return Results.Ok(report);
+});
+
 
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>

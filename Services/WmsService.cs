@@ -42,6 +42,7 @@ public interface IWmsService
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<InventoryInOutReport> InventoryInOutReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -817,6 +818,149 @@ public class WmsService(AppDbContext db) : IWmsService
 
         returnDoc.Status = CusReturnStatus.Cancelled;
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
+    public async Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+
+        // Lấy toàn bộ phiếu kho đã ghi sổ để tính tồn thực tế cho từng (kho, hàng)
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted)
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var balMap = new Dictionary<(int whId, int prodId), int>();
+        void AddBal(int wId, int pId, int qty)
+        {
+            balMap.TryGetValue((wId, pId), out var cur);
+            balMap[(wId, pId)] = cur + qty;
+        }
+
+        foreach (var d in docs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to) AddBal(to, l.ProductId, l.Quantity);
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr) AddBal(fr, l.ProductId, -l.Quantity);
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } frWh) AddBal(frWh, l.ProductId, -l.Quantity);
+                    if (d.ToWarehouseId is { } toWh) AddBal(toWh, l.ProductId, l.Quantity);
+                }
+            }
+        }
+
+        var rows = new List<StockMinimumRow>();
+
+        foreach (var w in targetWarehouses)
+        {
+            foreach (var p in products)
+            {
+                balMap.TryGetValue((w.Id, p.Id), out var curQty);
+                // Nếu sản phẩm không cấu hình định mức tối thiểu và tồn cũng = 0 thì không theo dõi
+                if (p.MinStock <= 0 && curQty == 0) continue;
+
+                int shortage = Math.Max(0, p.MinStock - curQty);
+                double ratio = p.MinStock > 0 ? Math.Round((double)curQty * 100.0 / p.MinStock, 1) : 100.0;
+
+                StockAlertLevel level;
+                string label;
+                string badge;
+
+                if (curQty <= 0 && p.MinStock > 0)
+                {
+                    level = StockAlertLevel.OutOfStock;
+                    label = "Hết hàng / Cháy kho";
+                    badge = "bg-danger";
+                }
+                else if (curQty < p.MinStock)
+                {
+                    level = StockAlertLevel.Danger;
+                    label = "Dưới định mức";
+                    badge = "bg-warning text-dark";
+                }
+                else if (curQty <= Math.Ceiling(p.MinStock * 1.25))
+                {
+                    level = StockAlertLevel.Warning;
+                    label = "Cận định mức";
+                    badge = "bg-info text-dark";
+                }
+                else
+                {
+                    level = StockAlertLevel.Safe;
+                    label = "Đạt an toàn";
+                    badge = "bg-success";
+                }
+
+                if (onlyBelowMin && level == StockAlertLevel.Safe) continue;
+
+                rows.Add(new StockMinimumRow(
+                    p.Id,
+                    p.Code,
+                    p.Name,
+                    p.Uom,
+                    w.Id,
+                    w.Name,
+                    p.MinStock,
+                    p.MaxStock,
+                    curQty,
+                    shortage,
+                    ratio,
+                    level,
+                    label,
+                    badge
+                ));
+            }
+        }
+
+        // Sắp xếp: OutOfStock lên đầu, sau đó Danger theo shortage giảm dần, rồi Warning, Safe
+        rows = rows
+            .OrderBy(r => r.AlertLevel)
+            .ThenByDescending(r => r.ShortageQty)
+            .ThenBy(r => r.WarehouseName)
+            .ThenBy(r => r.ProductCode)
+            .ToList();
+
+        int totalMonitored = rows.Count;
+        int outOfStock = rows.Count(r => r.AlertLevel == StockAlertLevel.OutOfStock);
+        int danger = rows.Count(r => r.AlertLevel == StockAlertLevel.Danger);
+        int warning = rows.Count(r => r.AlertLevel == StockAlertLevel.Warning);
+        int safe = rows.Count(r => r.AlertLevel == StockAlertLevel.Safe);
+        int totalShortage = rows.Sum(r => r.ShortageQty);
+
+        return new StockMinimumReport(
+            warehouseId,
+            whName,
+            onlyBelowMin,
+            keyword,
+            totalMonitored,
+            outOfStock,
+            danger,
+            warning,
+            safe,
+            totalShortage,
+            rows
+        );
     }
 
     public async Task<WmsDash> DashboardAsync()

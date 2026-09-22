@@ -1,0 +1,245 @@
+@model StockMinimumReport
+@{
+    ViewData["Title"] = "Cảnh báo chạm tồn tối thiểu";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var onlyBelowMin = (bool)ViewBag.OnlyBelowMin;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Chế độ hiển thị</label>
+                <select name="onlyBelowMin" class="form-select form-select-sm">
+                    <option value="true" selected="@(onlyBelowMin)">Chỉ mặt hàng chạm / dưới định mức</option>
+                    <option value="false" selected="@(!onlyBelowMin)">Xem tất cả mặt hàng theo dõi</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tìm mặt hàng</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hoặc tên hàng..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc báo cáo
+                </button>
+                <a href="/StockMinimum" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/StockMinimum/ExportCsv?warehouseId=@selectedWid&onlyBelowMin=@onlyBelowMin&q=@Uri.EscapeDataString(keyword ?? "")" 
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In báo cáo">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">DƯỚI ĐỊNH MỨC</span>
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.DangerCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Mặt hàng tồn dưới mức tối thiểu</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CHÁY HÀNG / HẾT TỒN</span>
+                    <i class="bi bi-x-octagon-fill text-dark fs-5"></i>
+                </div>
+                <div class="stat-num text-dark">@Model.OutOfStockCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Mặt hàng đã cạn kiệt (tồn = 0)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">LƯỢNG CẦN NHẬP BÙ</span>
+                    <i class="bi bi-box-arrow-in-down text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@Model.TotalShortageQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Tổng số lượng thiếu hụt so với định mức</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CẬN ĐỊNH MỨC</span>
+                    <i class="bi bi-shield-exclamation text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.WarningCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Sắp chạm ngưỡng tối thiểu (<= 125%)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-shield-exclamation text-danger me-2"></i>Chi tiết tình trạng an toàn tồn kho</h6>
+            <span class="text-muted small">Kho: <b>@Model.WarehouseName</b> — Hiển thị <b>@Model.Rows.Count</b> dòng</span>
+        </div>
+        <div>
+            <a href="/Doc/Create?type=0" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-circle me-1"></i> Lập phiếu nhập kho
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:45px">#</th>
+                        <th>Mã hàng</th>
+                        <th>Tên hàng hoá</th>
+                        <th>ĐVT</th>
+                        <th>Kho hàng</th>
+                        <th class="text-end">Tồn thực tế</th>
+                        <th class="text-end">Định mức Min</th>
+                        <th class="text-end">Định mức Max</th>
+                        <th class="text-end">Thiếu hụt</th>
+                        <th style="min-width:140px">Mức an toàn</th>
+                        <th class="text-center">Trạng thái</th>
+                        <th class="text-end" style="width:170px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count > 0)
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            var rowClass = r.AlertLevel switch
+                            {
+                                StockAlertLevel.OutOfStock => "table-danger",
+                                StockAlertLevel.Danger => "table-warning",
+                                _ => ""
+                            };
+                            var progressColor = r.AlertLevel switch
+                            {
+                                StockAlertLevel.OutOfStock => "bg-danger",
+                                StockAlertLevel.Danger => "bg-warning",
+                                StockAlertLevel.Warning => "bg-info",
+                                _ => "bg-success"
+                            };
+                            var progressVal = Math.Min(100.0, r.SafetyRatio);
+
+                            <tr class="@rowClass">
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td class="fw-semibold">
+                                    <a href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId" class="text-decoration-none">
+                                        @r.ProductCode
+                                    </a>
+                                </td>
+                                <td>@r.ProductName</td>
+                                <td><span class="badge bg-light text-dark border">@r.Uom</span></td>
+                                <td><i class="bi bi-building me-1 text-muted"></i>@r.WarehouseName</td>
+                                <td class="text-end fw-bold @(r.CurrentQty == 0 ? "text-danger" : "")">
+                                    @r.CurrentQty.ToString("N0")
+                                </td>
+                                <td class="text-end text-muted">
+                                    @(r.MinStock > 0 ? r.MinStock.ToString("N0") : "—")
+                                </td>
+                                <td class="text-end text-muted">
+                                    @(r.MaxStock > 0 ? r.MaxStock.ToString("N0") : "—")
+                                </td>
+                                <td class="text-end fw-bold @(r.ShortageQty > 0 ? "text-danger" : "text-muted")">
+                                    @(r.ShortageQty > 0 ? $"+{r.ShortageQty:N0}" : "0")
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="progress flex-fill" style="height: 7px;">
+                                            <div class="progress-bar @progressColor" role="progressbar" style="width: @(progressVal)%" aria-valuenow="@progressVal" aria-valuemin="0" aria-valuemax="100"></div>
+                                        </div>
+                                        <span class="small fw-semibold text-muted" style="min-width: 42px; font-size:11px">@r.SafetyRatio.ToString("F0")%</span>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.AlertLabel</span>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="/Doc/Create?type=0&toWarehouseId=@r.WarehouseId" class="btn btn-outline-primary" title="Tạo phiếu nhập bù hàng">
+                                            <i class="bi bi-box-arrow-in-down me-1"></i>Nhập bù
+                                        </a>
+                                        <a href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId" class="btn btn-outline-secondary" title="Xem thẻ kho">
+                                            <i class="bi bi-journal-text"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="12" class="text-center py-5">
+                                <div class="text-success mb-2"><i class="bi bi-shield-check display-6"></i></div>
+                                <h6 class="fw-bold text-success mb-1">Kho hàng đang ở trạng thái an toàn!</h6>
+                                <p class="text-muted small mb-0">Không có mặt hàng nào bị chạm hoặc dưới định mức tồn tối thiểu.</p>
+                                @if (onlyBelowMin)
+                                {
+                                    <div class="mt-3">
+                                        <a href="/StockMinimum?warehouseId=@selectedWid&onlyBelowMin=false" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-eye me-1"></i> Xem tất cả mặt hàng theo dõi
+                                        </a>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                @if (Model.Rows.Count > 0)
+                {
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="5" class="text-center">TỔNG CỘNG THIẾU HỤT CẦN NHẬP BÙ</td>
+                            <td class="text-end text-primary">@Model.Rows.Sum(r => r.CurrentQty).ToString("N0")</td>
+                            <td class="text-end text-muted">@Model.Rows.Sum(r => r.MinStock).ToString("N0")</td>
+                            <td class="text-end text-muted">@Model.Rows.Sum(r => r.MaxStock).ToString("N0")</td>
+                            <td class="text-end text-danger fs-6">+@Model.TotalShortageQty.ToString("N0")</td>
+                            <td colspan="3"></td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    @@media print {
+        .sidebar, .topbar, #filterForm, .btn, .btn-group, tfoot { display: none !important; }
+        .content-area { padding: 0 !important; }
+        .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+    }
+</style>

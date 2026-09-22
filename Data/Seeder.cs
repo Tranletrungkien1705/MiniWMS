@@ -26,9 +26,10 @@ public static class Seeder
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", Uom = "cái", MinStock = 20 },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", Uom = "cái", MinStock = 15 },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", Uom = "cái", MinStock = 10 });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", Uom = "cái", MinStock = 20, MaxStock = 200 },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", Uom = "cái", MinStock = 15, MaxStock = 150 },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", Uom = "cái", MinStock = 10, MaxStock = 80 },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", Uom = "cái", MinStock = 12, MaxStock = 100 });
             await db.SaveChangesAsync();
         }
         if (!await db.Docs.AnyAsync())
@@ -314,6 +315,7 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Orgs_ApiKey\" ON miniwms.\"Orgs\" (\"ApiKey\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
 
@@ -411,7 +413,8 @@ public static class Seeder
                 ""Note"" TEXT NULL,
                 CONSTRAINT ""FK_CustomerReturnLines_CustomerReturns_CustomerReturnId"" FOREIGN KEY (""CustomerReturnId"") REFERENCES ""CustomerReturns"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_CustomerReturnLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
-            );"
+            );",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;"
         };
         foreach (var s in sql)
         {

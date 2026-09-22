@@ -33,6 +33,7 @@ public class Product : IOrgOwned
     public string Name { get; set; } = "";
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
+    public int MaxStock { get; set; }
 }
 
 /// <summary>Phiếu kho (nhập/xuất/chuyển). Post → cập nhật tồn.</summary>
@@ -296,6 +297,48 @@ public record InventoryInOutReport(
     int TotalOutQty,
     int TotalClosingQty,
     List<InventoryInOutRow> Rows
+);
+
+/// <summary>Mức cảnh báo tồn kho an toàn (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
+public enum StockAlertLevel
+{
+    OutOfStock = 0, // Hết hàng / Cháy kho (Tồn = 0)
+    Danger = 1,      // Dưới định mức tối thiểu (0 < Tồn < MinStock)
+    Warning = 2,     // Cận định mức an toàn (MinStock <= Tồn <= MinStock * 1.25)
+    Safe = 3         // Đạt chuẩn an toàn (Tồn > MinStock * 1.25)
+}
+
+/// <summary>Dòng chi tiết Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
+public record StockMinimumRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int MinStock,
+    int MaxStock,
+    int CurrentQty,
+    int ShortageQty,
+    double SafetyRatio,
+    StockAlertLevel AlertLevel,
+    string AlertLabel,
+    string BadgeClass
+);
+
+/// <summary>Báo cáo Chạm tồn kho tối thiểu tổng hợp (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
+public record StockMinimumReport(
+    int? WarehouseId,
+    string WarehouseName,
+    bool OnlyBelowMin,
+    string? Keyword,
+    int TotalMonitored,
+    int OutOfStockCount,
+    int DangerCount,
+    int WarningCount,
+    int SafeCount,
+    int TotalShortageQty,
+    List<StockMinimumRow> Rows
 );
 
 

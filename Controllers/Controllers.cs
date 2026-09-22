@@ -28,10 +28,10 @@ public class ProductController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index() => View(await svc.ProductsAsync());
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string uom, int minStock)
+    public async Task<IActionResult> Create(string name, string? code, string uom, int minStock, int maxStock = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên hàng."; return RedirectToAction(nameof(Index)); }
-        await svc.CreateProductAsync(new Product { Name = name.Trim(), Code = code ?? "", Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom, MinStock = minStock });
+        await svc.CreateProductAsync(new Product { Name = name.Trim(), Code = code ?? "", Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom, MinStock = minStock, MaxStock = maxStock });
         TempData["Success"] = "Đã tạo mặt hàng.";
         return RedirectToAction(nameof(Index));
     }
@@ -629,6 +629,49 @@ public class CustomerReturnController(IWmsService svc) : Controller
             TempData["Error"] = ex.Message;
         }
         return RedirectToAction(nameof(Detail), new { id });
+    }
+}
+
+public class StockMinimumController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, bool onlyBelowMin = true, string? q = null)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.OnlyBelowMin = onlyBelowMin;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.StockMinimumReportAsync(warehouseId, onlyBelowMin, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, bool onlyBelowMin = true, string? q = null)
+    {
+        var report = await svc.StockMinimumReportAsync(warehouseId, onlyBelowMin, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO CHẠM TỒN KHO TỐI THIỂU & CẢNH BÁO AN TOÀN KHO");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName}");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Chế độ lọc:;{(onlyBelowMin ? "Chỉ mặt hàng chạm/dưới định mức" : "Xem tất cả mặt hàng")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho lưu trữ;Tồn thực tế;Định mức tối thiểu;Định mức tối đa;Lượng thiếu hụt;Tỷ lệ an toàn (%);Trạng thái");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.CurrentQty};{r.MinStock};{r.MaxStock};{r.ShortageQty};{r.SafetyRatio:F1}%;\"{r.AlertLabel}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG THIẾU HỤT:;;;;{report.TotalShortageQty};;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_ChamTonToiThieu_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
     }
 }
 

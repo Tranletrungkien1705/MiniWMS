@@ -4,7 +4,7 @@
     <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Mặt hàng</div><div class="stat-num">@d.Products</div></div></div></div>
     <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Tổng tồn</div><div class="stat-num" style="color:#0891b2">@d.TotalOnHand.ToString("N0")</div></div></div></div>
     <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Phiếu ghi sổ</div><div class="stat-num">@d.PostedDocs</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Dưới định mức</div><div class="stat-num text-danger">@d.LowStock</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><a href="/StockMinimum" class="text-decoration-none"><div class="text-muted small">Dưới định mức <i class="bi bi-box-arrow-up-right ms-1"></i></div><div class="stat-num text-danger">@d.LowStock</div></a></div></div></div>
 </div>
 <div class="card"><div class="card-body">
     <h6 class="fw-bold mb-3">Tác vụ nhanh</h6>
@@ -17,8 +17,10 @@
         <a href="/CustomerReturn" class="btn btn-outline-primary"><i class="bi bi-arrow-return-left me-1"></i>Khách trả hàng</a>
         <a href="/Audit" class="btn btn-outline-primary"><i class="bi bi-clipboard-check me-1"></i>Kiểm kê kho</a>
         <a href="/Inventory" class="btn btn-outline-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
+        <a href="/StockMinimum" class="btn btn-outline-danger"><i class="bi bi-shield-exclamation me-1"></i>Cảnh báo tồn tối thiểu</a>
         <a href="/InventoryInOut" class="btn btn-primary"><i class="bi bi-graph-up-arrow me-1"></i>Báo cáo NXT</a>
     </div>
+    @if (d.LowStock > 0) { <div class="alert alert-danger mt-3 mb-0 small"><i class="bi bi-shield-exclamation me-1"></i>Có <b>@d.LowStock</b> mặt hàng đang chạm hoặc dưới định mức tồn tối thiểu. <a href="/StockMinimum" class="fw-semibold text-danger text-decoration-underline">Xem cảnh báo ngay</a></div> }
     @if (d.DraftDocs > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.DraftDocs</b> phiếu Nháp chưa ghi sổ.</div> }
     @if (d.PendingAudits > 0) { <div class="alert alert-info mt-2 mb-0 small"><i class="bi bi-clipboard-check me-1"></i>Có <b>@d.PendingAudits</b> phiếu kiểm kê đang chờ xử lý / cân bằng kho. <a href="/Audit?status=0" class="fw-semibold">Xem ngay</a></div> }
     @if (d.PendingMoveOrders > 0) { <div class="alert alert-primary mt-2 mb-0 small"><i class="bi bi-shuffle me-1"></i>Có <b>@d.PendingMoveOrders</b> lệnh điều chuyển đang chờ duyệt / thực hiện. <a href="/MoveOrder" class="fw-semibold">Xem ngay</a></div> }
