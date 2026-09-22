@@ -2190,6 +2190,49 @@ public class SummaryMonthlyController(IWmsService svc) : Controller
     }
 }
 
+public class StockExtendController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, StockExtendStatus? status, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.StockExtendReportAsync(warehouseId, status, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, StockExtendStatus? status, string? q)
+    {
+        var report = await svc.StockExtendReportAsync(warehouseId, status, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị tiếng Việt chuẩn không bị vỡ font
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO MỞ RỘNG & DỰ PHÓNG KHẢ DỤNG (PORT TỪ RPT_INV_INVENTORYBALANCE_EXTEND)");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(status.HasValue ? status.Value.ToString() : "Tất cả")};Từ khóa tìm kiếm:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng tồn vật lý:;{report.TotalQtyTotalOK};Tổng tạm khóa/giữ chỗ:;{report.TotalQtyBlockOK};Tổng tồn khả dụng:;{report.TotalQtyAvailOK};Tổng hàng sắp về:;{report.TotalQtyBackOrder};Tổng tồn mở rộng:;{report.TotalQtyStockExt};Tổng giá trị tồn kho:;{report.TotalInventoryValue:F0} đ");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng hoá;Tên hàng hoá;ĐVT;Kho lưu trữ;Tổng tồn vật lý (On-hand);Tạm khóa / Giữ chỗ (Blocked);Tồn khả dụng (Available);Tỷ lệ khả dụng (%);Hàng sắp về (Back-order);Tồn mở rộng dự phóng (Extended Stock);Định mức tối thiểu (MinStock);Định mức tối đa (MaxStock);Đơn giá vốn (đ);Giá trị tồn (đ);Trạng thái định mức;Lượng cần nhập thêm;Quản lý Lô;Quản lý Serial");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.QtyTotalOK};{r.QtyBlockOK};{r.QtyAvailOK};{r.AvailRate:F1}%;{r.QtyBackOrder};{r.QtyStockExt};{r.MinStock};{r.MaxStock};{r.CostPrice:F0};{r.TotalValue:F0};\"{r.StatusLabel}\";{r.ReplenishNeeded};\"{(r.HasLot ? "Có" : "Không")}\";\"{(r.HasSerial ? "Có" : "Không")}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalQtyTotalOK};{report.TotalQtyBlockOK};{report.TotalQtyAvailOK};{report.AvgAvailRate:F1}%;{report.TotalQtyBackOrder};{report.TotalQtyStockExt};;;;{report.TotalInventoryValue:F0};Cháy hàng: {report.OutOfStockCount};Dưới định mức: {report.UnderMinCount};Đạt chuẩn: {report.OptimalCount};Vượt định mức: {report.OverMaxCount};Cần nhập thêm: {report.UrgentReplenishCount} sp");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoMoRong_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

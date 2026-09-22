@@ -1,0 +1,321 @@
+@model StockExtendReport
+@{
+    ViewData["Title"] = "Báo cáo Tồn kho mở rộng & Dự phóng khả dụng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedStatus = (StockExtendStatus?)ViewBag.Status;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<style>
+    @@media print {
+        .sidebar, .topbar, .no-print, .btn, form { display: none !important; }
+        .content-area { padding: 0 !important; }
+        body { background: #fff !important; font-size: 11px !important; }
+        .card { border: none !important; box-shadow: none !important; }
+        .table { font-size: 10.5px !important; }
+        .print-header { display: block !important; }
+        .print-signatures { display: flex !important; }
+        @@page { size: landscape; margin: 12mm; }
+    }
+    .print-header, .print-signatures { display: none; }
+    .progress-bar-thin { height: 6px; border-radius: 3px; }
+</style>
+
+<!-- Tiêu đề trang & Nút hành động -->
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-layers-half text-primary me-2"></i>Báo cáo Tồn kho mở rộng & Dự phóng khả dụng</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Inv_InventoryBalance_Extend</code> (Skycic) — Theo dõi Tồn thực tế, Tạm khóa / Giữ chỗ, Tồn khả dụng cam kết, Hàng sắp về & Dự phóng mở rộng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/StockExtend/ExportCsv?warehouseId=@selectedWid&status=@selectedStatus&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo (A4 ngang)
+        </button>
+        <a href="/Doc/Create?type=0" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-in-down me-1"></i> Tạo phiếu nhập
+        </a>
+    </div>
+</div>
+
+<!-- Tiêu đề khi in ấn -->
+<div class="print-header mb-4">
+    <div class="text-center">
+        <h3 class="fw-bold text-uppercase mb-1">Báo Cáo Tồn Kho Mở Rộng & Dự Phóng Khả Dụng</h3>
+        <div class="text-muted">Kho áp dụng: <strong>@Model.WarehouseName</strong> | Ngày lập: <strong>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</strong></div>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI thống kê tổng hợp -->
+<div class="row g-3 mb-3 no-print">
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-primary border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Tồn vật lý thực tế (On-hand)</div>
+            <div class="stat-num text-primary mt-1">@Model.TotalQtyTotalOK.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Tổng giá trị kho:</span>
+                <strong class="text-dark">@Model.TotalInventoryValue.ToString("N0") đ</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-warning border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Tạm khóa / Giữ chỗ (Blocked)</div>
+            <div class="stat-num text-warning mt-1">@Model.TotalQtyBlockOK.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Tỷ lệ khả dụng TB:</span>
+                <strong class="text-dark">@Model.AvgAvailRate.ToString("F1")%</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-success border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Tồn khả dụng (Available)</div>
+            <div class="stat-num text-success mt-1">@Model.TotalQtyAvailOK.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Mặt hàng an toàn:</span>
+                <strong class="text-success">@Model.OptimalCount / @Model.TotalItems sp</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-info border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Sắp về & Dự phóng mở rộng</div>
+            <div class="stat-num text-info mt-1">@Model.TotalQtyBackOrder.ToString("N0") <span class="fs-6 fw-normal text-muted">về</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Tồn mở rộng: <strong>@Model.TotalQtyStockExt.ToString("N0")</strong></span>
+                @if (Model.UrgentReplenishCount > 0)
+                {
+                    <span class="badge bg-danger">Cần nhập @Model.UrgentReplenishCount sp</span>
+                }
+                else
+                {
+                    <span class="badge bg-success">Đủ định mức</span>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Toàn bộ hệ thống —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Trạng thái định mức</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="" selected="@(!selectedStatus.HasValue || selectedStatus == StockExtendStatus.All)">— Tất cả trạng thái —</option>
+                    <option value="OutOfStock" selected="@(selectedStatus == StockExtendStatus.OutOfStock)">🔴 Cháy hàng / Hết khả dụng (@Model.OutOfStockCount)</option>
+                    <option value="UnderMin" selected="@(selectedStatus == StockExtendStatus.UnderMin)">🟠 Dưới định mức an toàn (@Model.UnderMinCount)</option>
+                    <option value="Optimal" selected="@(selectedStatus == StockExtendStatus.Optimal)">🟢 Đạt chuẩn định mức (@Model.OptimalCount)</option>
+                    <option value="OverMax" selected="@(selectedStatus == StockExtendStatus.OverMax)">🔵 Vượt định mức tối đa (@Model.OverMaxCount)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted mb-1">Tìm kiếm</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Mã sản phẩm, tên hàng hoá, kho..." />
+                </div>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/StockExtend" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu chi tiết -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-table me-2 text-primary"></i>Bảng kê chi tiết Tồn kho mở rộng & Khả dụng
+            <span class="badge bg-light text-dark ms-2 fw-normal border">@Model.TotalItems mặt hàng</span>
+        </h6>
+        <div class="small text-muted no-print">
+            Hiển thị định dạng số lượng theo đơn vị lưu kho cơ sở
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 40px;">STT</th>
+                    <th style="width: 140px;">Mã hàng</th>
+                    <th style="min-width: 170px;">Tên hàng hoá</th>
+                    <th class="text-center" style="width: 60px;">ĐVT</th>
+                    <th style="width: 120px;">Kho</th>
+                    <th class="text-end" style="width: 95px;" title="Tổng tồn kho vật lý thực tế">Tồn vật lý<br/><small class="fw-normal text-muted">(Total OK)</small></th>
+                    <th class="text-end text-warning" style="width: 95px;" title="Số lượng phong tỏa / giữ hàng">Tạm khóa<br/><small class="fw-normal text-muted">(Blocked)</small></th>
+                    <th class="text-end text-success fw-bold" style="width: 100px;" title="Số lượng khả dụng có thể xuất">Khả dụng<br/><small class="fw-normal text-muted">(Avail OK)</small></th>
+                    <th style="width: 110px;" class="text-center" title="Tỷ lệ khả dụng trên tổng tồn">Tỷ lệ K/D</th>
+                    <th class="text-end text-info" style="width: 95px;" title="Hàng đang chờ nhập / sắp về">Sắp về<br/><small class="fw-normal text-muted">(Back-order)</small></th>
+                    <th class="text-end text-primary fw-bold" style="width: 105px;" title="Tồn mở rộng = Khả dụng + Sắp về">Tồn mở rộng<br/><small class="fw-normal text-muted">(Stock Ext)</small></th>
+                    <th class="text-center" style="width: 95px;" title="Định mức tồn tối thiểu & tối đa">Min - Max</th>
+                    <th class="text-end" style="width: 115px;">Giá trị tồn</th>
+                    <th class="text-center" style="width: 120px;">Trạng thái</th>
+                    <th class="text-center" style="width: 100px;">Cần nhập</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="15" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                            Không có dữ liệu mặt hàng nào phù hợp với bộ lọc hiện tại.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        var availProgressColor = r.AvailRate switch
+                        {
+                            >= 80 => "bg-success",
+                            >= 40 => "bg-primary",
+                            > 0 => "bg-warning",
+                            _ => "bg-danger"
+                        };
+
+                        <tr>
+                            <td class="text-center text-muted small">@(stt++)</td>
+                            <td>
+                                <strong class="text-dark">@r.ProductCode</strong>
+                                <div class="mt-1">
+                                    @if (r.HasLot)
+                                    {
+                                        <a href="/LotExpiry?q=@Uri.EscapeDataString(r.ProductCode)" class="badge bg-secondary-subtle text-secondary border text-decoration-none" title="Xem danh sách Lô">Lô</a>
+                                    }
+                                    @if (r.HasSerial)
+                                    {
+                                        <a href="/StockSerial?q=@Uri.EscapeDataString(r.ProductCode)" class="badge bg-info-subtle text-info border text-decoration-none" title="Xem Serial / IMEI">Serial</a>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@r.ProductName</div>
+                                <div class="small text-muted">Giá vốn: @r.CostPrice.ToString("N0") đ</div>
+                            </td>
+                            <td class="text-center"><span class="badge bg-light text-dark border">@r.Uom</span></td>
+                            <td><span class="text-secondary small fw-medium">@r.WarehouseName</span></td>
+                            <td class="text-end fw-semibold">@r.QtyTotalOK.ToString("N0")</td>
+                            <td class="text-end text-warning fw-semibold">
+                                @if (r.QtyBlockOK > 0)
+                                {
+                                    <span>@r.QtyBlockOK.ToString("N0")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0</span>
+                                }
+                            </td>
+                            <td class="text-end text-success fw-bold fs-6">
+                                @r.QtyAvailOK.ToString("N0")
+                            </td>
+                            <td class="text-center align-middle">
+                                <div class="d-flex align-items-center justify-content-center gap-1">
+                                    <span class="small fw-semibold" style="width: 38px;">@r.AvailRate.ToString("F0")%</span>
+                                    <div class="progress progress-bar-thin flex-grow-1" style="max-width: 50px;">
+                                        <div class="progress-bar @availProgressColor" role="progressbar" style="width: @(Math.Min(100, Math.Max(0, (int)r.AvailRate)))%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-end text-info fw-semibold">
+                                @if (r.QtyBackOrder > 0)
+                                {
+                                    <span>+@r.QtyBackOrder.ToString("N0")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0</span>
+                                }
+                            </td>
+                            <td class="text-end text-primary fw-bold">
+                                @r.QtyStockExt.ToString("N0")
+                            </td>
+                            <td class="text-center small">
+                                <span class="badge bg-light text-dark border">@r.MinStock</span>
+                                <span class="text-muted">-</span>
+                                <span class="badge bg-light text-dark border">@(r.MaxStock > 0 ? r.MaxStock.ToString() : "∞")</span>
+                            </td>
+                            <td class="text-end small">
+                                <div class="fw-semibold text-dark">@r.TotalValue.ToString("N0") đ</div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.BadgeClass">@r.StatusLabel</span>
+                            </td>
+                            <td class="text-center">
+                                @if (r.ReplenishNeeded > 0)
+                                {
+                                    <span class="badge bg-danger-subtle text-danger border border-danger fw-bold" title="Lượng thiếu hụt so với định mức an toàn">
+                                        +@r.ReplenishNeeded.ToString("N0")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold border-top-2">
+                <tr>
+                    <td colspan="5" class="text-uppercase text-end py-3">Tổng cộng toàn kho:</td>
+                    <td class="text-end py-3 text-dark">@Model.TotalQtyTotalOK.ToString("N0")</td>
+                    <td class="text-end py-3 text-warning">@Model.TotalQtyBlockOK.ToString("N0")</td>
+                    <td class="text-end py-3 text-success fs-6">@Model.TotalQtyAvailOK.ToString("N0")</td>
+                    <td class="text-center py-3">@Model.AvgAvailRate.ToString("F1")%</td>
+                    <td class="text-end py-3 text-info">+@Model.TotalQtyBackOrder.ToString("N0")</td>
+                    <td class="text-end py-3 text-primary">@Model.TotalQtyStockExt.ToString("N0")</td>
+                    <td class="text-center py-3 text-muted">—</td>
+                    <td class="text-end py-3 text-dark">@Model.TotalInventoryValue.ToString("N0") đ</td>
+                    <td class="text-center py-3 small" colspan="2">
+                        <span class="badge bg-danger me-1">Cháy: @Model.OutOfStockCount</span>
+                        <span class="badge bg-warning text-dark me-1">Dưới Min: @Model.UnderMinCount</span>
+                        <span class="badge bg-success">Đạt: @Model.OptimalCount</span>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Chữ ký khi in ấn -->
+<div class="print-signatures mt-5 row text-center">
+    <div class="col-4">
+        <div class="fw-bold">Người Lập Báo Cáo</div>
+        <div class="text-muted small fst-italic mt-1">(Ký, ghi rõ họ tên)</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold">Thủ Kho Trưởng</div>
+        <div class="text-muted small fst-italic mt-1">(Ký, ghi rõ họ tên)</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold">Kế Toán Kho / Giám Đốc</div>
+        <div class="text-muted small fst-italic mt-1">(Ký, đóng dấu)</div>
+    </div>
+</div>

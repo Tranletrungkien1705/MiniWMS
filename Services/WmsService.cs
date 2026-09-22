@@ -106,6 +106,7 @@ public interface IWmsService
     Task<InventoryOutDtlReport> InventoryOutDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? keyword);
     Task<InventoryInDtlReport> InventoryInDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? keyword);
     Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
+    Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -4729,6 +4730,299 @@ public class WmsService(AppDbContext db) : IWmsService
             monthlyTotalBalance,
             items,
             qtyPeriodRows
+        );
+    }
+
+    public async Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword)
+    {
+        string whName = "Toàn hệ thống";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+
+        // 1. Tồn vật lý thực tế từ các phiếu ĐÃ GHI SỔ (Posted Docs)
+        var postedDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted)
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var mapPhysical = new Dictionary<(int whId, int prodId), int>();
+        void AddPhysical(int wh, int pid, int q)
+        {
+            mapPhysical.TryGetValue((wh, pid), out var cur);
+            mapPhysical[(wh, pid)] = cur + q;
+        }
+
+        foreach (var d in postedDocs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to) AddPhysical(to, l.ProductId, l.Quantity);
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr) AddPhysical(fr, l.ProductId, -l.Quantity);
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } f) AddPhysical(f, l.ProductId, -l.Quantity);
+                    if (d.ToWarehouseId is { } t) AddPhysical(t, l.ProductId, l.Quantity);
+                }
+            }
+        }
+
+        // 2. Số lượng hàng bị khóa / giữ chỗ (QtyBlockOK):
+        var mapBlock = new Dictionary<(int whId, int prodId), int>();
+        void AddBlock(int wh, int pid, int q)
+        {
+            if (q <= 0) return;
+            mapBlock.TryGetValue((wh, pid), out var cur);
+            mapBlock[(wh, pid)] = cur + q;
+        }
+
+        // Serial bị khóa / lỗi hỏng
+        var serials = await db.StockSerials
+            .Where(s => s.Status == StockSerialStatus.Locked || s.Status == StockSerialStatus.DamagedNG)
+            .ToListAsync();
+        foreach (var s in serials)
+        {
+            AddBlock(s.WarehouseId, s.ProductId, 1);
+        }
+
+        // StockDoc Draft Out / Transfer
+        var draftOutDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Draft && (d.Type == DocType.Out || d.Type == DocType.Transfer))
+            .Include(d => d.Lines)
+            .ToListAsync();
+        foreach (var d in draftOutDocs)
+        {
+            if (d.FromWarehouseId is { } fWh)
+            {
+                foreach (var l in d.Lines) AddBlock(fWh, l.ProductId, l.Quantity);
+            }
+        }
+
+        // MoveOrder Pending hoặc Approved (kho xuất)
+        var pendingMoveOrders = await db.MoveOrders
+            .Where(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved)
+            .Include(m => m.Lines)
+            .ToListAsync();
+        foreach (var m in pendingMoveOrders)
+        {
+            foreach (var l in m.Lines) AddBlock(m.FromWarehouseId, l.ProductId, l.Quantity);
+        }
+
+        // ReturnToSupplier Draft (kho xuất)
+        var draftRetSups = await db.ReturnToSuppliers
+            .Where(r => r.Status == ReturnSupStatus.Draft)
+            .Include(r => r.Lines)
+            .ToListAsync();
+        foreach (var r in draftRetSups)
+        {
+            foreach (var l in r.Lines) AddBlock(r.WarehouseId, l.ProductId, l.Quantity);
+        }
+
+        // InventoryOutFG Pending (kho xuất)
+        var pendingOutFGs = await db.InventoryOutFGs
+            .Where(f => f.Status == InvOutFGStatus.Pending)
+            .Include(f => f.Lines)
+            .ToListAsync();
+        foreach (var f in pendingOutFGs)
+        {
+            foreach (var l in f.Lines) AddBlock(f.WarehouseId, l.ProductId, l.Qty);
+        }
+
+        // 3. Số lượng hàng sắp về / đang chờ nhập (QtyBackOrder):
+        var mapBackOrder = new Dictionary<(int whId, int prodId), int>();
+        void AddBackOrder(int wh, int pid, int q)
+        {
+            if (q <= 0) return;
+            mapBackOrder.TryGetValue((wh, pid), out var cur);
+            mapBackOrder[(wh, pid)] = cur + q;
+        }
+
+        var draftInDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Draft && d.Type == DocType.In)
+            .Include(d => d.Lines)
+            .ToListAsync();
+        foreach (var d in draftInDocs)
+        {
+            if (d.ToWarehouseId is { } tWh)
+            {
+                foreach (var l in d.Lines) AddBackOrder(tWh, l.ProductId, l.Quantity);
+            }
+        }
+
+        var approvedMoveOrders = await db.MoveOrders
+            .Where(m => m.Status == MoveOrderStatus.Approved)
+            .Include(m => m.Lines)
+            .ToListAsync();
+        foreach (var m in approvedMoveOrders)
+        {
+            foreach (var l in m.Lines) AddBackOrder(m.ToWarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var draftCusReturns = await db.CustomerReturns
+            .Where(c => c.Status == CusReturnStatus.Draft)
+            .Include(c => c.Lines)
+            .ToListAsync();
+        foreach (var c in draftCusReturns)
+        {
+            foreach (var l in c.Lines) AddBackOrder(c.WarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var pendingInFGs = await db.InventoryInFGs
+            .Where(f => f.Status == InvInFGStatus.Pending)
+            .Include(f => f.Lines)
+            .ToListAsync();
+        foreach (var f in pendingInFGs)
+        {
+            foreach (var l in f.Lines) AddBackOrder(f.WarehouseId, l.ProductId, l.ActualQty > 0 ? l.ActualQty : l.PlanQty);
+        }
+
+        // Check mặt hàng có Lô và Serial
+        var allLotProdIds = (await db.StockLots.Select(l => l.ProductId).Distinct().ToListAsync()).ToHashSet();
+        var allSerialProdIds = (await db.StockSerials.Select(s => s.ProductId).Distinct().ToListAsync()).ToHashSet();
+
+        // 4. Tổng hợp danh sách dòng báo cáo StockExtendRow
+        var rows = new List<StockExtendRow>();
+
+        foreach (var wh in targetWarehouses)
+        {
+            foreach (var prod in allProducts)
+            {
+                int totalOk = mapPhysical.GetValueOrDefault((wh.Id, prod.Id), 0);
+                int blockOk = mapBlock.GetValueOrDefault((wh.Id, prod.Id), 0);
+                int backOrder = mapBackOrder.GetValueOrDefault((wh.Id, prod.Id), 0);
+
+                if (totalOk == 0 && blockOk == 0 && backOrder == 0 && prod.MinStock == 0 && prod.MaxStock == 0)
+                    continue;
+
+                int availOk = Math.Max(0, totalOk - blockOk);
+                double availRate = totalOk > 0 ? Math.Round(availOk * 100.0 / totalOk, 1) : (availOk == 0 && blockOk > 0 ? 0.0 : 100.0);
+                int stockExt = availOk + backOrder;
+                int minStock = prod.MinStock;
+                int maxStock = prod.MaxStock;
+                decimal cost = prod.CostPrice;
+                decimal totalVal = totalOk * cost;
+
+                // Xác định trạng thái
+                StockExtendStatus st;
+                string stLabel;
+                string badgeClass;
+
+                if (availOk <= 0)
+                {
+                    st = StockExtendStatus.OutOfStock;
+                    stLabel = "Cháy hàng / Hết";
+                    badgeClass = "bg-danger text-white";
+                }
+                else if (minStock > 0 && availOk < minStock)
+                {
+                    st = StockExtendStatus.UnderMin;
+                    stLabel = "Dưới định mức";
+                    badgeClass = "bg-warning text-dark";
+                }
+                else if (maxStock > 0 && availOk > maxStock)
+                {
+                    st = StockExtendStatus.OverMax;
+                    stLabel = "Vượt định mức";
+                    badgeClass = "bg-info text-dark";
+                }
+                else
+                {
+                    st = StockExtendStatus.Optimal;
+                    stLabel = "Đạt chuẩn an toàn";
+                    badgeClass = "bg-success text-white";
+                }
+
+                int replenishNeeded = Math.Max(0, minStock - stockExt);
+
+                rows.Add(new StockExtendRow(
+                    prod.Id,
+                    prod.Code,
+                    prod.Name,
+                    prod.Uom,
+                    wh.Id,
+                    wh.Name,
+                    totalOk,
+                    blockOk,
+                    availOk,
+                    availRate,
+                    backOrder,
+                    stockExt,
+                    minStock,
+                    maxStock,
+                    cost,
+                    totalVal,
+                    st,
+                    stLabel,
+                    badgeClass,
+                    replenishNeeded,
+                    allLotProdIds.Contains(prod.Id),
+                    allSerialProdIds.Contains(prod.Id)
+                ));
+            }
+        }
+
+        // Lọc theo StatusFilter
+        if (statusFilter.HasValue && statusFilter.Value != StockExtendStatus.All)
+        {
+            rows = rows.Where(r => r.Status == statusFilter.Value).ToList();
+        }
+
+        // Lọc theo Từ khóa
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var k = keyword.Trim().ToLowerInvariant();
+            rows = rows.Where(r => r.ProductCode.ToLowerInvariant().Contains(k) ||
+                                   r.ProductName.ToLowerInvariant().Contains(k) ||
+                                   r.WarehouseName.ToLowerInvariant().Contains(k)).ToList();
+        }
+
+        // Sắp xếp
+        rows = rows.OrderBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
+
+        // Tính toán KPI
+        int totalItems = rows.Count;
+        int totalQtyTotal = rows.Sum(r => r.QtyTotalOK);
+        int totalQtyBlock = rows.Sum(r => r.QtyBlockOK);
+        int totalQtyAvail = rows.Sum(r => r.QtyAvailOK);
+        int totalQtyBackOrder = rows.Sum(r => r.QtyBackOrder);
+        int totalQtyStockExt = rows.Sum(r => r.QtyStockExt);
+        decimal totalInvValue = rows.Sum(r => r.TotalValue);
+
+        int outOfStockCount = rows.Count(r => r.Status == StockExtendStatus.OutOfStock);
+        int underMinCount = rows.Count(r => r.Status == StockExtendStatus.UnderMin);
+        int optimalCount = rows.Count(r => r.Status == StockExtendStatus.Optimal);
+        int overMaxCount = rows.Count(r => r.Status == StockExtendStatus.OverMax);
+        int urgentReplenishCount = rows.Count(r => r.ReplenishNeeded > 0);
+        double avgAvailRate = totalQtyTotal > 0 ? Math.Round(totalQtyAvail * 100.0 / totalQtyTotal, 1) : 0.0;
+
+        return new StockExtendReport(
+            warehouseId,
+            whName,
+            statusFilter,
+            keyword,
+            totalItems,
+            totalQtyTotal,
+            totalQtyBlock,
+            totalQtyAvail,
+            totalQtyBackOrder,
+            totalQtyStockExt,
+            totalInvValue,
+            outOfStockCount,
+            underMinCount,
+            optimalCount,
+            overMaxCount,
+            urgentReplenishCount,
+            avgAvailRate,
+            rows
         );
     }
 

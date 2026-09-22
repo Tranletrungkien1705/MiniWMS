@@ -1540,6 +1540,65 @@ public record MonthlyMatrixReport(
     List<SummaryQtyPeriodRow> QtyPeriodRows
 );
 
+/// <summary>Trạng thái định mức tồn kho mở rộng (port từ Rpt_Inv_InventoryBalance_Extend Skycic).</summary>
+public enum StockExtendStatus
+{
+    All = 0,
+    OutOfStock = 1,  // Hết hàng khả dụng (QtyAvailOK <= 0)
+    UnderMin = 2,    // Dưới định mức an toàn tối thiểu (QtyAvailOK < MinStock)
+    Optimal = 3,     // Đạt chuẩn định mức an toàn (MinStock <= QtyAvailOK <= MaxStock)
+    OverMax = 4      // Vượt định mức tối đa (QtyAvailOK > MaxStock)
+}
+
+/// <summary>Dòng báo cáo tồn kho mở rộng & dự phóng khả dụng (port từ Rpt_Inv_InventoryBalance_Extend Skycic).</summary>
+public record StockExtendRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int QtyTotalOK,       // Tổng tồn vật lý thực tế trên sổ sách (Physical On-hand)
+    int QtyBlockOK,       // Số lượng bị khóa / giữ chỗ / phong tỏa (Blocked / Reserved)
+    int QtyAvailOK,       // Số lượng khả dụng sẵn sàng xuất bán (Available to Promise = QtyTotalOK - QtyBlockOK)
+    double AvailRate,     // Tỷ lệ khả dụng % = QtyAvailOK / QtyTotalOK * 100
+    int QtyBackOrder,     // Hàng sắp về / Đang trên đường nhập (Back-order / On order)
+    int QtyStockExt,      // Tồn kho mở rộng dự phóng = QtyAvailOK + QtyBackOrder
+    int MinStock,         // Tồn an toàn tối thiểu (QtyMinSt)
+    int MaxStock,         // Tồn định mức tối đa (QtyMaxSt)
+    decimal CostPrice,    // Đơn giá vốn kho
+    decimal TotalValue,   // Giá trị tồn kho thực tế = QtyTotalOK * CostPrice
+    StockExtendStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    int ReplenishNeeded,  // Lượng đề xuất nhập thêm = Math.Max(0, MinStock - QtyStockExt)
+    bool HasLot,          // Mặt hàng quản lý theo Lô
+    bool HasSerial        // Mặt hàng quản lý theo Serial / IMEI
+);
+
+/// <summary>Báo cáo Tồn kho mở rộng & Dự phóng khả dụng tổng hợp (port từ Rpt_Inv_InventoryBalance_Extend Skycic).</summary>
+public record StockExtendReport(
+    int? WarehouseId,
+    string WarehouseName,
+    StockExtendStatus? StatusFilter,
+    string? Keyword,
+    int TotalItems,             // Tổng số mặt hàng
+    int TotalQtyTotalOK,        // Tổng tồn vật lý
+    int TotalQtyBlockOK,        // Tổng số lượng phong tỏa
+    int TotalQtyAvailOK,        // Tổng tồn khả dụng
+    int TotalQtyBackOrder,      // Tổng hàng sắp về
+    int TotalQtyStockExt,       // Tổng tồn mở rộng
+    decimal TotalInventoryValue,// Tổng giá trị tồn (VNĐ)
+    int OutOfStockCount,        // Số mặt hàng hết hàng khả dụng
+    int UnderMinCount,          // Số mặt hàng dưới định mức
+    int OptimalCount,           // Số mặt hàng đạt chuẩn
+    int OverMaxCount,           // Số mặt hàng vượt định mức
+    int UrgentReplenishCount,   // Số mặt hàng cần nhập thêm gấp
+    double AvgAvailRate,        // Tỷ lệ khả dụng trung bình %
+    List<StockExtendRow> Rows
+);
+
+
 
 
 

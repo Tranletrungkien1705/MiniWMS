@@ -1389,6 +1389,12 @@ app.MapGet("/api/reports/summary-qty-period", async (int? year, int? warehouseId
     });
 });
 
+// API Báo cáo Tồn kho mở rộng & Dự phóng khả dụng (port từ Rpt_Inv_InventoryBalance_Extend Skycic)
+app.MapGet("/api/reports/inventory-balance-extend", async (int? warehouseId, StockExtendStatus? status, string? q, IWmsService svc) =>
+{
+    var report = await svc.StockExtendReportAsync(warehouseId, status, q);
+    return Results.Ok(report);
+});
 
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();

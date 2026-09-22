@@ -454,6 +454,7 @@ public static class Seeder
             }
         }
 
+        if (!await db.Audits.IgnoreQueryFilters().AnyAsync(a => a.Code == "KKSEED-001"))
         {
             var whs = await db.Warehouses.ToListAsync();
             var prods = await db.Products.ToListAsync();
@@ -475,6 +476,55 @@ public static class Seeder
             db.Audits.Add(kk);
             await db.SaveChangesAsync();
         }
+
+        if (!await db.Docs.AnyAsync(d => d.Code == "PNDRAFT-001"))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue)
+            {
+                // Phiếu nhập mua NCC đang trên đường về (Back-order)
+                var pnDraft = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNDRAFT-001",
+                    SupplierCode = "NCC-MAY10",
+                    SupplierName = "Tổng Công ty May 10 - CTCP",
+                    Status = DocStatus.Draft,
+                    Date = DateTime.Now,
+                    RefNo = "PO-2026-0330",
+                    Note = "Đơn đặt mua bổ sung hàng dự kiến giao trong tuần (Back-order)",
+                    CreatedBy = "purchaser"
+                };
+                pnDraft.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 35 });
+                pnDraft.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 25 });
+                db.Docs.Add(pnDraft);
+
+                // Phiếu xuất kho đang soạn hàng (Blocked / Reserved)
+                var pxDraft = new StockDoc
+                {
+                    Type = DocType.Out,
+                    FromWarehouseId = hn.Value,
+                    Code = "PXDRAFT-001",
+                    Status = DocStatus.Draft,
+                    Date = DateTime.Now,
+                    RefNo = "SO-2026-889",
+                    Note = "Đơn xuất bán sỉ đại lý miền Bắc - đang giữ chỗ đóng gói (Blocked)",
+                    CreatedBy = "saleman"
+                };
+                pxDraft.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 10 });
+                pxDraft.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 8 });
+                db.Docs.Add(pxDraft);
+
+                await db.SaveChangesAsync();
+            }
+        }
+
         if (!await db.MoveOrders.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();
