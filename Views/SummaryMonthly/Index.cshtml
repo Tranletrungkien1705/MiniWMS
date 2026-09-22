@@ -1,0 +1,428 @@
+@model MonthlyMatrixReport
+@{
+    ViewData["Title"] = "Báo cáo Ma trận Tổng hợp Nhập - Xuất & Tồn kho 12 Tháng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var currentYear = (int)ViewBag.Year;
+    var viewMode = (string)ViewBag.ViewMode;
+    var keyword = (string)ViewBag.Keyword;
+
+    var years = new List<int> { currentYear, currentYear - 1, currentYear - 2 };
+    if (!years.Contains(2026)) years.Add(2026);
+    if (!years.Contains(2025)) years.Add(2025);
+    years = years.Distinct().OrderByDescending(y => y).ToList();
+
+    int maxMonthlyVol = 1;
+    for (int i = 0; i < 12; i++)
+    {
+        int vol = Model.MonthlyTotalIn[i] + Model.MonthlyTotalOut[i];
+        if (vol > maxMonthlyVol) maxMonthlyVol = vol;
+    }
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-calendar3-range text-primary me-2"></i>Báo cáo Ma trận Tổng hợp Nhập - Xuất & Tồn kho 12 Tháng</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Summary_In_Out</code> & <code>Rpt_Summary_QtyInvByPeriod</code> (Skycic) — Phân tích biến động lưu chuyển hàng hóa & chu kỳ tồn kho qua 12 tháng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/SummaryMonthly/ExportCsv?year=@currentYear&warehouseId=@selectedWid&viewMode=@viewMode&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo
+        </button>
+        <a href="/Doc/Create?type=0" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-in-down me-1"></i> Nhập kho
+        </a>
+        <a href="/Doc/Create?type=1" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-box-arrow-up me-1"></i> Xuất kho
+        </a>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Năm báo cáo</label>
+                <select name="year" class="form-select form-select-sm" onchange="this.form.submit()">
+                    @foreach (var y in years)
+                    {
+                        <option value="@y" selected="@(currentYear == y)">Năm @y</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho lưu trữ</label>
+                <select name="warehouseId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Toàn bộ hệ thống kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Chỉ tiêu hiển thị</label>
+                <select name="viewMode" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="ALL" selected="@(viewMode == "ALL")">Toàn bộ (Nhập, Xuất, Ròng, Tồn cuối)</option>
+                    <option value="IN_ONLY" selected="@(viewMode == "IN_ONLY")">Chỉ xem Nhập kho (Inbound)</option>
+                    <option value="OUT_ONLY" selected="@(viewMode == "OUT_ONLY")">Chỉ xem Xuất kho (Outbound)</option>
+                    <option value="BALANCE_ONLY" selected="@(viewMode == "BALANCE_ONLY")">Chỉ xem Tồn kho cuối kỳ (Rpt_Summary_QtyInvByPeriod)</option>
+                    <option value="NET_ONLY" selected="@(viewMode == "NET_ONLY")">Chỉ xem Biến động Ròng (Net Movement)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted mb-1">Tìm kiếm hàng hoá</label>
+                <input type="text" name="q" value="@keyword" class="form-select form-select-sm" placeholder="Mã hoặc tên mặt hàng..." />
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i></button>
+                <a href="/SummaryMonthly" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc"><i class="bi bi-x-circle"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI Card tổng quan năm -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-success border-4">
+            <div class="card-body py-2">
+                <div class="text-muted small text-uppercase fw-semibold">Tổng lượng Nhập năm @currentYear</div>
+                <div class="d-flex align-items-baseline justify-content-between mt-1">
+                    <div class="stat-num text-success fw-bold">@Model.TotalInYear.ToString("N0")</div>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-box-arrow-in-down me-1"></i>Inflow</span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11.5px">
+                    Trung bình: <strong>@(Math.Round(Model.TotalInYear / 12.0, 1))</strong> sp/tháng
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-danger border-4">
+            <div class="card-body py-2">
+                <div class="text-muted small text-uppercase fw-semibold">Tổng lượng Xuất năm @currentYear</div>
+                <div class="d-flex align-items-baseline justify-content-between mt-1">
+                    <div class="stat-num text-danger fw-bold">@Model.TotalOutYear.ToString("N0")</div>
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-box-arrow-up me-1"></i>Outflow</span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11.5px">
+                    Trung bình: <strong>@(Math.Round(Model.TotalOutYear / 12.0, 1))</strong> sp/tháng
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-primary border-4">
+            <div class="card-body py-2">
+                <div class="text-muted small text-uppercase fw-semibold">Lưu chuyển Ròng năm</div>
+                <div class="d-flex align-items-baseline justify-content-between mt-1">
+                    <div class="stat-num @(Model.NetMovementYear >= 0 ? "text-primary" : "text-warning") fw-bold">
+                        @(Model.NetMovementYear > 0 ? "+" : "")@Model.NetMovementYear.ToString("N0")
+                    </div>
+                    <span class="badge @(Model.NetMovementYear >= 0 ? "bg-primary-subtle text-primary border border-primary-subtle" : "bg-warning-subtle text-warning border border-warning-subtle")">
+                        @(Model.NetMovementYear >= 0 ? "Tích lũy kho" : "Xả giảm tồn")
+                    </span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11.5px">
+                    Tồn cuối T12 toàn kho: <strong>@Model.MonthlyTotalBalance[11].ToString("N0")</strong> sp
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card border-0 shadow-sm h-100 border-start border-info border-4">
+            <div class="card-body py-2">
+                <div class="text-muted small text-uppercase fw-semibold">Tháng cao điểm hoạt động</div>
+                <div class="d-flex align-items-baseline justify-content-between mt-1">
+                    <div class="stat-num text-info fw-bold">@Model.PeakMonthName</div>
+                    <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="bi bi-graph-up-arrow me-1"></i>Đỉnh điểm</span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11.5px">
+                    Khối lượng giao dịch: <strong>@Model.PeakMonthVolume.ToString("N0")</strong> lượt hàng
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Biểu đồ phân bổ hoạt động 12 tháng trong năm -->
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small text-muted"><i class="bi bi-bar-chart-line me-1"></i>Biểu đồ phân bổ Nhập / Xuất qua 12 Tháng của năm @currentYear</span>
+        <span class="small text-muted" style="font-size:11px"><i class="bi bi-circle-fill text-success me-1"></i>Nhập kho &nbsp;|&nbsp; <i class="bi bi-circle-fill text-danger me-1"></i>Xuất kho &nbsp;|&nbsp; <i class="bi bi-circle-fill text-primary me-1"></i>Tồn cuối tháng</span>
+    </div>
+    <div class="card-body py-3">
+        <div class="row g-2 text-center align-items-end" style="height:120px">
+            @for (int m = 0; m < 12; m++)
+            {
+                int inVal = Model.MonthlyTotalIn[m];
+                int outVal = Model.MonthlyTotalOut[m];
+                int balVal = Model.MonthlyTotalBalance[m];
+                int totalActivity = inVal + outVal;
+                int inPct = maxMonthlyVol > 0 ? (int)Math.Min(100, (double)inVal / maxMonthlyVol * 80) : 0;
+                int outPct = maxMonthlyVol > 0 ? (int)Math.Min(100, (double)outVal / maxMonthlyVol * 80) : 0;
+                bool isPeak = (m + 1) == Model.PeakMonth;
+
+                <div class="col d-flex flex-column align-items-center h-100 justify-content-end">
+                    <div class="d-flex gap-1 align-items-end w-100 justify-content-center" style="height:80px">
+                        <div class="bg-success rounded-top" style="width:10px; height:@(Math.Max(inVal > 0 ? 6 : 0, inPct))px;" title="Tháng @(m+1): Nhập @inVal"></div>
+                        <div class="bg-danger rounded-top" style="width:10px; height:@(Math.Max(outVal > 0 ? 6 : 0, outPct))px;" title="Tháng @(m+1): Xuất @outVal"></div>
+                    </div>
+                    <div class="small fw-semibold mt-1 @(isPeak ? "text-primary fw-bold" : "text-muted")" style="font-size:11px">
+                        T@(m + 1) @(isPeak ? "★" : "")
+                    </div>
+                    <div class="text-muted" style="font-size:9.5px" title="Tồn cuối tháng">
+                        @balVal
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Bảng Ma trận 12 Tháng -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+        <div class="fw-semibold small text-muted">
+            <i class="bi bi-grid-3x3 me-1"></i>Ma trận chi tiết theo 12 Tháng — @(Model.WarehouseName) (@Model.Items.Count mặt hàng)
+        </div>
+        <div class="small text-muted">
+            Đơn vị tính: theo ĐVT của từng mặt hàng
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-bordered table-hover align-middle mb-0" style="font-size:12.5px;">
+            <thead class="table-light text-center">
+                <tr>
+                    <th style="min-width:180px;" class="text-start ps-3">Mặt hàng</th>
+                    <th style="min-width:85px;">Chỉ tiêu</th>
+                    <th style="width:55px;">T1</th>
+                    <th style="width:55px;">T2</th>
+                    <th style="width:55px;">T3</th>
+                    <th style="width:55px;">T4</th>
+                    <th style="width:55px;">T5</th>
+                    <th style="width:55px;">T6</th>
+                    <th style="width:55px;">T7</th>
+                    <th style="width:55px;">T8</th>
+                    <th style="width:55px;">T9</th>
+                    <th style="width:55px;">T10</th>
+                    <th style="width:55px;">T11</th>
+                    <th style="width:55px;">T12</th>
+                    <th style="min-width:85px;" class="bg-light-subtle">Tổng năm</th>
+                    <th style="min-width:70px;">TB/Tháng</th>
+                    <th style="min-width:65px;">Cao điểm</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="17" class="text-center py-4 text-muted">Không có dữ liệu mặt hàng nào phù hợp với bộ lọc.</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var it in Model.Items)
+                    {
+                        var showIn = viewMode == "ALL" || viewMode == "IN_ONLY";
+                        var showOut = viewMode == "ALL" || viewMode == "OUT_ONLY";
+                        var showNet = viewMode == "ALL" || viewMode == "NET_ONLY";
+                        var showBal = viewMode == "ALL" || viewMode == "BALANCE_ONLY";
+                        int activeRowsCount = (showIn ? 1 : 0) + (showOut ? 1 : 0) + (showNet ? 1 : 0) + (showBal ? 1 : 0);
+
+                        bool isFirstRow = true;
+
+                        if (showIn && it.InRow != null)
+                        {
+                            var r = it.InRow;
+                            <tr>
+                                @if (isFirstRow)
+                                {
+                                    <td rowspan="@activeRowsCount" class="ps-3 align-top bg-white border-end">
+                                        <div class="fw-bold text-dark">@it.ProductName</div>
+                                        <div class="small text-muted font-monospace">@it.ProductCode &bull; @it.Uom</div>
+                                        <div class="small text-secondary mt-1" style="font-size:11px">
+                                            Tồn đầu năm: <strong>@it.OpeningYearQty.ToString("N0")</strong>
+                                        </div>
+                                    </td>
+                                    isFirstRow = false;
+                                }
+                                <td class="text-center"><span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2"><i class="bi bi-arrow-down-left me-1"></i>Nhập</span></td>
+                                <td class="text-end @(r.M1 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M1 > 0 ? r.M1.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M2 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M2 > 0 ? r.M2.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M3 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M3 > 0 ? r.M3.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M4 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M4 > 0 ? r.M4.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M5 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M5 > 0 ? r.M5.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M6 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M6 > 0 ? r.M6.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M7 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M7 > 0 ? r.M7.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M8 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M8 > 0 ? r.M8.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M9 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M9 > 0 ? r.M9.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M10 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M10 > 0 ? r.M10.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M11 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M11 > 0 ? r.M11.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M12 > 0 ? "fw-semibold text-success" : "text-muted")">@(r.M12 > 0 ? r.M12.ToString("N0") : "—")</td>
+                                <td class="text-end fw-bold text-success bg-light-subtle">@r.TotalYear.ToString("N0")</td>
+                                <td class="text-end text-muted">@r.AvgMonth.ToString("N1")</td>
+                                <td class="text-center small text-muted">T@(r.PeakMonth)</td>
+                            </tr>
+                        }
+
+                        if (showOut && it.OutRow != null)
+                        {
+                            var r = it.OutRow;
+                            <tr>
+                                @if (isFirstRow)
+                                {
+                                    <td rowspan="@activeRowsCount" class="ps-3 align-top bg-white border-end">
+                                        <div class="fw-bold text-dark">@it.ProductName</div>
+                                        <div class="small text-muted font-monospace">@it.ProductCode &bull; @it.Uom</div>
+                                        <div class="small text-secondary mt-1" style="font-size:11px">
+                                            Tồn đầu năm: <strong>@it.OpeningYearQty.ToString("N0")</strong>
+                                        </div>
+                                    </td>
+                                    isFirstRow = false;
+                                }
+                                <td class="text-center"><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2"><i class="bi bi-arrow-up-right me-1"></i>Xuất</span></td>
+                                <td class="text-end @(r.M1 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M1 > 0 ? r.M1.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M2 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M2 > 0 ? r.M2.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M3 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M3 > 0 ? r.M3.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M4 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M4 > 0 ? r.M4.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M5 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M5 > 0 ? r.M5.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M6 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M6 > 0 ? r.M6.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M7 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M7 > 0 ? r.M7.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M8 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M8 > 0 ? r.M8.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M9 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M9 > 0 ? r.M9.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M10 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M10 > 0 ? r.M10.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M11 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M11 > 0 ? r.M11.ToString("N0") : "—")</td>
+                                <td class="text-end @(r.M12 > 0 ? "fw-semibold text-danger" : "text-muted")">@(r.M12 > 0 ? r.M12.ToString("N0") : "—")</td>
+                                <td class="text-end fw-bold text-danger bg-light-subtle">@r.TotalYear.ToString("N0")</td>
+                                <td class="text-end text-muted">@r.AvgMonth.ToString("N1")</td>
+                                <td class="text-center small text-muted">T@(r.PeakMonth)</td>
+                            </tr>
+                        }
+
+                        if (showNet && it.NetRow != null)
+                        {
+                            var r = it.NetRow;
+                            <tr class="table-light">
+                                @if (isFirstRow)
+                                {
+                                    <td rowspan="@activeRowsCount" class="ps-3 align-top bg-white border-end">
+                                        <div class="fw-bold text-dark">@it.ProductName</div>
+                                        <div class="small text-muted font-monospace">@it.ProductCode &bull; @it.Uom</div>
+                                        <div class="small text-secondary mt-1" style="font-size:11px">
+                                            Tồn đầu năm: <strong>@it.OpeningYearQty.ToString("N0")</strong>
+                                        </div>
+                                    </td>
+                                    isFirstRow = false;
+                                }
+                                <td class="text-center"><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2">&plusmn; Ròng</span></td>
+                                <td class="text-end @(r.M1 != 0 ? (r.M1 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M1 != 0 ? (r.M1 > 0 ? "+" + r.M1 : r.M1.ToString()) : "0")</td>
+                                <td class="text-end @(r.M2 != 0 ? (r.M2 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M2 != 0 ? (r.M2 > 0 ? "+" + r.M2 : r.M2.ToString()) : "0")</td>
+                                <td class="text-end @(r.M3 != 0 ? (r.M3 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M3 != 0 ? (r.M3 > 0 ? "+" + r.M3 : r.M3.ToString()) : "0")</td>
+                                <td class="text-end @(r.M4 != 0 ? (r.M4 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M4 != 0 ? (r.M4 > 0 ? "+" + r.M4 : r.M4.ToString()) : "0")</td>
+                                <td class="text-end @(r.M5 != 0 ? (r.M5 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M5 != 0 ? (r.M5 > 0 ? "+" + r.M5 : r.M5.ToString()) : "0")</td>
+                                <td class="text-end @(r.M6 != 0 ? (r.M6 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M6 != 0 ? (r.M6 > 0 ? "+" + r.M6 : r.M6.ToString()) : "0")</td>
+                                <td class="text-end @(r.M7 != 0 ? (r.M7 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M7 != 0 ? (r.M7 > 0 ? "+" + r.M7 : r.M7.ToString()) : "0")</td>
+                                <td class="text-end @(r.M8 != 0 ? (r.M8 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M8 != 0 ? (r.M8 > 0 ? "+" + r.M8 : r.M8.ToString()) : "0")</td>
+                                <td class="text-end @(r.M9 != 0 ? (r.M9 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M9 != 0 ? (r.M9 > 0 ? "+" + r.M9 : r.M9.ToString()) : "0")</td>
+                                <td class="text-end @(r.M10 != 0 ? (r.M10 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M10 != 0 ? (r.M10 > 0 ? "+" + r.M10 : r.M10.ToString()) : "0")</td>
+                                <td class="text-end @(r.M11 != 0 ? (r.M11 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M11 != 0 ? (r.M11 > 0 ? "+" + r.M11 : r.M11.ToString()) : "0")</td>
+                                <td class="text-end @(r.M12 != 0 ? (r.M12 > 0 ? "text-primary" : "text-warning") : "text-muted")">@(r.M12 != 0 ? (r.M12 > 0 ? "+" + r.M12 : r.M12.ToString()) : "0")</td>
+                                <td class="text-end fw-bold @(r.TotalYear >= 0 ? "text-primary" : "text-warning") bg-light-subtle">@(r.TotalYear > 0 ? "+" : "")@r.TotalYear.ToString("N0")</td>
+                                <td class="text-end text-muted">@r.AvgMonth.ToString("N1")</td>
+                                <td class="text-center small text-muted">—</td>
+                            </tr>
+                        }
+
+                        if (showBal && it.BalanceRow != null)
+                        {
+                            var r = it.BalanceRow;
+                            <tr class="table-primary-subtle border-bottom border-2">
+                                @if (isFirstRow)
+                                {
+                                    <td rowspan="@activeRowsCount" class="ps-3 align-top bg-white border-end">
+                                        <div class="fw-bold text-dark">@it.ProductName</div>
+                                        <div class="small text-muted font-monospace">@it.ProductCode &bull; @it.Uom</div>
+                                        <div class="small text-secondary mt-1" style="font-size:11px">
+                                            Tồn đầu năm: <strong>@it.OpeningYearQty.ToString("N0")</strong>
+                                        </div>
+                                    </td>
+                                    isFirstRow = false;
+                                }
+                                <td class="text-center"><span class="badge bg-primary py-1 px-2"><i class="bi bi-box-seam me-1"></i>Tồn cuối</span></td>
+                                <td class="text-end fw-semibold text-primary">@r.M1.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M2.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M3.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M4.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M5.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M6.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M7.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M8.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M9.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M10.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M11.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.M12.ToString("N0")</td>
+                                <td class="text-end fw-bold text-primary bg-primary-subtle">@r.TotalYear.ToString("N0")</td>
+                                <td class="text-end fw-semibold text-primary">@r.AvgMonth.ToString("N1")</td>
+                                <td class="text-center small text-primary fw-semibold">T@(r.PeakMonth)</td>
+                            </tr>
+                        }
+                    }
+                }
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td rowspan="3" class="ps-3 align-middle bg-light border-end">
+                        <div class="text-uppercase fw-bold text-dark">TỔNG CỘNG TOÀN KHO</div>
+                        <div class="small text-muted fw-normal">Toàn bộ mặt hàng trong kho</div>
+                    </td>
+                    <td class="text-center text-success"><i class="bi bi-box-arrow-in-down me-1"></i>Tổng Nhập</td>
+                    @for (int m = 0; m < 12; m++)
+                    {
+                        <td class="text-end text-success">@(Model.MonthlyTotalIn[m] > 0 ? Model.MonthlyTotalIn[m].ToString("N0") : "—")</td>
+                    }
+                    <td class="text-end text-success bg-success-subtle">@Model.TotalInYear.ToString("N0")</td>
+                    <td class="text-end text-success">@(Math.Round(Model.TotalInYear / 12.0, 1))</td>
+                    <td class="text-center">—</td>
+                </tr>
+                <tr>
+                    <td class="text-center text-danger"><i class="bi bi-box-arrow-up me-1"></i>Tổng Xuất</td>
+                    @for (int m = 0; m < 12; m++)
+                    {
+                        <td class="text-end text-danger">@(Model.MonthlyTotalOut[m] > 0 ? Model.MonthlyTotalOut[m].ToString("N0") : "—")</td>
+                    }
+                    <td class="text-end text-danger bg-danger-subtle">@Model.TotalOutYear.ToString("N0")</td>
+                    <td class="text-end text-danger">@(Math.Round(Model.TotalOutYear / 12.0, 1))</td>
+                    <td class="text-center">—</td>
+                </tr>
+                <tr class="table-primary border-top border-2">
+                    <td class="text-center text-primary"><i class="bi bi-box-seam me-1"></i>Tổng Tồn cuối</td>
+                    @for (int m = 0; m < 12; m++)
+                    {
+                        <td class="text-end text-primary">@Model.MonthlyTotalBalance[m].ToString("N0")</td>
+                    }
+                    <td class="text-end text-primary bg-primary text-white">@Model.MonthlyTotalBalance[11].ToString("N0")</td>
+                    <td class="text-end text-primary">@(Math.Round(Model.MonthlyTotalBalance.Average(), 1))</td>
+                    <td class="text-center text-primary">T@(Model.PeakMonth)</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<style>
+    @@media print {
+        body { font-size: 9pt; }
+        .sidebar, .topbar, .btn, form, .badge, .border-start { display: none !important; }
+        .main-content { margin: 0 !important; padding: 0 !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; }
+        table { font-size: 8pt !important; width: 100% !important; }
+        @@page { size: landscape; margin: 10mm; }
+    }
+</style>

@@ -2111,6 +2111,86 @@ public class InventoryInDtlController(IWmsService svc) : Controller
     }
 }
 
+public class SummaryMonthlyController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? year, int? warehouseId, string? viewMode, string? q)
+    {
+        int targetYear = year ?? DateTime.Today.Year;
+        string mode = string.IsNullOrWhiteSpace(viewMode) ? "ALL" : viewMode.ToUpperInvariant();
+
+        ViewBag.Year = targetYear;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ViewMode = mode;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+
+        var report = await svc.MonthlyMatrixReportAsync(targetYear, warehouseId, mode, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? year, int? warehouseId, string? viewMode, string? q)
+    {
+        int targetYear = year ?? DateTime.Today.Year;
+        string mode = string.IsNullOrWhiteSpace(viewMode) ? "ALL" : viewMode.ToUpperInvariant();
+        var report = await svc.MonthlyMatrixReportAsync(targetYear, warehouseId, mode, q);
+
+        var sb = new System.Text.StringBuilder();
+        // Thêm UTF-8 BOM để Excel hiển thị tiếng Việt không bị lỗi font
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO MA TRẬN TỔNG HỢP NHẬP - XUẤT & TỒN KHO 12 THÁNG");
+        sb.AppendLine($"Năm báo cáo:;{report.Year};Kho áp dụng:;{report.WarehouseName}");
+        sb.AppendLine($"Chế độ xem:;{report.ViewMode};Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng lượng nhập năm:;{report.TotalInYear};Tổng lượng xuất năm:;{report.TotalOutYear};Lưu chuyển ròng năm:;{report.NetMovementYear};Tháng cao điểm:;{report.PeakMonthName} ({report.PeakMonthVolume} lượt/sp)");
+        sb.AppendLine();
+
+        sb.AppendLine("Mã hàng;Tên mặt hàng;ĐVT;Tồn đầu năm;Chỉ tiêu;T1;T2;T3;T4;T5;T6;T7;T8;T9;T10;T11;T12;Tổng năm / Tồn cuối;Trung bình tháng;Tháng cao điểm");
+
+        foreach (var item in report.Items)
+        {
+            var pCode = item.ProductCode;
+            var pName = item.ProductName.Replace("\"", "\"\"");
+            var uom = item.Uom;
+            var opYear = item.OpeningYearQty;
+
+            bool showIn = mode == "ALL" || mode == "IN_ONLY";
+            bool showOut = mode == "ALL" || mode == "OUT_ONLY";
+            bool showNet = mode == "ALL" || mode == "NET_ONLY";
+            bool showBal = mode == "ALL" || mode == "BALANCE_ONLY";
+
+            if (showIn && item.InRow != null)
+            {
+                var r = item.InRow;
+                sb.AppendLine($"\"{pCode}\";\"{pName}\";\"{uom}\";{opYear};\"{r.ActionLabel}\";{r.M1};{r.M2};{r.M3};{r.M4};{r.M5};{r.M6};{r.M7};{r.M8};{r.M9};{r.M10};{r.M11};{r.M12};{r.TotalYear};{r.AvgMonth:F1};Tháng {r.PeakMonth:D2}");
+            }
+            if (showOut && item.OutRow != null)
+            {
+                var r = item.OutRow;
+                sb.AppendLine($"\"{pCode}\";\"{pName}\";\"{uom}\";{opYear};\"{r.ActionLabel}\";{r.M1};{r.M2};{r.M3};{r.M4};{r.M5};{r.M6};{r.M7};{r.M8};{r.M9};{r.M10};{r.M11};{r.M12};{r.TotalYear};{r.AvgMonth:F1};Tháng {r.PeakMonth:D2}");
+            }
+            if (showNet && item.NetRow != null)
+            {
+                var r = item.NetRow;
+                sb.AppendLine($"\"{pCode}\";\"{pName}\";\"{uom}\";{opYear};\"{r.ActionLabel}\";{r.M1};{r.M2};{r.M3};{r.M4};{r.M5};{r.M6};{r.M7};{r.M8};{r.M9};{r.M10};{r.M11};{r.M12};{r.TotalYear};{r.AvgMonth:F1};Tháng {r.PeakMonth:D2}");
+            }
+            if (showBal && item.BalanceRow != null)
+            {
+                var r = item.BalanceRow;
+                sb.AppendLine($"\"{pCode}\";\"{pName}\";\"{uom}\";{opYear};\"{r.ActionLabel}\";{r.M1};{r.M2};{r.M3};{r.M4};{r.M5};{r.M6};{r.M7};{r.M8};{r.M9};{r.M10};{r.M11};{r.M12};{r.TotalYear};{r.AvgMonth:F1};Tháng {r.PeakMonth:D2}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"TỔNG CỘNG TOÀN KHO;;;;Nhập kho;{report.MonthlyTotalIn[0]};{report.MonthlyTotalIn[1]};{report.MonthlyTotalIn[2]};{report.MonthlyTotalIn[3]};{report.MonthlyTotalIn[4]};{report.MonthlyTotalIn[5]};{report.MonthlyTotalIn[6]};{report.MonthlyTotalIn[7]};{report.MonthlyTotalIn[8]};{report.MonthlyTotalIn[9]};{report.MonthlyTotalIn[10]};{report.MonthlyTotalIn[11]};{report.TotalInYear};{report.TotalInYear / 12.0:F1};-");
+        sb.AppendLine($"TỔNG CỘNG TOÀN KHO;;;;Xuất kho;{report.MonthlyTotalOut[0]};{report.MonthlyTotalOut[1]};{report.MonthlyTotalOut[2]};{report.MonthlyTotalOut[3]};{report.MonthlyTotalOut[4]};{report.MonthlyTotalOut[5]};{report.MonthlyTotalOut[6]};{report.MonthlyTotalOut[7]};{report.MonthlyTotalOut[8]};{report.MonthlyTotalOut[9]};{report.MonthlyTotalOut[10]};{report.MonthlyTotalOut[11]};{report.TotalOutYear};{report.TotalOutYear / 12.0:F1};-");
+        sb.AppendLine($"TỔNG CỘNG TOÀN KHO;;;;Tồn cuối kỳ;{report.MonthlyTotalBalance[0]};{report.MonthlyTotalBalance[1]};{report.MonthlyTotalBalance[2]};{report.MonthlyTotalBalance[3]};{report.MonthlyTotalBalance[4]};{report.MonthlyTotalBalance[5]};{report.MonthlyTotalBalance[6]};{report.MonthlyTotalBalance[7]};{report.MonthlyTotalBalance[8]};{report.MonthlyTotalBalance[9]};{report.MonthlyTotalBalance[10]};{report.MonthlyTotalBalance[11]};{report.MonthlyTotalBalance[11]};{report.MonthlyTotalBalance.Average():F1};-");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_MaTran_NhapXuatTon12T_{report.Year}_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

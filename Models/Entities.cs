@@ -1450,6 +1450,97 @@ public record InventoryInDtlReport(
     int DistinctSuppliersCount
 );
 
+/// <summary>Dòng chỉ tiêu theo 12 tháng của 1 mặt hàng (port từ Rpt_Summary_In_Out Skycic).</summary>
+public record MonthlyMatrixRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string ActionType,    // IN, OUT, NET, BALANCE
+    string ActionLabel,   // Nhập kho, Xuất kho, Biến động ròng, Tồn cuối kỳ
+    string BadgeClass,
+    int M1,
+    int M2,
+    int M3,
+    int M4,
+    int M5,
+    int M6,
+    int M7,
+    int M8,
+    int M9,
+    int M10,
+    int M11,
+    int M12,
+    int TotalYear,
+    double AvgMonth,
+    int PeakMonth
+);
+
+/// <summary>Khối ma trận đầy đủ của một mặt hàng gồm các chỉ tiêu Nhập, Xuất, Ròng, Tồn cuối tháng.</summary>
+public class ProductMonthlyMatrixItem
+{
+    public int ProductId { get; set; }
+    public string ProductCode { get; set; } = "";
+    public string ProductName { get; set; } = "";
+    public string Uom { get; set; } = "";
+    public int OpeningYearQty { get; set; } // Tồn đầu năm
+    public MonthlyMatrixRow? InRow { get; set; }
+    public MonthlyMatrixRow? OutRow { get; set; }
+    public MonthlyMatrixRow? NetRow { get; set; }
+    public MonthlyMatrixRow? BalanceRow { get; set; }
+    public int TotalInYear => InRow?.TotalYear ?? 0;
+    public int TotalOutYear => OutRow?.TotalYear ?? 0;
+    public int NetYear => TotalInYear - TotalOutYear;
+    public int ClosingYearQty => BalanceRow?.M12 ?? 0;
+}
+
+/// <summary>Dòng tổng hợp tồn kho 12 tháng theo kỳ (port từ Rpt_Summary_QtyInvByPeriod Skycic).</summary>
+public record SummaryQtyPeriodRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int OpeningYearQty,
+    int M1,
+    int M2,
+    int M3,
+    int M4,
+    int M5,
+    int M6,
+    int M7,
+    int M8,
+    int M9,
+    int M10,
+    int M11,
+    int M12,
+    int ClosingYearQty,
+    int MinQty,
+    int MaxQty,
+    double AvgQty
+);
+
+/// <summary>Báo cáo Ma trận Tổng hợp Nhập - Xuất & Tồn kho 12 Tháng (port từ Rpt_Summary_In_Out & Rpt_Summary_QtyInvByPeriod Skycic).</summary>
+public record MonthlyMatrixReport(
+    int Year,
+    int? WarehouseId,
+    string WarehouseName,
+    string ViewMode,      // ALL, IN_ONLY, OUT_ONLY, BALANCE_ONLY, NET_ONLY
+    string? Keyword,
+    int TotalInYear,
+    int TotalOutYear,
+    int NetMovementYear,
+    int PeakMonth,
+    string PeakMonthName,
+    int PeakMonthVolume,
+    int[] MonthlyTotalIn,
+    int[] MonthlyTotalOut,
+    int[] MonthlyTotalNet,
+    int[] MonthlyTotalBalance,
+    List<ProductMonthlyMatrixItem> Items,
+    List<SummaryQtyPeriodRow> QtyPeriodRows
+);
+
+
 
 
 

@@ -105,6 +105,7 @@ public interface IWmsService
     Task<SummaryInReturnSupReport> SummaryInReturnSupReportAsync(int? warehouseId, string? supplierCode, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<InventoryOutDtlReport> InventoryOutDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? keyword);
     Task<InventoryInDtlReport> InventoryInDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? keyword);
+    Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -4487,6 +4488,247 @@ public class WmsService(AppDbContext db) : IWmsService
             totalAmount,
             distinctProds,
             distinctSups
+        );
+    }
+
+    /// <summary>Báo cáo Ma trận Tổng hợp Nhập - Xuất & Tồn kho 12 Tháng (port từ Rpt_Summary_In_Out & Rpt_Summary_QtyInvByPeriod Skycic).</summary>
+    public async Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword)
+    {
+        if (year < 2000 || year > 2100) year = DateTime.Today.Year;
+        viewMode = string.IsNullOrWhiteSpace(viewMode) ? "ALL" : viewMode.ToUpperInvariant();
+
+        string whName = "Toàn bộ hệ thống kho";
+        if (warehouseId.HasValue && warehouseId.Value > 0)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+        var targetProducts = allProducts.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLowerInvariant();
+            targetProducts = targetProducts.Where(p => p.Code.ToLowerInvariant().Contains(kw) || p.Name.ToLowerInvariant().Contains(kw));
+        }
+        var prodsList = targetProducts.ToList();
+
+        var startOfYear = new DateTime(year, 1, 1, 0, 0, 0);
+        var endOfYear = new DateTime(year, 12, 31, 23, 59, 59);
+
+        // Lấy tất cả các phiếu đã Posted (kèm Lines) liên quan đến năm này và quá khứ
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= endOfYear)
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var items = new List<ProductMonthlyMatrixItem>();
+        var qtyPeriodRows = new List<SummaryQtyPeriodRow>();
+
+        int[] monthlyTotalIn = new int[12];
+        int[] monthlyTotalOut = new int[12];
+        int[] monthlyTotalNet = new int[12];
+        int[] monthlyTotalBalance = new int[12];
+
+        foreach (var p in prodsList)
+        {
+            // 1. Tính tồn đầu năm (Opening Balance)
+            int openingYear = 0;
+            var pastDocs = docs.Where(d => d.Date < startOfYear);
+            foreach (var doc in pastDocs)
+            {
+                var line = doc.Lines.FirstOrDefault(l => l.ProductId == p.Id);
+                if (line == null) continue;
+
+                if (warehouseId.HasValue && warehouseId.Value > 0)
+                {
+                    int wid = warehouseId.Value;
+                    if ((doc.Type == DocType.In && doc.ToWarehouseId == wid) ||
+                        (doc.Type == DocType.Transfer && doc.ToWarehouseId == wid))
+                    {
+                        openingYear += line.Quantity;
+                    }
+                    else if ((doc.Type == DocType.Out && doc.FromWarehouseId == wid) ||
+                             (doc.Type == DocType.Transfer && doc.FromWarehouseId == wid))
+                    {
+                        openingYear -= line.Quantity;
+                    }
+                }
+                else
+                {
+                    if (doc.Type == DocType.In) openingYear += line.Quantity;
+                    else if (doc.Type == DocType.Out) openingYear -= line.Quantity;
+                }
+            }
+
+            // 2. Tính số lượng Nhập và Xuất theo 12 tháng của năm được chọn
+            int[] inM = new int[12];
+            int[] outM = new int[12];
+            int[] netM = new int[12];
+            int[] balM = new int[12];
+
+            var yearDocs = docs.Where(d => d.Date >= startOfYear && d.Date <= endOfYear);
+            foreach (var doc in yearDocs)
+            {
+                int mIdx = doc.Date.Month - 1; // 0..11
+                if (mIdx < 0 || mIdx > 11) continue;
+
+                var line = doc.Lines.FirstOrDefault(l => l.ProductId == p.Id);
+                if (line == null) continue;
+
+                if (warehouseId.HasValue && warehouseId.Value > 0)
+                {
+                    int wid = warehouseId.Value;
+                    if ((doc.Type == DocType.In && doc.ToWarehouseId == wid) ||
+                        (doc.Type == DocType.Transfer && doc.ToWarehouseId == wid))
+                    {
+                        inM[mIdx] += line.Quantity;
+                    }
+                    else if ((doc.Type == DocType.Out && doc.FromWarehouseId == wid) ||
+                             (doc.Type == DocType.Transfer && doc.FromWarehouseId == wid))
+                    {
+                        outM[mIdx] += line.Quantity;
+                    }
+                }
+                else
+                {
+                    if (doc.Type == DocType.In) inM[mIdx] += line.Quantity;
+                    else if (doc.Type == DocType.Out) outM[mIdx] += line.Quantity;
+                }
+            }
+
+            // 3. Tính tồn lũy kế cuối mỗi tháng và biến động ròng
+            int runningBal = openingYear;
+            int maxBal = openingYear;
+            int minBal = openingYear;
+
+            for (int m = 0; m < 12; m++)
+            {
+                netM[m] = inM[m] - outM[m];
+                runningBal += netM[m];
+                balM[m] = runningBal;
+
+                if (m == 0)
+                {
+                    maxBal = runningBal;
+                    minBal = runningBal;
+                }
+                else
+                {
+                    if (runningBal > maxBal) maxBal = runningBal;
+                    if (runningBal < minBal) minBal = runningBal;
+                }
+
+                // Cộng dồn vào tổng toàn kho
+                monthlyTotalIn[m] += inM[m];
+                monthlyTotalOut[m] += outM[m];
+                monthlyTotalNet[m] += netM[m];
+                monthlyTotalBalance[m] += runningBal;
+            }
+
+            int totalInProd = inM.Sum();
+            int totalOutProd = outM.Sum();
+            int totalNetProd = totalInProd - totalOutProd;
+
+            // Tìm tháng cao điểm hoạt động của mặt hàng
+            int peakMonthProd = 1;
+            int peakVolProd = 0;
+            for (int m = 0; m < 12; m++)
+            {
+                int vol = inM[m] + outM[m];
+                if (vol > peakVolProd)
+                {
+                    peakVolProd = vol;
+                    peakMonthProd = m + 1;
+                }
+            }
+
+            var inRow = new MonthlyMatrixRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                "IN", "Nhập kho", "bg-success text-white",
+                inM[0], inM[1], inM[2], inM[3], inM[4], inM[5], inM[6], inM[7], inM[8], inM[9], inM[10], inM[11],
+                totalInProd, Math.Round(totalInProd / 12.0, 1), peakMonthProd
+            );
+
+            var outRow = new MonthlyMatrixRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                "OUT", "Xuất kho", "bg-danger text-white",
+                outM[0], outM[1], outM[2], outM[3], outM[4], outM[5], outM[6], outM[7], outM[8], outM[9], outM[10], outM[11],
+                totalOutProd, Math.Round(totalOutProd / 12.0, 1), peakMonthProd
+            );
+
+            var netRow = new MonthlyMatrixRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                "NET", "Biến động ròng", "bg-info text-dark",
+                netM[0], netM[1], netM[2], netM[3], netM[4], netM[5], netM[6], netM[7], netM[8], netM[9], netM[10], netM[11],
+                totalNetProd, Math.Round(totalNetProd / 12.0, 1), peakMonthProd
+            );
+
+            var balRow = new MonthlyMatrixRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                "BALANCE", "Tồn cuối kỳ", "bg-primary text-white",
+                balM[0], balM[1], balM[2], balM[3], balM[4], balM[5], balM[6], balM[7], balM[8], balM[9], balM[10], balM[11],
+                balM[11], Math.Round(balM.Average(), 1), peakMonthProd
+            );
+
+            items.Add(new ProductMonthlyMatrixItem
+            {
+                ProductId = p.Id,
+                ProductCode = p.Code,
+                ProductName = p.Name,
+                Uom = p.Uom,
+                OpeningYearQty = openingYear,
+                InRow = inRow,
+                OutRow = outRow,
+                NetRow = netRow,
+                BalanceRow = balRow
+            });
+
+            qtyPeriodRows.Add(new SummaryQtyPeriodRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                openingYear,
+                balM[0], balM[1], balM[2], balM[3], balM[4], balM[5], balM[6], balM[7], balM[8], balM[9], balM[10], balM[11],
+                balM[11], minBal, maxBal, Math.Round(balM.Average(), 1)
+            ));
+        }
+
+        int totalInYear = monthlyTotalIn.Sum();
+        int totalOutYear = monthlyTotalOut.Sum();
+        int netMovementYear = totalInYear - totalOutYear;
+
+        // Tìm tháng cao điểm hoạt động toàn kho
+        int peakMonth = 1;
+        int peakVolume = 0;
+        for (int m = 0; m < 12; m++)
+        {
+            int vol = monthlyTotalIn[m] + monthlyTotalOut[m];
+            if (vol > peakVolume)
+            {
+                peakVolume = vol;
+                peakMonth = m + 1;
+            }
+        }
+        string peakMonthName = $"Tháng {peakMonth:D2}/{year}";
+
+        return new MonthlyMatrixReport(
+            year,
+            warehouseId,
+            whName,
+            viewMode,
+            keyword,
+            totalInYear,
+            totalOutYear,
+            netMovementYear,
+            peakMonth,
+            peakMonthName,
+            peakVolume,
+            monthlyTotalIn,
+            monthlyTotalOut,
+            monthlyTotalNet,
+            monthlyTotalBalance,
+            items,
+            qtyPeriodRows
         );
     }
 

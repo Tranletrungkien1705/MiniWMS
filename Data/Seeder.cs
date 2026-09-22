@@ -336,7 +336,124 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
-        if (!await db.Audits.AnyAsync())
+
+        // Bổ sung các phiếu kho trải dài qua các tháng T1, T2, T3/2026 để kiểm tra ma trận 12 tháng
+        if (!await db.Docs.AnyAsync(d => d.Code == "PNSEED-M01"))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001")?.Id;
+
+            int currentYear = DateTime.Today.Year;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue && pk.HasValue && vay.HasValue)
+            {
+                // Tháng 1: Nhập đợt Tết & Xuất phân phối đầu năm
+                var pnM01 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-M01",
+                    SupplierCode = "NCC-MAY10",
+                    SupplierName = "Tổng Công ty May 10 - CTCP",
+                    Date = new DateTime(currentYear, 1, 12, 9, 30, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Nhập hàng phục vụ chiến dịch Tết Nguyên Đán",
+                    CreatedBy = "seed"
+                };
+                pnM01.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 60 });
+                pnM01.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 45 });
+                pnM01.Lines.Add(new StockDocLine { ProductId = vay.Value, Quantity = 35 });
+                db.Docs.Add(pnM01);
+
+                var pxM01 = new StockDoc
+                {
+                    Type = DocType.Out,
+                    FromWarehouseId = hn.Value,
+                    Code = "PXSEED-M01",
+                    Date = new DateTime(currentYear, 1, 24, 14, 0, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Xuất hàng đợt 1 phục vụ chuỗi cửa hàng thời trang",
+                    CreatedBy = "seed"
+                };
+                pxM01.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 30 });
+                pxM01.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 20 });
+                pxM01.Lines.Add(new StockDocLine { ProductId = pk.Value, Quantity = 15 });
+                db.Docs.Add(pxM01);
+
+                // Tháng 2: Nhập bổ sung sau Tết & Xuất bán tháng 2
+                var pnM02 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-M02",
+                    SupplierCode = "NCC-PHONGPHU",
+                    SupplierName = "Tổng Công ty CP Dệt May Phong Phú",
+                    Date = new DateTime(currentYear, 2, 10, 10, 15, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Nhập phục hồi cơ cấu tồn kho sau kỳ nghỉ Tết",
+                    CreatedBy = "seed"
+                };
+                pnM02.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 50 });
+                pnM02.Lines.Add(new StockDocLine { ProductId = pk.Value, Quantity = 40 });
+                db.Docs.Add(pnM02);
+
+                var pxM02 = new StockDoc
+                {
+                    Type = DocType.Out,
+                    FromWarehouseId = hn.Value,
+                    Code = "PXSEED-M02",
+                    Date = new DateTime(currentYear, 2, 22, 16, 30, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Xuất hàng chiến dịch ngày lễ Valentine và phụ kiện",
+                    CreatedBy = "seed"
+                };
+                pxM02.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 25 });
+                pxM02.Lines.Add(new StockDocLine { ProductId = pk.Value, Quantity = 20 });
+                pxM02.Lines.Add(new StockDocLine { ProductId = vay.Value, Quantity = 15 });
+                db.Docs.Add(pxM02);
+
+                // Tháng 3: Nhập bộ sưu tập xuân hè & Xuất đại lý
+                var pnM03 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-M03",
+                    SupplierCode = "NCC-VIETTIEN",
+                    SupplierName = "Tổng Công ty CP May Việt Tiến",
+                    Date = new DateTime(currentYear, 3, 5, 8, 45, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Nhập ra mắt bộ sưu tập thời trang công sở mới",
+                    CreatedBy = "seed"
+                };
+                pnM03.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 80 });
+                pnM03.Lines.Add(new StockDocLine { ProductId = vay.Value, Quantity = 55 });
+                db.Docs.Add(pnM03);
+
+                var pxM03 = new StockDoc
+                {
+                    Type = DocType.Out,
+                    FromWarehouseId = hn.Value,
+                    Code = "PXSEED-M03",
+                    Date = new DateTime(currentYear, 3, 20, 11, 0, 0),
+                    Status = DocStatus.Posted,
+                    Note = "Xuất đại lý phân phối miền Bắc tháng 3",
+                    CreatedBy = "seed"
+                };
+                pxM03.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 40 });
+                pxM03.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 30 });
+                pxM03.Lines.Add(new StockDocLine { ProductId = vay.Value, Quantity = 25 });
+                db.Docs.Add(pxM03);
+
+                await db.SaveChangesAsync();
+            }
+        }
+
         {
             var whs = await db.Warehouses.ToListAsync();
             var prods = await db.Products.ToListAsync();

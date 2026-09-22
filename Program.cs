@@ -1365,6 +1365,31 @@ app.MapGet("/api/reports/inventory-in-detail", async (int? warehouseId, DateTime
     return Results.Ok(report);
 });
 
+// API Báo cáo Ma trận Tổng hợp Nhập - Xuất 12 Tháng (port từ Rpt_Summary_In_Out Skycic)
+app.MapGet("/api/reports/summary-in-out", async (int? year, int? warehouseId, string? viewMode, string? q, IWmsService svc) =>
+{
+    int targetYear = year ?? DateTime.Today.Year;
+    var report = await svc.MonthlyMatrixReportAsync(targetYear, warehouseId, viewMode, q);
+    return Results.Ok(report);
+});
+
+// API Báo cáo Tổng hợp Số lượng Tồn kho theo Kỳ 12 Tháng (port từ Rpt_Summary_QtyInvByPeriod Skycic)
+app.MapGet("/api/reports/summary-qty-period", async (int? year, int? warehouseId, string? q, IWmsService svc) =>
+{
+    int targetYear = year ?? DateTime.Today.Year;
+    var report = await svc.MonthlyMatrixReportAsync(targetYear, warehouseId, "BALANCE_ONLY", q);
+    return Results.Ok(new
+    {
+        year = report.Year,
+        warehouse = report.WarehouseName,
+        warehouseId = report.WarehouseId,
+        totalProducts = report.QtyPeriodRows.Count,
+        monthlyTotalBalance = report.MonthlyTotalBalance,
+        rows = report.QtyPeriodRows
+    });
+});
+
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
