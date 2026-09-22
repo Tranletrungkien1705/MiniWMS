@@ -98,6 +98,13 @@ app.MapGet("/api/reports/lot-expiry", async (int? warehouseId, LotExpiryStatus? 
     return Results.Ok(report);
 });
 
+// API Báo cáo Tuổi kho & Thời gian lưu kho hàng hoá (Storage Time / Inventory Aging - port từ Rpt_Inv_InventoryBalance_StorageTime Skycic)
+app.MapGet("/api/reports/storage-time", async (int? warehouseId, StorageTimeAgingBracket? bracket, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.StorageTimeReportAsync(warehouseId, bracket, q, asOfDate);
+    return Results.Ok(report);
+});
+
 // API Tra cứu tồn theo Lô hàng (Stock Lots)
 app.MapGet("/api/stock-lots", async (int? warehouseId, int? productId, IWmsService svc) =>
 {

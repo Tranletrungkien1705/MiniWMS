@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0);
 
 public interface IWmsService
 {
@@ -44,6 +44,7 @@ public interface IWmsService
     Task<InventoryInOutReport> InventoryInOutReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
     Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
+    Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null);
     Task<List<StockLot>> StockLotsAsync(int? warehouseId, int? productId);
     Task<WmsDash> DashboardAsync();
 }
@@ -1084,11 +1085,204 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
+    /// <summary>Báo cáo Tuổi kho & Thời gian lưu kho hàng hoá (port từ Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
+    public async Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null)
+    {
+        var asOf = (asOfDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+
+        // Lấy tất cả các phiếu kho đã ghi sổ tính đến ngày chốt báo cáo
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= asOf)
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        var balMap = new Dictionary<(int whId, int prodId), int>();
+        var lastInMap = new Dictionary<(int whId, int prodId), DateTime>();
+
+        foreach (var d in docs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (l.Quantity <= 0) continue;
+
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to)
+                {
+                    balMap.TryGetValue((to, l.ProductId), out var cur);
+                    balMap[(to, l.ProductId)] = cur + l.Quantity;
+
+                    if (!lastInMap.TryGetValue((to, l.ProductId), out var prevDate) || d.Date > prevDate)
+                        lastInMap[(to, l.ProductId)] = d.Date;
+                }
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr)
+                {
+                    balMap.TryGetValue((fr, l.ProductId), out var cur);
+                    balMap[(fr, l.ProductId)] = cur - l.Quantity;
+                }
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } frWh)
+                    {
+                        balMap.TryGetValue((frWh, l.ProductId), out var cur);
+                        balMap[(frWh, l.ProductId)] = cur - l.Quantity;
+                    }
+                    if (d.ToWarehouseId is { } toWh)
+                    {
+                        balMap.TryGetValue((toWh, l.ProductId), out var cur);
+                        balMap[(toWh, l.ProductId)] = cur + l.Quantity;
+
+                        if (!lastInMap.TryGetValue((toWh, l.ProductId), out var prevDate) || d.Date > prevDate)
+                            lastInMap[(toWh, l.ProductId)] = d.Date;
+                    }
+                }
+            }
+        }
+
+        var rows = new List<StorageTimeRow>();
+        var today = DateTime.Today;
+
+        foreach (var w in targetWarehouses)
+        {
+            foreach (var p in products)
+            {
+                balMap.TryGetValue((w.Id, p.Id), out var curQty);
+                if (curQty <= 0) continue; // Chỉ đưa vào báo cáo các mặt hàng đang có tồn thực tế > 0
+
+                lastInMap.TryGetValue((w.Id, p.Id), out var lastInDate);
+                DateTime? validLastIn = lastInDate != default ? lastInDate : null;
+
+                // Tuổi kho tính theo số ngày kể từ ngày nhập kho gần nhất
+                int storageDays = validLastIn.HasValue ? Math.Max(0, (today - validLastIn.Value.Date).Days) : 0;
+
+                StorageTimeAgingBracket b;
+                string bLabel;
+                string badge;
+                string rec;
+
+                if (storageDays <= 30)
+                {
+                    b = StorageTimeAgingBracket.Tier1_Under30;
+                    bLabel = "≤ 30 ngày (Mới nhập)";
+                    badge = "bg-success";
+                    rec = "Lưu kho an toàn, luân chuyển tốt";
+                }
+                else if (storageDays <= 60)
+                {
+                    b = StorageTimeAgingBracket.Tier2_31To60;
+                    bLabel = "31 - 60 ngày (Bình thường)";
+                    badge = "bg-info text-dark";
+                    rec = "Duy trì kế hoạch bán hàng thường lệ";
+                }
+                else if (storageDays <= 90)
+                {
+                    b = StorageTimeAgingBracket.Tier3_61To90;
+                    bLabel = "61 - 90 ngày (Chậm tiêu thụ)";
+                    badge = "bg-warning text-dark";
+                    rec = "Theo dõi sức mua, tăng cường kích cầu";
+                }
+                else
+                {
+                    b = StorageTimeAgingBracket.Tier4_Over90;
+                    bLabel = "> 90 ngày (Tồn đọng vốn)";
+                    badge = "bg-danger";
+                    rec = "Ưu tiên xả hàng, khuyến mãi hoặc luân chuyển chi nhánh";
+                }
+
+                if (bracket.HasValue && b != bracket.Value) continue;
+
+                decimal cost = p.CostPrice > 0 ? p.CostPrice : 100000m;
+                decimal totalVal = curQty * cost;
+
+                rows.Add(new StorageTimeRow(
+                    p.Id,
+                    p.Code,
+                    p.Name,
+                    p.Uom,
+                    w.Id,
+                    w.Name,
+                    curQty,
+                    cost,
+                    totalVal,
+                    validLastIn,
+                    storageDays,
+                    b,
+                    bLabel,
+                    badge,
+                    rec
+                ));
+            }
+        }
+
+        // Sắp xếp: Ưu tiên tuổi kho lâu ngày nhất lên đầu, tiếp theo là giá trị tồn giảm dần
+        rows = rows
+            .OrderByDescending(r => r.StorageDays)
+            .ThenByDescending(r => r.TotalValue)
+            .ThenBy(r => r.WarehouseName)
+            .ThenBy(r => r.ProductCode)
+            .ToList();
+
+        int totalItems = rows.Count;
+        int totalQtySum = rows.Sum(r => r.CurrentQty);
+        decimal totalInvVal = rows.Sum(r => r.TotalValue);
+        int stagnantCount = rows.Count(r => r.Bracket == StorageTimeAgingBracket.Tier4_Over90);
+        decimal stagnantVal = rows.Where(r => r.Bracket == StorageTimeAgingBracket.Tier4_Over90).Sum(r => r.TotalValue);
+        double avgDays = rows.Count > 0 ? Math.Round(rows.Average(r => r.StorageDays), 1) : 0.0;
+
+        int under30 = rows.Count(r => r.Bracket == StorageTimeAgingBracket.Tier1_Under30);
+        int from31To60 = rows.Count(r => r.Bracket == StorageTimeAgingBracket.Tier2_31To60);
+        int from61To90 = rows.Count(r => r.Bracket == StorageTimeAgingBracket.Tier3_61To90);
+        int over90 = rows.Count(r => r.Bracket == StorageTimeAgingBracket.Tier4_Over90);
+
+        return new StorageTimeReport(
+            warehouseId,
+            whName,
+            asOf.Date,
+            bracket,
+            keyword,
+            totalItems,
+            totalQtySum,
+            totalInvVal,
+            stagnantCount,
+            stagnantVal,
+            avgDays,
+            under30,
+            from31To60,
+            from61To90,
+            over90,
+            rows
+        );
+    }
+
     public async Task<WmsDash> DashboardAsync()
     {
         var balances = await BalancesAsync(null);
         var today = DateTime.Today;
         var expiringLots = await db.StockLots.CountAsync(l => l.ExpiredDate <= today.AddDays(30));
+
+        // Tính số mặt hàng đọng vốn > 90 ngày
+        var storageReport = await StorageTimeReportAsync(null, StorageTimeAgingBracket.Tier4_Over90, null);
+        var stagnantItems = storageReport.StagnantItemsCount;
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1101,7 +1295,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.MoveOrders.CountAsync(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved),
             await db.ReturnToSuppliers.CountAsync(r => r.Status == ReturnSupStatus.Draft),
             await db.CustomerReturns.CountAsync(c => c.Status == CusReturnStatus.Draft),
-            expiringLots);
+            expiringLots,
+            stagnantItems);
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

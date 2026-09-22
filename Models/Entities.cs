@@ -34,6 +34,7 @@ public class Product : IOrgOwned
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
+    public decimal CostPrice { get; set; } = 0m;
 }
 
 /// <summary>Phiếu kho (nhập/xuất/chuyển). Post → cập nhật tồn.</summary>
@@ -402,6 +403,54 @@ public record StockLotExpiryReport(
     int GoodLotsCount,
     int TotalQuantity,
     List<StockLotReportRow> Rows
+);
+
+/// <summary>Phân nhóm tuổi kho / Thời gian lưu kho hàng hóa (port từ Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
+public enum StorageTimeAgingBracket
+{
+    Tier1_Under30 = 0,   // Dưới 30 ngày: Hàng mới nhập, luân chuyển tốt
+    Tier2_31To60 = 1,    // 31 - 60 ngày: Lưu kho bình thường
+    Tier3_61To90 = 2,    // 61 - 90 ngày: Cần lưu ý / Tốc độ tiêu thụ chậm
+    Tier4_Over90 = 3     // Trên 90 ngày: Tồn lâu / Nguy cơ đọng vốn / Cần xả hàng
+}
+
+/// <summary>Dòng chi tiết Báo cáo Tuổi kho & Thời gian lưu kho hàng hoá (port từ Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
+public record StorageTimeRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int CurrentQty,
+    decimal CostPrice,
+    decimal TotalValue,
+    DateTime? LastInDate,
+    int StorageDays,
+    StorageTimeAgingBracket Bracket,
+    string BracketLabel,
+    string BadgeClass,
+    string Recommendation
+);
+
+/// <summary>Báo cáo Tuổi kho & Thời gian lưu kho hàng hoá tổng hợp (port từ Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
+public record StorageTimeReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,
+    StorageTimeAgingBracket? BracketFilter,
+    string? Keyword,
+    int TotalItems,
+    int TotalQty,
+    decimal TotalInventoryValue,
+    int StagnantItemsCount,
+    decimal StagnantValue,
+    double AverageStorageDays,
+    int Under30Count,
+    int From31To60Count,
+    int From61To90Count,
+    int Over90Count,
+    List<StorageTimeRow> Rows
 );
 
 

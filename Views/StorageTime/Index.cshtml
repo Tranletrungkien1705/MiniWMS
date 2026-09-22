@@ -1,0 +1,246 @@
+@model StorageTimeReport
+@{
+    ViewData["Title"] = "Báo cáo Tuổi kho & Thời gian lưu kho hàng hóa";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedBracket = (StorageTimeAgingBracket?)ViewBag.Bracket;
+    var keyword = (string)ViewBag.Keyword;
+    var asOfDate = (string)ViewBag.AsOfDate;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Nhóm tuổi kho (Thời gian lưu)</label>
+                <select name="bracket" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhóm tuổi —</option>
+                    <option value="@((int)StorageTimeAgingBracket.Tier1_Under30)" selected="@(selectedBracket == StorageTimeAgingBracket.Tier1_Under30)">&le; 30 ngày (Mới nhập / Luân chuyển tốt)</option>
+                    <option value="@((int)StorageTimeAgingBracket.Tier2_31To60)" selected="@(selectedBracket == StorageTimeAgingBracket.Tier2_31To60)">31 - 60 ngày (Bình thường)</option>
+                    <option value="@((int)StorageTimeAgingBracket.Tier3_61To90)" selected="@(selectedBracket == StorageTimeAgingBracket.Tier3_61To90)">61 - 90 ngày (Chậm tiêu thụ / Cần lưu ý)</option>
+                    <option value="@((int)StorageTimeAgingBracket.Tier4_Over90)" selected="@(selectedBracket == StorageTimeAgingBracket.Tier4_Over90)">> 90 ngày (Tồn đọng vốn / Cần xả hàng)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Ngày chốt số liệu</label>
+                <input type="date" name="asOfDate" value="@asOfDate" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Tìm kiếm hàng hoá</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hoặc tên hàng..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/StorageTime" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/StorageTime/ExportCsv?warehouseId=@selectedWid&bracket=@(selectedBracket.HasValue ? (int)selectedBracket.Value : "")&q=@Uri.EscapeDataString(keyword ?? "")&asOfDate=@asOfDate"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In báo cáo">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG GIÁ TRỊ TỒN KHO</span>
+                    <i class="bi bi-wallet2 text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalInventoryValue.ToString("#,##0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-muted" style="font-size:11px">@Model.TotalQty.ToString("N0") sản phẩm trong @Model.TotalItems mặt hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">HÀNG ĐỌNG VỐN (> 90D)</span>
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.StagnantValue.ToString("#,##0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-danger fw-semibold" style="font-size:11px">@Model.StagnantItemsCount mặt hàng đọng vốn lâu ngày</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TUỔI KHO BÌNH QUÂN</span>
+                    <i class="bi bi-stopwatch text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.AverageStorageDays.ToString("F1") <span class="fs-6 fw-normal text-muted">ngày</span></div>
+                <div class="text-muted" style="font-size:11px">Thời gian lưu chuyển trung bình toàn kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CƠ CẤU TUỔI KHO</span>
+                    <i class="bi bi-pie-chart text-success fs-5"></i>
+                </div>
+                <div class="d-flex gap-2 align-items-center mt-1">
+                    <span class="badge bg-success">&le;30D: @Model.Under30Count</span>
+                    <span class="badge bg-info text-dark">31-60D: @Model.From31To60Count</span>
+                    <span class="badge bg-warning text-dark">61-90D: @Model.From61To90Count</span>
+                    <span class="badge bg-danger">>90D: @Model.Over90Count</span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11px">Phân bổ mặt hàng theo 4 nhóm lưu kho</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>Chi tiết Tuổi kho & Thời gian lưu kho hàng hóa (Inventory Aging)</h6>
+            <span class="text-muted small">Kho: <b>@Model.WarehouseName</b> — Ngày chốt: <b>@Model.AsOfDate.ToString("dd/MM/yyyy")</b> — Hiển thị <b>@Model.Rows.Count</b> mặt hàng</span>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/MoveOrder/Create" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-shuffle me-1"></i> Điều chuyển xả hàng
+            </a>
+            <a href="/Doc/Create?type=1" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-box-arrow-up me-1"></i> Xuất bán hàng đọng
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:50px">STT</th>
+                        <th>Mặt hàng</th>
+                        <th>Kho</th>
+                        <th class="text-end">Tồn kho</th>
+                        <th class="text-end">Giá vốn</th>
+                        <th class="text-end">Giá trị tồn</th>
+                        <th class="text-center">Ngày nhập gần nhất</th>
+                        <th class="text-center">Tuổi kho (ngày)</th>
+                        <th class="text-center">Nhóm tuổi kho</th>
+                        <th>Khuyến nghị xử lý</th>
+                        <th class="text-center" style="width:90px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="11" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                Không có mặt hàng nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <div class="fw-bold">@r.ProductName</div>
+                                    <div class="text-muted small"><code>@r.ProductCode</code> &bull; ĐVT: @r.Uom</div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">@r.WarehouseName</span>
+                                </td>
+                                <td class="text-end fw-bold">
+                                    @r.CurrentQty.ToString("N0")
+                                </td>
+                                <td class="text-end text-muted small">
+                                    @r.CostPrice.ToString("#,##0") đ
+                                </td>
+                                <td class="text-end fw-bold text-dark">
+                                    @r.TotalValue.ToString("#,##0") đ
+                                </td>
+                                <td class="text-center text-muted small">
+                                    @(r.LastInDate.HasValue ? r.LastInDate.Value.ToString("dd/MM/yyyy") : "—")
+                                </td>
+                                <td class="text-center">
+                                    <span class="fw-bold fs-6 @(r.StorageDays > 90 ? "text-danger" : (r.StorageDays > 60 ? "text-warning" : "text-dark"))">
+                                        @r.StorageDays
+                                    </span>
+                                    <span class="text-muted small">ngày</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.BracketLabel</span>
+                                </td>
+                                <td>
+                                    <span class="small @(r.Bracket == StorageTimeAgingBracket.Tier4_Over90 ? "text-danger fw-semibold" : "text-muted")">
+                                        @r.Recommendation
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            <i class="bi bi-gear"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li>
+                                                <a class="dropdown-item small" href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId">
+                                                    <i class="bi bi-journal-text me-2 text-info"></i> Xem Thẻ kho
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item small" href="/MoveOrder/Create?fromWarehouseId=@r.WarehouseId">
+                                                    <i class="bi bi-shuffle me-2 text-primary"></i> Lệnh chuyển kho
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item small" href="/Doc/Create?type=1&fromWarehouseId=@r.WarehouseId">
+                                                    <i class="bi bi-box-arrow-up me-2 text-danger"></i> Xuất xả hàng
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (Model.Rows.Count > 0)
+                {
+                    <tfoot class="table-light fw-bold border-top">
+                        <tr>
+                            <td colspan="3" class="text-end">TỔNG CỘNG (@Model.TotalItems mặt hàng):</td>
+                            <td class="text-end text-primary">@Model.TotalQty.ToString("N0")</td>
+                            <td></td>
+                            <td class="text-end text-primary">@Model.TotalInventoryValue.ToString("#,##0") đ</td>
+                            <td colspan="2" class="text-center">Tuổi kho TB: @Model.AverageStorageDays.ToString("F1") ngày</td>
+                            <td colspan="3" class="text-danger small">
+                                Đọng vốn (>90D): @Model.StagnantValue.ToString("#,##0") đ (@Model.StagnantItemsCount mặt hàng)
+                            </td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>

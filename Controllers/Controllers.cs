@@ -721,3 +721,50 @@ public class LotExpiryController(IWmsService svc) : Controller
     }
 }
 
+public class StorageTimeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, StorageTimeAgingBracket? bracket, string? q, DateTime? asOfDate)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Bracket = bracket;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.AsOfDate = (asOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+
+        var report = await svc.StorageTimeReportAsync(warehouseId, bracket, q, asOfDate);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, StorageTimeAgingBracket? bracket, string? q, DateTime? asOfDate)
+    {
+        var report = await svc.StorageTimeReportAsync(warehouseId, bracket, q, asOfDate);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TUỔI KHO & THỜI GIAN LƯU KHO HÀNG HÓA");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName}");
+        sb.AppendLine($"Ngày chốt số liệu:;{report.AsOfDate:dd/MM/yyyy}");
+        sb.AppendLine($"Bộ lọc nhóm tuổi:;{(bracket.HasValue ? bracket.Value.ToString() : "Tất cả các nhóm")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho lưu trữ;Số lượng tồn;Đơn giá vốn (VNĐ);Tổng giá trị tồn (VNĐ);Ngày nhập gần nhất;Tuổi kho (ngày);Phân nhóm tuổi kho;Khuyến nghị xử lý");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var lastIn = r.LastInDate.HasValue ? r.LastInDate.Value.ToString("dd/MM/yyyy") : "—";
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.CurrentQty};{r.CostPrice:F0};{r.TotalValue:F0};{lastIn};{r.StorageDays};\"{r.BracketLabel}\";\"{r.Recommendation}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalQty};;{report.TotalInventoryValue:F0};;;;");
+        sb.AppendLine($";;;;TỒN ĐỌNG VỐN (> 90 NGÀY):;;;{report.StagnantValue:F0};;{report.StagnantItemsCount} mặt hàng;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TuoiKho_ThoiGianLuuKho_{report.AsOfDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+

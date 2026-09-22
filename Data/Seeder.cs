@@ -26,22 +26,108 @@ public static class Seeder
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", Uom = "cái", MinStock = 20, MaxStock = 200 },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", Uom = "cái", MinStock = 15, MaxStock = 150 },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", Uom = "cái", MinStock = 10, MaxStock = 80 },
-                new Product { Code = "VAY-001", Name = "Váy đầm công sở", Uom = "cái", MinStock = 12, MaxStock = 100 });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
+        }
+        else
+        {
+            // Cập nhật giá vốn cho dữ liệu cũ nếu chưa có
+            var existingProds = await db.Products.Where(p => p.CostPrice == 0).ToListAsync();
+            if (existingProds.Any())
+            {
+                foreach (var p in existingProds)
+                {
+                    p.CostPrice = p.Code switch
+                    {
+                        "AO-001" => 150000m,
+                        "QUAN-001" => 280000m,
+                        "PK-001" => 120000m,
+                        "VAY-001" => 320000m,
+                        _ => 100000m
+                    };
+                }
+                await db.SaveChangesAsync();
+            }
         }
         if (!await db.Docs.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();
             var prods = await db.Products.ToListAsync();
             var hn = whs.First(w => w.Code == "KHO-HN").Id;
-            // 1 phiếu nhập đầu kỳ đã ghi sổ vào kho HN
-            var pn = new StockDoc { Type = DocType.In, ToWarehouseId = hn, Code = "PNSEED-001", Status = DocStatus.Posted, Note = "Tồn đầu kỳ", CreatedBy = "seed" };
+            // 1 phiếu nhập đầu kỳ đã ghi sổ vào kho HN (cách đây 110 ngày để tạo nhóm tuổi tồn kho > 90 ngày)
+            var pn = new StockDoc { Type = DocType.In, ToWarehouseId = hn, Code = "PNSEED-001", Status = DocStatus.Posted, Date = DateTime.Now.AddDays(-110), Note = "Tồn đầu kỳ", CreatedBy = "seed" };
             foreach (var p in prods) pn.Lines.Add(new StockDocLine { ProductId = p.Id, Quantity = 100 });
             db.Docs.Add(pn);
             await db.SaveChangesAsync();
+        }
+        else
+        {
+            var pn1 = await db.Docs.FirstOrDefaultAsync(d => d.Code == "PNSEED-001");
+            if (pn1 != null && pn1.Date.Date >= DateTime.Today.AddDays(-5))
+            {
+                pn1.Date = DateTime.Now.AddDays(-110);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        if (!await db.Docs.AnyAsync(d => d.Code == "PNSEED-004"))
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001")?.Id;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue && vay.HasValue)
+            {
+                // Phiếu nhập cách đây 15 ngày cho Áo sơ mi trắng (< 30 ngày)
+                var pn4 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-004",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-15),
+                    Note = "Nhập bổ sung hàng mới Áo sơ mi trắng",
+                    CreatedBy = "seed"
+                };
+                pn4.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 20 });
+                db.Docs.Add(pn4);
+
+                // Phiếu nhập cách đây 45 ngày cho Quần jeans (31 - 60 ngày)
+                var pn5 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-005",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-45),
+                    Note = "Nhập bổ sung Quần jeans slim",
+                    CreatedBy = "seed"
+                };
+                pn5.Lines.Add(new StockDocLine { ProductId = quan.Value, Quantity = 15 });
+                db.Docs.Add(pn5);
+
+                // Phiếu nhập cách đây 75 ngày cho Váy đầm công sở (61 - 90 ngày)
+                var pn6 = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-006",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-75),
+                    Note = "Nhập bộ sưu tập Váy đầm giữa mùa",
+                    CreatedBy = "seed"
+                };
+                pn6.Lines.Add(new StockDocLine { ProductId = vay.Value, Quantity = 10 });
+                db.Docs.Add(pn6);
+
+                await db.SaveChangesAsync();
+            }
         }
         if (!await db.Docs.AnyAsync(d => d.Type == DocType.Transfer))
         {
@@ -462,6 +548,7 @@ public static class Seeder
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
 
@@ -575,7 +662,8 @@ public static class Seeder
                 CONSTRAINT ""FK_StockLots_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StockLots_OrgId_WarehouseId_ProductId_LotNo"" ON ""StockLots"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""LotNo"");",
-            @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;"
+            @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
         };
         foreach (var s in sql)
         {
