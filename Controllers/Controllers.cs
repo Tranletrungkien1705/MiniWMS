@@ -865,4 +865,112 @@ public class StockSerialController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryBlockController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, string? shelfCode, bool? activeOnly, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ShelfCode = shelfCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Shelves = await svc.GetShelvesAsync(warehouseId);
+
+        var report = await svc.InventoryBlockReportAsync(warehouseId, shelfCode, activeOnly, q);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string invBlockCode, string shelfCode, string? invBlockDesc,
+        double length, double width, double height, int maxCapacity, string? remark, int? filterWhId, string? filterShelf, bool? filterActive, string? q)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho lưu trữ.";
+            return RedirectToAction(nameof(Index), new { warehouseId = filterWhId, shelfCode = filterShelf, activeOnly = filterActive, q });
+        }
+        if (string.IsNullOrWhiteSpace(invBlockCode))
+        {
+            TempData["Error"] = "Vui lòng nhập mã vị trí ô kho.";
+            return RedirectToAction(nameof(Index), new { warehouseId = filterWhId, shelfCode = filterShelf, activeOnly = filterActive, q });
+        }
+        if (string.IsNullOrWhiteSpace(shelfCode))
+        {
+            TempData["Error"] = "Vui lòng nhập mã dãy kệ.";
+            return RedirectToAction(nameof(Index), new { warehouseId = filterWhId, shelfCode = filterShelf, activeOnly = filterActive, q });
+        }
+
+        try
+        {
+            var block = new InventoryBlock
+            {
+                WarehouseId = warehouseId,
+                InvBlockCode = invBlockCode.Trim(),
+                ShelfCode = shelfCode.Trim(),
+                InvBlockDesc = invBlockDesc?.Trim(),
+                Length = length,
+                Width = width,
+                Height = height,
+                MaxCapacity = maxCapacity > 0 ? maxCapacity : 100,
+                Remark = remark?.Trim(),
+                FlagActive = true
+            };
+            await svc.CreateInventoryBlockAsync(block);
+            TempData["Success"] = $"Đã thêm vị trí kho '{block.InvBlockCode}' (Kệ {block.ShelfCode}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index), new { warehouseId = filterWhId ?? warehouseId, shelfCode = filterShelf, activeOnly = filterActive, q });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id, int? warehouseId, string? shelfCode, bool? activeOnly, string? q)
+    {
+        var (ok, msg) = await svc.ToggleInventoryBlockStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId, shelfCode, activeOnly, q });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id, int? warehouseId, string? shelfCode, bool? activeOnly, string? q)
+    {
+        var (ok, msg) = await svc.DeleteInventoryBlockAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId, shelfCode, activeOnly, q });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? shelfCode, bool? activeOnly, string? q)
+    {
+        var report = await svc.InventoryBlockReportAsync(warehouseId, shelfCode, activeOnly, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("DANH MỤC VỊ TRÍ KHO - SƠ ĐỒ KHAY KỆ & Ô LƯU TRỮ");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Dãy kệ:;{(string.IsNullOrWhiteSpace(report.ShelfCode) ? "Tất cả dãy kệ" : report.ShelfCode)}");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Trạng thái lọc:;{(activeOnly.HasValue ? (activeOnly.Value ? "Chỉ vị trí hoạt động" : "Chỉ vị trí bảo trì/khóa") : "Tất cả trạng thái")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã vị trí (Block);Dãy kệ (Shelf);Mô tả vị trí;Kho lưu trữ;Dài (cm);Rộng (cm);Cao (cm);Thể tích (m3);Sức chứa tối đa;Trạng thái;Ghi chú;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var created = r.CreatedAt.ToString("dd/MM/yyyy HH:mm");
+            sb.AppendLine($"{stt++};\"{r.InvBlockCode}\";\"{r.ShelfCode}\";\"{r.InvBlockDesc?.Replace("\"", "\"\"") ?? ""}\";\"{r.WarehouseName}\";{r.Length};{r.Width};{r.Height};{r.VolumeM3:F3};{r.MaxCapacity};\"{r.StatusLabel}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";{created}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalBlocks} vị trí;;;{report.TotalVolumeM3:F3} m3;{report.TotalCapacity} sp;Hoạt động: {report.ActiveCount};Bảo trì: {report.MaintenanceCount};Dãy kệ: {report.TotalShelves}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"SoDo_ViTriKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 

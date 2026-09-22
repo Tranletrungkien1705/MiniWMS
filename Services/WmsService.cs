@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0);
 
 public interface IWmsService
 {
@@ -51,6 +51,14 @@ public interface IWmsService
     Task<StockSerial?> GetStockSerialAsync(int id);
     Task<int> CreateStockSerialAsync(StockSerial serial);
     Task<(bool ok, string msg)> ChangeStockSerialStatusAsync(int id, StockSerialStatus newStatus, string? note);
+    Task<InventoryBlockReport> InventoryBlockReportAsync(int? warehouseId, string? shelfCode, bool? activeFilter, string? keyword);
+    Task<List<InventoryBlock>> InventoryBlocksAsync(int? warehouseId, string? shelfCode);
+    Task<InventoryBlock?> GetInventoryBlockAsync(int id);
+    Task<int> CreateInventoryBlockAsync(InventoryBlock block);
+    Task<(bool ok, string msg)> UpdateInventoryBlockAsync(int id, InventoryBlock block);
+    Task<(bool ok, string msg)> ToggleInventoryBlockStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteInventoryBlockAsync(int id);
+    Task<List<string>> GetShelvesAsync(int? warehouseId);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1289,6 +1297,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var storageReport = await StorageTimeReportAsync(null, StorageTimeAgingBracket.Tier4_Over90, null);
         var stagnantItems = storageReport.StagnantItemsCount;
         var damagedSerials = await db.StockSerials.CountAsync(s => s.Status == StockSerialStatus.DamagedNG);
+        var totalBlocks = await db.InventoryBlocks.CountAsync();
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1303,7 +1312,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.CustomerReturns.CountAsync(c => c.Status == CusReturnStatus.Draft),
             expiringLots,
             stagnantItems,
-            damagedSerials);
+            damagedSerials,
+            totalBlocks);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -1461,6 +1471,175 @@ public class WmsService(AppDbContext db) : IWmsService
             lockedCount,
             damagedNGCount,
             exportedCount,
+            rows
+        );
+    }
+
+    public Task<List<InventoryBlock>> InventoryBlocksAsync(int? warehouseId, string? shelfCode)
+    {
+        var q = db.InventoryBlocks.Include(b => b.Warehouse).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(b => b.WarehouseId == warehouseId.Value);
+        if (!string.IsNullOrWhiteSpace(shelfCode)) q = q.Where(b => b.ShelfCode == shelfCode.Trim().ToUpperInvariant());
+        return q.OrderBy(b => b.Warehouse.Code).ThenBy(b => b.ShelfCode).ThenBy(b => b.InvBlockCode).ToListAsync();
+    }
+
+    public Task<InventoryBlock?> GetInventoryBlockAsync(int id) =>
+        db.InventoryBlocks.Include(b => b.Warehouse).FirstOrDefaultAsync(b => b.Id == id);
+
+    public async Task<int> CreateInventoryBlockAsync(InventoryBlock block)
+    {
+        if (block.WarehouseId <= 0) throw new ArgumentException("Cần chọn Kho lưu trữ.");
+        if (string.IsNullOrWhiteSpace(block.InvBlockCode)) throw new ArgumentException("Mã vị trí ô kho không được để trống.");
+        if (string.IsNullOrWhiteSpace(block.ShelfCode)) throw new ArgumentException("Mã dãy kệ không được để trống.");
+
+        block.InvBlockCode = block.InvBlockCode.Trim().ToUpperInvariant();
+        block.ShelfCode = block.ShelfCode.Trim().ToUpperInvariant();
+        block.InvBlockDesc = block.InvBlockDesc?.Trim();
+        block.Remark = block.Remark?.Trim();
+        block.Length = Math.Max(0, block.Length);
+        block.Width = Math.Max(0, block.Width);
+        block.Height = Math.Max(0, block.Height);
+        block.MaxCapacity = Math.Max(1, block.MaxCapacity);
+
+        var exists = await db.InventoryBlocks.AnyAsync(b => b.WarehouseId == block.WarehouseId && b.InvBlockCode == block.InvBlockCode);
+        if (exists)
+            throw new InvalidOperationException($"Mã vị trí '{block.InvBlockCode}' đã tồn tại trong kho này.");
+
+        block.CreatedAt = DateTime.Now;
+        db.InventoryBlocks.Add(block);
+        await db.SaveChangesAsync();
+        return block.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateInventoryBlockAsync(int id, InventoryBlock block)
+    {
+        var existing = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
+        if (existing == null) return (false, "Không tìm thấy vị trí ô kệ cần cập nhật.");
+
+        if (!string.IsNullOrWhiteSpace(block.ShelfCode))
+            existing.ShelfCode = block.ShelfCode.Trim().ToUpperInvariant();
+
+        existing.InvBlockDesc = block.InvBlockDesc?.Trim();
+        existing.Length = Math.Max(0, block.Length);
+        existing.Width = Math.Max(0, block.Width);
+        existing.Height = Math.Max(0, block.Height);
+        existing.MaxCapacity = Math.Max(1, block.MaxCapacity);
+        existing.Remark = block.Remark?.Trim();
+        existing.FlagActive = block.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật vị trí kho '{existing.InvBlockCode}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleInventoryBlockStatusAsync(int id)
+    {
+        var block = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
+        if (block == null) return (false, "Không tìm thấy vị trí ô kệ.");
+
+        block.FlagActive = !block.FlagActive;
+        block.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var st = block.FlagActive ? "Đang hoạt động" : "Tạm ngừng / Bảo trì";
+        return (true, $"Đã chuyển trạng thái vị trí '{block.InvBlockCode}' sang: {st}.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteInventoryBlockAsync(int id)
+    {
+        var block = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
+        if (block == null) return (false, "Không tìm thấy vị trí ô kệ.");
+
+        db.InventoryBlocks.Remove(block);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa vị trí '{block.InvBlockCode}'.");
+    }
+
+    public async Task<List<string>> GetShelvesAsync(int? warehouseId)
+    {
+        var q = db.InventoryBlocks.AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(b => b.WarehouseId == warehouseId.Value);
+        return await q.Select(b => b.ShelfCode).Distinct().OrderBy(s => s).ToListAsync();
+    }
+
+    /// <summary>Báo cáo & Danh sách Quản lý Vị trí kho tổng hợp (port từ Mst_InventoryBlock Skycic).</summary>
+    public async Task<InventoryBlockReport> InventoryBlockReportAsync(int? warehouseId, string? shelfCode, bool? activeFilter, string? keyword)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var q = db.InventoryBlocks.Include(b => b.Warehouse).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(b => b.WarehouseId == warehouseId.Value);
+        if (!string.IsNullOrWhiteSpace(shelfCode))
+        {
+            var shelfUpper = shelfCode.Trim().ToUpperInvariant();
+            q = q.Where(b => b.ShelfCode == shelfUpper);
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            q = q.Where(b => b.InvBlockCode.ToLower().Contains(kw) ||
+                             b.ShelfCode.ToLower().Contains(kw) ||
+                             (b.InvBlockDesc != null && b.InvBlockDesc.ToLower().Contains(kw)) ||
+                             (b.Remark != null && b.Remark.ToLower().Contains(kw)) ||
+                             b.Warehouse.Name.ToLower().Contains(kw));
+        }
+
+        var allMatching = await q.ToListAsync();
+
+        int totalBlocks = allMatching.Count;
+        int activeCount = allMatching.Count(b => b.FlagActive);
+        int maintenanceCount = allMatching.Count(b => !b.FlagActive);
+        int totalShelves = allMatching.Select(b => b.ShelfCode).Distinct().Count();
+        double totalVolumeM3 = Math.Round(allMatching.Sum(b => b.VolumeM3), 3);
+        int totalCapacity = allMatching.Sum(b => b.MaxCapacity);
+
+        var filtered = activeFilter.HasValue
+            ? allMatching.Where(b => b.FlagActive == activeFilter.Value).ToList()
+            : allMatching;
+
+        var rows = filtered
+            .OrderBy(b => b.Warehouse.Name)
+            .ThenBy(b => b.ShelfCode)
+            .ThenBy(b => b.InvBlockCode)
+            .Select(b => new InventoryBlockRow(
+                b.Id,
+                b.WarehouseId,
+                b.Warehouse.Code,
+                b.Warehouse.Name,
+                b.InvBlockCode,
+                b.ShelfCode,
+                b.InvBlockDesc,
+                b.Length,
+                b.Width,
+                b.Height,
+                b.VolumeM3,
+                b.MaxCapacity,
+                b.FlagActive,
+                b.FlagActive ? "Hoạt động" : "Bảo trì / Khóa",
+                b.FlagActive ? "bg-success" : "bg-warning text-dark",
+                b.Remark,
+                b.CreatedAt
+            ))
+            .ToList();
+
+        return new InventoryBlockReport(
+            warehouseId,
+            whName,
+            shelfCode,
+            activeFilter,
+            keyword,
+            totalBlocks,
+            activeCount,
+            maintenanceCount,
+            totalShelves,
+            totalVolumeM3,
+            totalCapacity,
             rows
         );
     }

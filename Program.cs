@@ -190,6 +190,99 @@ app.MapPost("/api/stock-serials/{id:int}/change-status", async (int id, ChangeSe
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Vị trí kho & Khay kệ (Warehouse Location / Block / Shelf - port từ Mst_InventoryBlock Skycic)
+app.MapGet("/api/inventory-blocks", async (int? warehouseId, string? shelfCode, bool? activeOnly, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryBlockReportAsync(warehouseId, shelfCode, activeOnly, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-blocks/{id:int}", async (int id, IWmsService svc) =>
+{
+    var b = await svc.GetInventoryBlockAsync(id);
+    if (b == null) return Results.NotFound(new { error = "Không tìm thấy vị trí ô kệ." });
+    return Results.Ok(new
+    {
+        b.Id,
+        Warehouse = b.Warehouse.Name,
+        b.WarehouseId,
+        b.InvBlockCode,
+        b.ShelfCode,
+        b.InvBlockDesc,
+        b.Length,
+        b.Width,
+        b.Height,
+        b.VolumeM3,
+        b.MaxCapacity,
+        b.FlagActive,
+        b.Remark,
+        b.CreatedAt,
+        b.UpdatedAt
+    });
+});
+
+app.MapPost("/api/inventory-blocks", async (CreateInventoryBlockDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.InvBlockCode)) return Results.BadRequest(new { error = "Cần InvBlockCode." });
+    if (string.IsNullOrWhiteSpace(dto.ShelfCode)) return Results.BadRequest(new { error = "Cần ShelfCode." });
+
+    try
+    {
+        var block = new InventoryBlock
+        {
+            WarehouseId = dto.WarehouseId,
+            InvBlockCode = dto.InvBlockCode.Trim(),
+            ShelfCode = dto.ShelfCode.Trim(),
+            InvBlockDesc = dto.InvBlockDesc?.Trim(),
+            Length = dto.Length,
+            Width = dto.Width,
+            Height = dto.Height,
+            MaxCapacity = dto.MaxCapacity > 0 ? dto.MaxCapacity : 100,
+            Remark = dto.Remark?.Trim(),
+            FlagActive = dto.FlagActive ?? true
+        };
+        var id = await svc.CreateInventoryBlockAsync(block);
+        return Results.Ok(new { id, invBlockCode = block.InvBlockCode, shelfCode = block.ShelfCode });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/inventory-blocks/{id:int}", async (int id, UpdateInventoryBlockDto dto, IWmsService svc) =>
+{
+    var block = new InventoryBlock
+    {
+        ShelfCode = dto.ShelfCode ?? "",
+        InvBlockDesc = dto.InvBlockDesc,
+        Length = dto.Length,
+        Width = dto.Width,
+        Height = dto.Height,
+        MaxCapacity = dto.MaxCapacity,
+        Remark = dto.Remark,
+        FlagActive = dto.FlagActive
+    };
+    var (ok, msg) = await svc.UpdateInventoryBlockAsync(id, block);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-blocks/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInventoryBlockStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-blocks/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInventoryBlockAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapGet("/api/inventory-blocks/shelves", async (int? warehouseId, IWmsService svc) =>
+    Results.Ok(await svc.GetShelvesAsync(warehouseId)));
+
 
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>
@@ -495,3 +588,5 @@ record CreateCustomerReturnDto(int WarehouseId, string CustomerName, string? Cus
 record CustomerReturnItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
 record CreateStockSerialDto(int WarehouseId, int ProductId, string SerialNo, string? LotNo, string? RefNo, string? Note, StockSerialStatus? Status);
 record ChangeSerialStatusDto(StockSerialStatus Status, string? Note);
+record CreateInventoryBlockDto(int WarehouseId, string InvBlockCode, string ShelfCode, string? InvBlockDesc, double Length, double Width, double Height, int MaxCapacity, string? Remark, bool? FlagActive);
+record UpdateInventoryBlockDto(string? ShelfCode, string? InvBlockDesc, double Length, double Width, double Height, int MaxCapacity, string? Remark, bool FlagActive);

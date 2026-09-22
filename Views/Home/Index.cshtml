@@ -1,10 +1,11 @@
 @{ ViewData["Title"] = "Bảng điều khiển"; var d = (WmsDash)ViewBag.Dash; }
 <div class="row g-3 mb-3">
     <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Kho</div><div class="stat-num">@d.Warehouses</div></div></div></div>
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><a href="/InventoryBlock" class="text-decoration-none text-dark"><div class="text-muted small">Vị trí kho (Ô/Kệ) <i class="bi bi-box-arrow-up-right ms-1"></i></div><div class="stat-num text-primary">@d.TotalBlocks</div></a></div></div></div>
     <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Mặt hàng</div><div class="stat-num">@d.Products</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Tổng tồn</div><div class="stat-num" style="color:#0891b2">@d.TotalOnHand.ToString("N0")</div></div></div></div>
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Tổng tồn</div><div class="stat-num" style="color:#0891b2">@d.TotalOnHand.ToString("N0")</div></div></div></div>
     <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Phiếu ghi sổ</div><div class="stat-num">@d.PostedDocs</div></div></div></div>
-    <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><a href="/StockMinimum" class="text-decoration-none"><div class="text-muted small">Dưới định mức <i class="bi bi-box-arrow-up-right ms-1"></i></div><div class="stat-num text-danger">@d.LowStock</div></a></div></div></div>
+    <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><a href="/StockMinimum" class="text-decoration-none"><div class="text-muted small">Dưới định mức <i class="bi bi-box-arrow-up-right ms-1"></i></div><div class="stat-num text-danger">@d.LowStock</div></a></div></div></div>
 </div>
 <div class="card"><div class="card-body">
     <h6 class="fw-bold mb-3">Tác vụ nhanh</h6>
@@ -17,6 +18,7 @@
         <a href="/CustomerReturn" class="btn btn-outline-primary"><i class="bi bi-arrow-return-left me-1"></i>Khách trả hàng</a>
         <a href="/Audit" class="btn btn-outline-primary"><i class="bi bi-clipboard-check me-1"></i>Kiểm kê kho</a>
         <a href="/Inventory" class="btn btn-outline-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
+        <a href="/InventoryBlock" class="btn btn-outline-primary"><i class="bi bi-grid-3x3-gap me-1"></i>Vị trí kho (Ô/Kệ)</a>
         <a href="/StockMinimum" class="btn btn-outline-danger"><i class="bi bi-shield-exclamation me-1"></i>Cảnh báo tồn tối thiểu</a>
         <a href="/LotExpiry" class="btn btn-outline-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Lô & Hạn sử dụng</a>
         <a href="/StorageTime" class="btn btn-outline-info text-dark"><i class="bi bi-clock-history me-1"></i>Báo cáo tuổi kho</a>

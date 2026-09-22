@@ -690,13 +690,124 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.InventoryBlocks.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+
+            if (hn.HasValue)
+            {
+                var blocks = new List<InventoryBlock>
+                {
+                    // Kệ SHELF-A (Kho Hà Nội)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "A-01-01",
+                        ShelfCode = "SHELF-A",
+                        InvBlockDesc = "Dãy A - Tầng 1 - Khoang 01",
+                        Length = 120, Width = 80, Height = 60,
+                        MaxCapacity = 150,
+                        FlagActive = true,
+                        Remark = "Khu vực lưu trữ Áo sơ mi & Quần jeans gấp gọn"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "A-01-02",
+                        ShelfCode = "SHELF-A",
+                        InvBlockDesc = "Dãy A - Tầng 1 - Khoang 02",
+                        Length = 120, Width = 80, Height = 60,
+                        MaxCapacity = 150,
+                        FlagActive = true,
+                        Remark = "Khu vực lưu trữ Áo sơ mi xuất khẩu"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "A-02-01",
+                        ShelfCode = "SHELF-A",
+                        InvBlockDesc = "Dãy A - Tầng 2 - Khoang 01",
+                        Length = 120, Width = 80, Height = 50,
+                        MaxCapacity = 100,
+                        FlagActive = true,
+                        Remark = "Ngăn hàng thời trang cao cấp"
+                    },
+                    // Kệ SHELF-B (Kho Hà Nội)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "B-01-01",
+                        ShelfCode = "SHELF-B",
+                        InvBlockDesc = "Dãy B - Tầng 1 - Khoang 01",
+                        Length = 100, Width = 60, Height = 40,
+                        MaxCapacity = 200,
+                        FlagActive = true,
+                        Remark = "Kệ chứa phụ kiện thắt lưng da và ví"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "B-01-02",
+                        ShelfCode = "SHELF-B",
+                        InvBlockDesc = "Dãy B - Tầng 1 - Khoang 02 (Bảo trì)",
+                        Length = 100, Width = 60, Height = 40,
+                        MaxCapacity = 80,
+                        FlagActive = false,
+                        Remark = "Đang bảo trì ray đỡ kệ chịu lực"
+                    },
+                    // Kệ SHELF-C (Kho Hà Nội)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        InvBlockCode = "C-01-01",
+                        ShelfCode = "SHELF-C",
+                        InvBlockDesc = "Dãy C - Tầng 1 - Khoang 01",
+                        Length = 150, Width = 100, Height = 80,
+                        MaxCapacity = 120,
+                        FlagActive = true,
+                        Remark = "Khu bảo quản váy đầm dạ hội có móc treo"
+                    }
+                };
+
+                if (hcm.HasValue)
+                {
+                    blocks.Add(new InventoryBlock
+                    {
+                        WarehouseId = hcm.Value,
+                        InvBlockCode = "HCM-01-01",
+                        ShelfCode = "SHELF-S1",
+                        InvBlockDesc = "Dãy Nam - Tầng 1 - Khoang 01",
+                        Length = 120, Width = 80, Height = 60,
+                        MaxCapacity = 120,
+                        FlagActive = true,
+                        Remark = "Khu vực nhận hàng luân chuyển từ chi nhánh phía Bắc"
+                    });
+                    blocks.Add(new InventoryBlock
+                    {
+                        WarehouseId = hcm.Value,
+                        InvBlockCode = "HCM-01-02",
+                        ShelfCode = "SHELF-S1",
+                        InvBlockDesc = "Dãy Nam - Tầng 1 - Khoang 02",
+                        Length = 120, Width = 80, Height = 60,
+                        MaxCapacity = 120,
+                        FlagActive = true,
+                        Remark = "Khu vực soạn hàng xuất bán online giao nhanh"
+                    });
+                }
+
+                db.InventoryBlocks.AddRange(blocks);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -836,6 +947,24 @@ public static class Seeder
                 CONSTRAINT ""FK_StockSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StockSerials_OrgId_WarehouseId_ProductId_SerialNo"" ON ""StockSerials"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""SerialNo"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryBlocks"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""InvBlockCode"" TEXT NOT NULL,
+                ""ShelfCode"" TEXT NOT NULL,
+                ""InvBlockDesc"" TEXT NULL,
+                ""Length"" REAL NOT NULL DEFAULT 0,
+                ""Width"" REAL NOT NULL DEFAULT 0,
+                ""Height"" REAL NOT NULL DEFAULT 0,
+                ""MaxCapacity"" INTEGER NOT NULL DEFAULT 100,
+                ""FlagActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryBlocks_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryBlocks_OrgId_WarehouseId_InvBlockCode"" ON ""InventoryBlocks"" (""OrgId"", ""WarehouseId"", ""InvBlockCode"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
             @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
         };

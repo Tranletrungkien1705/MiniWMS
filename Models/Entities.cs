@@ -519,5 +519,67 @@ public record StockSerialReport(
     List<StockSerialRow> Rows
 );
 
+/// <summary>Vị trí lưu kho / Khay kệ / Ô lưu trữ trong kho (Warehouse Location / Block / Shelf - port từ Mst_InventoryBlock Skycic).</summary>
+public class InventoryBlock : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int WarehouseId { get; set; }                     // Thuộc kho nào
+    public string InvBlockCode { get; set; } = "";           // Mã vị trí ô kho (vd: A-01-01, B-02-04)
+    public string ShelfCode { get; set; } = "";              // Mã dãy kệ (vd: SHELF-A, SHELF-B)
+    public string? InvBlockDesc { get; set; }                // Mô tả vị trí (vd: Dãy A - Tầng 1 - Khoang 1)
+    public double Length { get; set; } = 0;                  // Chiều dài (cm)
+    public double Width { get; set; } = 0;                   // Chiều rộng (cm)
+    public double Height { get; set; } = 0;                  // Chiều cao (cm)
+    public int MaxCapacity { get; set; } = 100;              // Sức chứa tối đa (đơn vị hàng)
+    public bool FlagActive { get; set; } = true;             // 1: Hoạt động / Sẵn sàng, 0: Tạm ngừng / Bảo trì
+    public string? Remark { get; set; }                      // Ghi chú (điều kiện bảo quản, khu vực mát...)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse Warehouse { get; set; } = null!;
+
+    /// <summary>Thể tích khối tính bằng m3 = (Length * Width * Height) / 1,000,000</summary>
+    public double VolumeM3 => Math.Round((Length * Width * Height) / 1000000.0, 3);
+}
+
+/// <summary>Dòng hiển thị Vị trí kho kèm thống kê.</summary>
+public record InventoryBlockRow(
+    int Id,
+    int WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string InvBlockCode,
+    string ShelfCode,
+    string? InvBlockDesc,
+    double Length,
+    double Width,
+    double Height,
+    double VolumeM3,
+    int MaxCapacity,
+    bool FlagActive,
+    string StatusLabel,
+    string BadgeClass,
+    string? Remark,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo & Danh sách Quản lý Vị trí kho tổng hợp (port từ Mst_InventoryBlock Skycic).</summary>
+public record InventoryBlockReport(
+    int? WarehouseId,
+    string WarehouseName,
+    string? ShelfCode,
+    bool? ActiveFilter,
+    string? Keyword,
+    int TotalBlocks,
+    int ActiveCount,
+    int MaintenanceCount,
+    int TotalShelves,
+    double TotalVolumeM3,
+    int TotalCapacity,
+    List<InventoryBlockRow> Rows
+);
+
+
 
 

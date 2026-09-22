@@ -11,9 +11,20 @@
         </form>
     </div></div></div>
     <div class="col-lg-8"><div class="card"><div class="card-body">
-        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên kho</th><th>Địa chỉ</th></tr></thead><tbody>
-        @foreach (var w in Model) { <tr><td class="fw-semibold">@w.Code</td><td>@w.Name</td><td class="small text-muted">@w.Address</td></tr> }
-        @if (Model.Count == 0) { <tr><td colspan="3" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
+        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên kho</th><th>Địa chỉ</th><th class="text-end">Sơ đồ kho</th></tr></thead><tbody>
+        @foreach (var w in Model) {
+            <tr>
+                <td class="fw-semibold">@w.Code</td>
+                <td>@w.Name</td>
+                <td class="small text-muted">@w.Address</td>
+                <td class="text-end">
+                    <a href="/InventoryBlock?warehouseId=@w.Id" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-grid-3x3 me-1"></i>Vị trí ô kệ
+                    </a>
+                </td>
+            </tr>
+        }
+        @if (Model.Count == 0) { <tr><td colspan="4" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
         </tbody></table>
     </div></div></div>
 </div>

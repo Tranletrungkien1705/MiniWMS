@@ -1,0 +1,323 @@
+@model InventoryBlockReport
+@{
+    ViewData["Title"] = "Quản lý Sơ đồ Vị trí Kho — Khay kệ & Ô lưu trữ";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedShelf = (string)ViewBag.ShelfCode;
+    var selectedActive = (bool?)ViewBag.ActiveOnly;
+    var keyword = (string)ViewBag.Keyword;
+    var shelves = (List<string>)ViewBag.Shelves;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho lưu trữ</label>
+                <select name="warehouseId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Dãy kệ (Shelf)</label>
+                <select name="shelfCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả dãy kệ —</option>
+                    @foreach (var s in shelves)
+                    {
+                        <option value="@s" selected="@(selectedShelf == s)">Kệ @s</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Trạng thái</label>
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="true" selected="@(selectedActive == true)">Đang hoạt động</option>
+                    <option value="false" selected="@(selectedActive == false)">Tạm ngừng / Bảo trì</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tìm kiếm vị trí</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã vị trí, tên kệ, mô tả..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Lọc dữ liệu">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/InventoryBlock" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/InventoryBlock/ExportCsv?warehouseId=@selectedWid&shelfCode=@Uri.EscapeDataString(selectedShelf ?? "")&activeOnly=@(selectedActive.HasValue ? selectedActive.Value.ToString().ToLower() : "")&q=@Uri.EscapeDataString(keyword ?? "")"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i>
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In sơ đồ vị trí">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG VỊ TRÍ</span>
+                    <i class="bi bi-grid-3x3-gap-fill text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalBlocks.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Số ô / khoang lưu trữ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">DÃY KỆ (SHELF)</span>
+                    <i class="bi bi-layers-fill text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.TotalShelves.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Tổng số dãy giá kệ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG HOẠT ĐỘNG</span>
+                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.ActiveCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Sẵn sàng xuất / nhập lưu kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">BẢO TRÌ / KHÓA</span>
+                    <i class="bi bi-tools text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@Model.MaintenanceCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Đang sửa chữa ray/khung kệ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG THỂ TÍCH KHO</span>
+                    <i class="bi bi-box text-secondary fs-5"></i>
+                </div>
+                <div class="stat-num text-secondary">@Model.TotalVolumeM3.ToString("N2") <span style="font-size:14px;font-weight:normal">m³</span></div>
+                <div class="text-muted" style="font-size:11px">Sức chứa tối đa: <b>@Model.TotalCapacity.ToString("N0")</b> sản phẩm</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-grid-3x3 text-primary me-2"></i>Sơ đồ Mặt bằng & Danh mục Vị trí Khoang Kệ (Mst_InventoryBlock)</h6>
+            <span class="text-muted small">Kho: <b>@Model.WarehouseName</b> — Dãy kệ: <b>@(string.IsNullOrWhiteSpace(Model.ShelfCode) ? "Tất cả" : Model.ShelfCode)</b> — Hiển thị <b>@Model.Rows.Count</b> vị trí</span>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createBlockModal">
+                <i class="bi bi-plus-circle me-1"></i> Thêm vị trí kho mới
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:40px">#</th>
+                        <th>Mã vị trí (Block)</th>
+                        <th>Dãy kệ (Shelf)</th>
+                        <th>Mô tả vị trí</th>
+                        <th>Kho lưu trữ</th>
+                        <th class="text-center">Kích thước (D×R×C)</th>
+                        <th class="text-end">Thể tích (m³)</th>
+                        <th class="text-end">Sức chứa tối đa</th>
+                        <th class="text-center">Trạng thái</th>
+                        <th>Ghi chú</th>
+                        <th class="text-center" style="width:130px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="11" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                Không tìm thấy vị trí lưu kho nào phù hợp với bộ lọc.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        var stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <span class="fw-bold font-monospace text-primary fs-6">@r.InvBlockCode</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi bi-layers me-1 text-secondary"></i>@r.ShelfCode
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="fw-semibold">@(r.InvBlockDesc ?? "—")</span>
+                                </td>
+                                <td>
+                                    <span class="text-muted"><i class="bi bi-building me-1"></i>@r.WarehouseName</span>
+                                </td>
+                                <td class="text-center small text-muted font-monospace">
+                                    @(r.Length > 0 ? $"{r.Length:G0} × {r.Width:G0} × {r.Height:G0} cm" : "—")
+                                </td>
+                                <td class="text-end font-monospace">
+                                    @(r.VolumeM3 > 0 ? $"{r.VolumeM3:F3}" : "—")
+                                </td>
+                                <td class="text-end font-monospace fw-semibold">
+                                    @r.MaxCapacity.ToString("N0") <span class="text-muted small fw-normal">sp</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.StatusLabel</span>
+                                </td>
+                                <td class="small text-muted" style="max-width:200px" title="@r.Remark">
+                                    @(string.IsNullOrWhiteSpace(r.Remark) ? "—" : r.Remark)
+                                </td>
+                                <td class="text-center">
+                                    <div class="d-inline-flex gap-1">
+                                        <form method="post" action="/InventoryBlock/Toggle" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <input type="hidden" name="warehouseId" value="@selectedWid" />
+                                            <input type="hidden" name="shelfCode" value="@selectedShelf" />
+                                            <input type="hidden" name="activeOnly" value="@selectedActive" />
+                                            <input type="hidden" name="q" value="@keyword" />
+                                            <button type="submit" class="btn btn-sm @(r.FlagActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                    title="@(r.FlagActive ? "Tạm khóa bảo trì" : "Mở kích hoạt hoạt động")">
+                                                <i class="bi @(r.FlagActive ? "bi-pause-circle" : "bi-play-circle")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="/InventoryBlock/Delete" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa vị trí kho @r.InvBlockCode?');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <input type="hidden" name="warehouseId" value="@selectedWid" />
+                                            <input type="hidden" name="shelfCode" value="@selectedShelf" />
+                                            <input type="hidden" name="activeOnly" value="@selectedActive" />
+                                            <input type="hidden" name="q" value="@keyword" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Xóa vị trí">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer bg-white text-muted small py-2 d-flex justify-content-between align-items-center">
+        <span>Mô hình định danh vị trí: <b>[Dãy Kệ]-[Tầng]-[Ngăn/Ô]</b> theo chuẩn WMS (Mst_InventoryBlock).</span>
+        <span>Tổng sức chứa hiển thị: <b>@Model.TotalCapacity.ToString("N0")</b> sản phẩm / <b>@Model.TotalVolumeM3.ToString("N2")</b> m³</span>
+    </div>
+</div>
+
+<!-- Modal Thêm vị trí kho mới -->
+<div class="modal fade" id="createBlockModal" tabindex="-1" aria-labelledby="createBlockModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="/InventoryBlock/Create">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="filterWhId" value="@selectedWid" />
+                <input type="hidden" name="filterShelf" value="@selectedShelf" />
+                <input type="hidden" name="filterActive" value="@selectedActive" />
+                <input type="hidden" name="q" value="@keyword" />
+
+                <div class="modal-header bg-light">
+                    <h6 class="modal-title fw-bold" id="createBlockModalLabel">
+                        <i class="bi bi-plus-circle text-primary me-2"></i>Thêm Vị trí Khoang Kệ Mới (Mst_InventoryBlock)
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Kho lưu trữ <span class="text-danger">*</span></label>
+                        <select name="warehouseId" class="form-select" required>
+                            @foreach (var w in whs)
+                            {
+                                <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã vị trí (InvBlockCode) <span class="text-danger">*</span></label>
+                            <input type="text" name="invBlockCode" class="form-control text-uppercase font-monospace" placeholder="VD: A-01-03" required />
+                            <div class="form-text small">Định dạng khuyên dùng: Kệ-Tầng-Ô</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã dãy kệ (ShelfCode) <span class="text-danger">*</span></label>
+                            <input type="text" name="shelfCode" class="form-control text-uppercase font-monospace" placeholder="VD: SHELF-A" required />
+                            <div class="form-text small">Mã nhóm dãy kệ chính</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả vị trí ô kệ</label>
+                        <input type="text" name="invBlockDesc" class="form-control" placeholder="VD: Dãy A - Tầng 1 - Khoang 03" />
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Dài (cm)</label>
+                            <input type="number" step="any" min="0" name="length" value="120" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Rộng (cm)</label>
+                            <input type="number" step="any" min="0" name="width" value="80" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Cao (cm)</label>
+                            <input type="number" step="any" min="0" name="height" value="60" class="form-control" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Sức chứa tối đa (Max Capacity - cái/thùng)</label>
+                        <input type="number" min="1" name="maxCapacity" value="100" class="form-control" required />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú & Điều kiện lưu trữ</label>
+                        <textarea name="remark" rows="2" class="form-control" placeholder="VD: Khu vực thoáng mát, bảo quản áo may sẵn gấp hộp..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Lưu Vị trí</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
