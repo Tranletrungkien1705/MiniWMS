@@ -534,13 +534,169 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.StockSerials.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001")?.Id;
+
+            var today = DateTime.Today;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue && pk.HasValue && vay.HasValue)
+            {
+                var serials = new List<StockSerial>
+                {
+                    // 1. Áo sơ mi trắng - Kho HN: Khả dụng (Available)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = ao.Value,
+                        SerialNo = "SN-AO26-0001",
+                        LotNo = "LOT-AO26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-55),
+                        RefNo = "PNSEED-001",
+                        Note = "Tem bảo hành nguyên vẹn, size L"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = ao.Value,
+                        SerialNo = "SN-AO26-0002",
+                        LotNo = "LOT-AO26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-55),
+                        RefNo = "PNSEED-001",
+                        Note = "Tem bảo hành nguyên vẹn, size M"
+                    },
+                    // 2. Áo sơ mi trắng - Kho HN: Tạm khóa / Giữ hàng theo đơn (Locked)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = ao.Value,
+                        SerialNo = "SN-AO26-0003",
+                        LotNo = "LOT-AO26-01",
+                        Status = StockSerialStatus.Locked,
+                        InDate = today.AddDays(-55),
+                        RefNo = "ORD-VIP-991",
+                        Note = "Tạm giữ cho khách hàng VIP đại lý An Phát"
+                    },
+                    // 3. Quần jeans slim - Kho HN: Khả dụng (Available)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = quan.Value,
+                        SerialNo = "SN-QJ26-0101",
+                        LotNo = "LOT-QJ26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-40),
+                        RefNo = "PNSEED-001",
+                        Note = "Size 31, kiểm tra chất lượng đạt loại A"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = quan.Value,
+                        SerialNo = "SN-QJ26-0102",
+                        LotNo = "LOT-QJ26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-40),
+                        RefNo = "PNSEED-001",
+                        Note = "Size 32, tem chống hàng giả đầy đủ"
+                    },
+                    // 4. Quần jeans slim - Kho HN: Đã xuất kho (Exported)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = quan.Value,
+                        SerialNo = "SN-QJ26-0099",
+                        LotNo = "LOT-QJ26-01",
+                        Status = StockSerialStatus.Exported,
+                        InDate = today.AddDays(-60),
+                        OutDate = today.AddDays(-2),
+                        RefNo = "PXSEED-001",
+                        Note = "Xuất bán đơn hàng shop online"
+                    },
+                    // 5. Thắt lưng da - Kho HN: Hỏng / Lỗi kiểm định (DamagedNG)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = pk.Value,
+                        SerialNo = "SN-TL25-0012",
+                        LotNo = "LOT-TL25-01",
+                        Status = StockSerialStatus.DamagedNG,
+                        InDate = today.AddDays(-380),
+                        RefNo = "PNSEED-001",
+                        Note = "Lỗi mặt khóa hợp kim bị oxy hóa, chờ gửi trả bảo hành NCC May 10"
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = pk.Value,
+                        SerialNo = "SN-TL26-0045",
+                        LotNo = "LOT-TL26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-25),
+                        RefNo = "PNSEED-001",
+                        Note = "Da bò thật nguyên miếng, phụ kiện xuất sắc"
+                    },
+                    // 6. Váy đầm công sở - Kho HN: Khả dụng
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = vay.Value,
+                        SerialNo = "SN-VD26-0008",
+                        LotNo = "LOT-VD26-01",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-15),
+                        RefNo = "PNSEED-006",
+                        Note = "Hàng thiết kế cao cấp, mã RFID gắn thẻ"
+                    }
+                };
+
+                // Lô serial tại kho TP.HCM
+                if (hcm.HasValue)
+                {
+                    serials.Add(new StockSerial
+                    {
+                        WarehouseId = hcm.Value,
+                        ProductId = ao.Value,
+                        SerialNo = "SN-AO26-HCM01",
+                        LotNo = "LOT-AO26-HCM1",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-2),
+                        RefNo = "PCSEED-001",
+                        Note = "Nhận điều chuyển từ Kho Hà Nội"
+                    });
+                    serials.Add(new StockSerial
+                    {
+                        WarehouseId = hcm.Value,
+                        ProductId = quan.Value,
+                        SerialNo = "SN-QJ26-HCM01",
+                        LotNo = "LOT-QJ26-HCM1",
+                        Status = StockSerialStatus.Available,
+                        InDate = today.AddDays(-2),
+                        RefNo = "PCSEED-001",
+                        Note = "Nhận điều chuyển từ Kho Hà Nội"
+                    });
+                }
+
+                db.StockSerials.AddRange(serials);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -662,6 +818,24 @@ public static class Seeder
                 CONSTRAINT ""FK_StockLots_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StockLots_OrgId_WarehouseId_ProductId_LotNo"" ON ""StockLots"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""LotNo"");",
+            @"CREATE TABLE IF NOT EXISTS ""StockSerials"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""SerialNo"" TEXT NOT NULL,
+                ""LotNo"" TEXT NULL,
+                ""Status"" INTEGER NOT NULL,
+                ""InDate"" TEXT NOT NULL,
+                ""OutDate"" TEXT NULL,
+                ""RefNo"" TEXT NULL,
+                ""Note"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_StockSerials_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_StockSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StockSerials_OrgId_WarehouseId_ProductId_SerialNo"" ON ""StockSerials"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""SerialNo"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;",
             @"ALTER TABLE ""Products"" ADD COLUMN ""CostPrice"" NUMERIC NOT NULL DEFAULT 0;"
         };

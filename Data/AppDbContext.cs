@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<CustomerReturn> CustomerReturns => Set<CustomerReturn>();
     public DbSet<CustomerReturnLine> CustomerReturnLines => Set<CustomerReturnLine>();
     public DbSet<StockLot> StockLots => Set<StockLot>();
+    public DbSet<StockSerial> StockSerials => Set<StockSerial>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -111,6 +112,13 @@ public class AppDbContext : DbContext
         b.Entity<StockLot>(e =>
         {
             e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.ProductId, x.LotNo }).IsUnique();
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<StockSerial>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.ProductId, x.SerialNo }).IsUnique();
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => x.OrgId == _orgId);

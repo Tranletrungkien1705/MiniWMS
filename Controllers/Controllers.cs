@@ -767,4 +767,102 @@ public class StorageTimeController(IWmsService svc) : Controller
     }
 }
 
+public class StockSerialController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, int? productId, StockSerialStatus? status, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        var prods = await svc.ProductsAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.Products = prods;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ProductId = productId;
+        ViewBag.Status = status;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.StockSerialReportAsync(warehouseId, productId, status, q);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, int productId, string serialNo, string? lotNo, string? refNo, string? note)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho lưu trữ.";
+            return RedirectToAction(nameof(Index), new { warehouseId, productId });
+        }
+        if (productId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn mặt hàng.";
+            return RedirectToAction(nameof(Index), new { warehouseId, productId });
+        }
+        if (string.IsNullOrWhiteSpace(serialNo))
+        {
+            TempData["Error"] = "Vui lòng nhập số Serial / Barcode.";
+            return RedirectToAction(nameof(Index), new { warehouseId, productId });
+        }
+
+        try
+        {
+            var serial = new StockSerial
+            {
+                WarehouseId = warehouseId,
+                ProductId = productId,
+                SerialNo = serialNo.Trim(),
+                LotNo = lotNo?.Trim(),
+                RefNo = refNo?.Trim(),
+                Note = note?.Trim(),
+                Status = StockSerialStatus.Available
+            };
+            await svc.CreateStockSerialAsync(serial);
+            TempData["Success"] = $"Đã đăng ký Serial/IMEI '{serial.SerialNo}' thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index), new { warehouseId, productId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ChangeStatus(int id, StockSerialStatus status, string? note, int? warehouseId, int? productId, StockSerialStatus? filterStatus, string? q)
+    {
+        var (ok, msg) = await svc.ChangeStockSerialStatusAsync(id, status, note);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId, productId, status = filterStatus, q });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, int? productId, StockSerialStatus? status, string? q)
+    {
+        var report = await svc.StockSerialReportAsync(warehouseId, productId, status, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO QUẢN LÝ & TRA CỨU SERIAL / IMEI HÀNG TỒN KHO");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Mặt hàng:;{report.ProductName}");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(status.HasValue ? status.Value.ToString() : "Tất cả các trạng thái")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã Serial/IMEI;Mã hàng;Tên hàng hoá;ĐVT;Kho lưu trữ;Số lô (Lot);Ngày nhập;Ngày xuất;Số chứng từ;Trạng thái;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var inDate = r.InDate.ToString("dd/MM/yyyy");
+            var outDate = r.OutDate.HasValue ? r.OutDate.Value.ToString("dd/MM/yyyy") : "—";
+            sb.AppendLine($"{stt++};\"{r.SerialNo}\";\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";\"{r.LotNo ?? "—"}\";{inDate};{outDate};\"{r.RefNo ?? "—"}\";\"{r.StatusLabel}\";\"{r.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalSerials} serial;;Khả dụng: {report.AvailableCount};Đang khóa: {report.LockedCount};Lỗi NG: {report.DamagedNGCount};Đã xuất: {report.ExportedCount};");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_Serial_IMEI_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 

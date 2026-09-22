@@ -126,6 +126,70 @@ app.MapGet("/api/stock-lots", async (int? warehouseId, int? productId, IWmsServi
     }));
 });
 
+// API Quản lý & Tra cứu Serial / IMEI hàng tồn kho (port từ Inv_InventoryBalanceSerial Skycic)
+app.MapGet("/api/stock-serials", async (int? warehouseId, int? productId, StockSerialStatus? status, string? q, IWmsService svc) =>
+{
+    var report = await svc.StockSerialReportAsync(warehouseId, productId, status, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/stock-serials/{id:int}", async (int id, IWmsService svc) =>
+{
+    var s = await svc.GetStockSerialAsync(id);
+    if (s == null) return Results.NotFound(new { error = "Không tìm thấy Serial/IMEI." });
+    return Results.Ok(new
+    {
+        s.Id,
+        Warehouse = s.Warehouse.Name,
+        s.WarehouseId,
+        ProductCode = s.Product.Code,
+        ProductName = s.Product.Name,
+        s.ProductId,
+        s.SerialNo,
+        s.LotNo,
+        Status = s.Status.ToString(),
+        InDate = s.InDate.ToString("yyyy-MM-dd"),
+        OutDate = s.OutDate?.ToString("yyyy-MM-dd"),
+        s.RefNo,
+        s.Note,
+        s.CreatedAt,
+        s.UpdatedAt
+    });
+});
+
+app.MapPost("/api/stock-serials", async (CreateStockSerialDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (dto.ProductId <= 0) return Results.BadRequest(new { error = "Cần ProductId." });
+    if (string.IsNullOrWhiteSpace(dto.SerialNo)) return Results.BadRequest(new { error = "Cần SerialNo." });
+
+    try
+    {
+        var serial = new StockSerial
+        {
+            WarehouseId = dto.WarehouseId,
+            ProductId = dto.ProductId,
+            SerialNo = dto.SerialNo.Trim(),
+            LotNo = dto.LotNo?.Trim(),
+            RefNo = dto.RefNo?.Trim(),
+            Note = dto.Note?.Trim(),
+            Status = dto.Status ?? StockSerialStatus.Available
+        };
+        var id = await svc.CreateStockSerialAsync(serial);
+        return Results.Ok(new { id, serialNo = serial.SerialNo, status = serial.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stock-serials/{id:int}/change-status", async (int id, ChangeSerialStatusDto dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ChangeStockSerialStatusAsync(id, dto.Status, dto.Note);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>
@@ -429,3 +493,5 @@ record CreateReturnSupDto(int WarehouseId, string SupplierName, string? Supplier
 record ReturnSupItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
 record CreateCustomerReturnDto(int WarehouseId, string CustomerName, string? CustomerCode, string? InvoiceNo, string? RefOrderNo, string? Reason, List<CustomerReturnItemDto> Lines);
 record CustomerReturnItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
+record CreateStockSerialDto(int WarehouseId, int ProductId, string SerialNo, string? LotNo, string? RefNo, string? Note, StockSerialStatus? Status);
+record ChangeSerialStatusDto(StockSerialStatus Status, string? Note);

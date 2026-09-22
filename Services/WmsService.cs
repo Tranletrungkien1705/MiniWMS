@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0);
 
 public interface IWmsService
 {
@@ -46,6 +46,11 @@ public interface IWmsService
     Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
     Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null);
     Task<List<StockLot>> StockLotsAsync(int? warehouseId, int? productId);
+    Task<StockSerialReport> StockSerialReportAsync(int? warehouseId, int? productId, StockSerialStatus? status, string? keyword);
+    Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status);
+    Task<StockSerial?> GetStockSerialAsync(int id);
+    Task<int> CreateStockSerialAsync(StockSerial serial);
+    Task<(bool ok, string msg)> ChangeStockSerialStatusAsync(int id, StockSerialStatus newStatus, string? note);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1283,6 +1288,7 @@ public class WmsService(AppDbContext db) : IWmsService
         // Tính số mặt hàng đọng vốn > 90 ngày
         var storageReport = await StorageTimeReportAsync(null, StorageTimeAgingBracket.Tier4_Over90, null);
         var stagnantItems = storageReport.StagnantItemsCount;
+        var damagedSerials = await db.StockSerials.CountAsync(s => s.Status == StockSerialStatus.DamagedNG);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1296,7 +1302,167 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.ReturnToSuppliers.CountAsync(r => r.Status == ReturnSupStatus.Draft),
             await db.CustomerReturns.CountAsync(c => c.Status == CusReturnStatus.Draft),
             expiringLots,
-            stagnantItems);
+            stagnantItems,
+            damagedSerials);
+    }
+
+    public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
+    {
+        var q = db.StockSerials.Include(s => s.Warehouse).Include(s => s.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(s => s.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) q = q.Where(s => s.ProductId == productId.Value);
+        if (status.HasValue) q = q.Where(s => s.Status == status.Value);
+        return q.OrderByDescending(s => s.CreatedAt).ToListAsync();
+    }
+
+    public Task<StockSerial?> GetStockSerialAsync(int id) =>
+        db.StockSerials.Include(s => s.Warehouse).Include(s => s.Product).FirstOrDefaultAsync(s => s.Id == id);
+
+    public async Task<int> CreateStockSerialAsync(StockSerial serial)
+    {
+        if (string.IsNullOrWhiteSpace(serial.SerialNo))
+            throw new ArgumentException("Số Serial/IMEI không được để trống.");
+
+        serial.SerialNo = serial.SerialNo.Trim().ToUpperInvariant();
+        var exists = await db.StockSerials.AnyAsync(s => s.WarehouseId == serial.WarehouseId &&
+                                                         s.ProductId == serial.ProductId &&
+                                                         s.SerialNo == serial.SerialNo);
+        if (exists)
+            throw new InvalidOperationException($"Số Serial/IMEI '{serial.SerialNo}' đã tồn tại trong kho cho mặt hàng này.");
+
+        serial.CreatedAt = DateTime.Now;
+        db.StockSerials.Add(serial);
+        await db.SaveChangesAsync();
+        return serial.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ChangeStockSerialStatusAsync(int id, StockSerialStatus newStatus, string? note)
+    {
+        var serial = await db.StockSerials.FirstOrDefaultAsync(s => s.Id == id);
+        if (serial == null) return (false, "Không tìm thấy Serial/IMEI.");
+
+        var oldStatus = serial.Status;
+        serial.Status = newStatus;
+        serial.UpdatedAt = DateTime.Now;
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            serial.Note = string.IsNullOrWhiteSpace(serial.Note) ? note.Trim() : $"{serial.Note}; {note.Trim()}";
+        }
+
+        if (newStatus == StockSerialStatus.Exported && oldStatus != StockSerialStatus.Exported)
+        {
+            serial.OutDate = DateTime.Now;
+        }
+        else if (newStatus != StockSerialStatus.Exported && oldStatus == StockSerialStatus.Exported)
+        {
+            serial.OutDate = null;
+        }
+
+        await db.SaveChangesAsync();
+        var statusLabel = newStatus switch
+        {
+            StockSerialStatus.Available => "Khả dụng / Sẵn sàng",
+            StockSerialStatus.Locked => "Tạm khóa / Giữ hàng",
+            StockSerialStatus.DamagedNG => "Báo hỏng / Thẩm định NG",
+            StockSerialStatus.Exported => "Đã xuất kho",
+            _ => newStatus.ToString()
+        };
+        return (true, $"Đã cập nhật trạng thái Serial '{serial.SerialNo}' thành: {statusLabel}.");
+    }
+
+    /// <summary>Báo cáo Quản lý & Tra cứu Serial / IMEI hàng tồn kho (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+    public async Task<StockSerialReport> StockSerialReportAsync(int? warehouseId, int? productId, StockSerialStatus? status, string? keyword)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        string prodName = "Tất cả mặt hàng";
+        if (productId.HasValue)
+        {
+            var p = await db.Products.FirstOrDefaultAsync(x => x.Id == productId.Value);
+            if (p != null) prodName = $"{p.Code} - {p.Name}";
+        }
+
+        var q = db.StockSerials.Include(s => s.Warehouse).Include(s => s.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(s => s.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) q = q.Where(s => s.ProductId == productId.Value);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            q = q.Where(s => s.SerialNo.ToLower().Contains(kw) ||
+                             (s.LotNo != null && s.LotNo.ToLower().Contains(kw)) ||
+                             (s.RefNo != null && s.RefNo.ToLower().Contains(kw)) ||
+                             s.Product.Code.ToLower().Contains(kw) ||
+                             s.Product.Name.ToLower().Contains(kw));
+        }
+
+        var allMatchingSerials = await q.ToListAsync();
+
+        int totalSerials = allMatchingSerials.Count;
+        int availableCount = allMatchingSerials.Count(s => s.Status == StockSerialStatus.Available);
+        int lockedCount = allMatchingSerials.Count(s => s.Status == StockSerialStatus.Locked);
+        int damagedNGCount = allMatchingSerials.Count(s => s.Status == StockSerialStatus.DamagedNG);
+        int exportedCount = allMatchingSerials.Count(s => s.Status == StockSerialStatus.Exported);
+
+        var filtered = status.HasValue
+            ? allMatchingSerials.Where(s => s.Status == status.Value).ToList()
+            : allMatchingSerials;
+
+        var rows = filtered
+            .OrderBy(s => s.Status)
+            .ThenByDescending(s => s.InDate)
+            .ThenBy(s => s.SerialNo)
+            .Select(s =>
+            {
+                var (label, badge) = s.Status switch
+                {
+                    StockSerialStatus.Available => ("Khả dụng", "bg-success"),
+                    StockSerialStatus.Locked => ("Tạm khóa", "bg-warning text-dark"),
+                    StockSerialStatus.DamagedNG => ("Lỗi / NG", "bg-danger"),
+                    StockSerialStatus.Exported => ("Đã xuất", "bg-secondary"),
+                    _ => (s.Status.ToString(), "bg-secondary")
+                };
+
+                return new StockSerialRow(
+                    s.Id,
+                    s.WarehouseId,
+                    s.Warehouse.Name,
+                    s.ProductId,
+                    s.Product.Code,
+                    s.Product.Name,
+                    s.Product.Uom,
+                    s.SerialNo,
+                    s.LotNo,
+                    s.InDate,
+                    s.OutDate,
+                    s.RefNo,
+                    s.Status,
+                    label,
+                    badge,
+                    s.Note
+                );
+            })
+            .ToList();
+
+        return new StockSerialReport(
+            warehouseId,
+            whName,
+            productId,
+            prodName,
+            status,
+            keyword,
+            totalSerials,
+            availableCount,
+            lockedCount,
+            damagedNGCount,
+            exportedCount,
+            rows
+        );
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

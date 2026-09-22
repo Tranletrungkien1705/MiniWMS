@@ -453,4 +453,71 @@ public record StorageTimeReport(
     List<StorageTimeRow> Rows
 );
 
+/// <summary>Trạng thái tồn kho theo Serial / IMEI (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+public enum StockSerialStatus
+{
+    Available = 0, // Khả dụng / Sẵn sàng xuất bán (BlockStatus = '0')
+    Locked = 1,    // Tạm khóa / Giữ hàng theo đơn (BlockStatus = '1')
+    DamagedNG = 2, // Lỗi hỏng / Chờ thẩm định / Xử lý bảo hành (FlagNG = '1')
+    Exported = 3   // Đã xuất kho (Đã xuất theo phiếu xuất / đơn hàng)
+}
+
+/// <summary>Thông tin tồn kho chi tiết theo Serial / IMEI (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+public class StockSerial : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int WarehouseId { get; set; }
+    public int ProductId { get; set; }
+    public string SerialNo { get; set; } = "";             // Số Serial / IMEI / Barcode cá thể hóa (SerialNo)
+    public string? LotNo { get; set; }                     // Mã lô hàng gắn liền (ProductLotNo)
+    public StockSerialStatus Status { get; set; } = StockSerialStatus.Available; // Trạng thái Serial
+    public DateTime InDate { get; set; } = DateTime.Now;   // Ngày nhập kho
+    public DateTime? OutDate { get; set; }                  // Ngày xuất kho (nếu có)
+    public string? RefNo { get; set; }                     // Số chứng từ nhập/xuất liên quan (RefNo_PK)
+    public string? Note { get; set; }                      // Ghi chú kiểm định / vị trí khay kệ
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng chi tiết Báo cáo & Tra cứu Serial / IMEI hàng tồn kho (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+public record StockSerialRow(
+    int Id,
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string SerialNo,
+    string? LotNo,
+    DateTime InDate,
+    DateTime? OutDate,
+    string? RefNo,
+    StockSerialStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    string? Note
+);
+
+/// <summary>Báo cáo Quản lý & Tra cứu Serial / IMEI tổng hợp (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+public record StockSerialReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int? ProductId,
+    string ProductName,
+    StockSerialStatus? StatusFilter,
+    string? Keyword,
+    int TotalSerials,
+    int AvailableCount,
+    int LockedCount,
+    int DamagedNGCount,
+    int ExportedCount,
+    List<StockSerialRow> Rows
+);
+
+
 
