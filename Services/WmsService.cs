@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns);
 
 public interface IWmsService
 {
@@ -29,6 +29,11 @@ public interface IWmsService
     Task<(bool ok, string msg)> ApproveMoveOrderAsync(int id);
     Task<(bool ok, string msg)> ExecuteMoveOrderAsync(int id);
     Task CancelMoveOrderAsync(int id);
+    Task<List<ReturnToSupplier>> ReturnToSuppliersAsync(int? warehouseId, ReturnSupStatus? status);
+    Task<ReturnToSupplier?> GetReturnToSupplierAsync(int id);
+    Task<int> CreateReturnToSupplierAsync(ReturnToSupplier returnDoc, List<(int productId, int qty, decimal unitPrice, string? note)> lines);
+    Task<(bool ok, string msg)> ApproveReturnToSupplierAsync(int id);
+    Task CancelReturnToSupplierAsync(int id);
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<WmsDash> DashboardAsync();
@@ -270,7 +275,9 @@ public class WmsService(AppDbContext db) : IWmsService
             else if (d.Type == DocType.Out)
             {
                 if (warehouseId.HasValue && d.FromWarehouseId != warehouseId.Value) continue;
-                var action = isAudit ? "Kiểm kê - Điều chỉnh thiếu (AuditOut)" : "Xuất kho (Out)";
+                bool isReturnSup = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase)
+                                   || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("trả hàng NCC", StringComparison.OrdinalIgnoreCase));
+                var action = isAudit ? "Kiểm kê - Điều chỉnh thiếu (AuditOut)" : (isReturnSup ? "Xuất trả NCC (ReturnSup)" : "Xuất kho (Out)");
                 allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", null, 0, line.Quantity, d.Note, d.RefNo));
             }
             else if (d.Type == DocType.Transfer)
@@ -479,6 +486,101 @@ public class WmsService(AppDbContext db) : IWmsService
         await db.SaveChangesAsync();
     }
 
+    public async Task<List<ReturnToSupplier>> ReturnToSuppliersAsync(int? warehouseId, ReturnSupStatus? status)
+    {
+        var q = db.ReturnToSuppliers
+            .Include(r => r.Warehouse)
+            .Include(r => r.StockDoc)
+            .Include(r => r.Lines).ThenInclude(l => l.Product)
+            .AsQueryable();
+
+        if (warehouseId.HasValue) q = q.Where(r => r.WarehouseId == warehouseId.Value);
+        if (status.HasValue) q = q.Where(r => r.Status == status.Value);
+
+        var list = await q.ToListAsync();
+        return list.OrderByDescending(r => r.CreatedAt).ToList();
+    }
+
+    public Task<ReturnToSupplier?> GetReturnToSupplierAsync(int id) =>
+        db.ReturnToSuppliers
+            .Include(r => r.Warehouse)
+            .Include(r => r.StockDoc)
+            .Include(r => r.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+    public async Task<int> CreateReturnToSupplierAsync(ReturnToSupplier returnDoc, List<(int productId, int qty, decimal unitPrice, string? note)> lines)
+    {
+        returnDoc.Code = $"THNCC{DateTime.Now:yyMMdd}-{await db.ReturnToSuppliers.CountAsync() + 1:D3}";
+        returnDoc.Status = ReturnSupStatus.Draft;
+        foreach (var (pid, qty, unitPrice, note) in lines.Where(l => l.productId > 0 && l.qty > 0))
+            returnDoc.Lines.Add(new ReturnToSupplierLine { ProductId = pid, Quantity = qty, UnitPrice = unitPrice, Note = note });
+
+        db.ReturnToSuppliers.Add(returnDoc);
+        await db.SaveChangesAsync();
+        return returnDoc.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ApproveReturnToSupplierAsync(int id)
+    {
+        var returnDoc = await db.ReturnToSuppliers
+            .Include(r => r.Warehouse)
+            .Include(r => r.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (returnDoc == null) return (false, "Không tìm thấy phiếu trả hàng nhà cung cấp.");
+        if (returnDoc.Status == ReturnSupStatus.Finished) return (false, "Phiếu trả hàng đã được duyệt và xuất kho trước đó.");
+        if (returnDoc.Status == ReturnSupStatus.Cancelled) return (false, "Phiếu trả hàng đã bị hủy.");
+        if (returnDoc.Lines.Count == 0) return (false, "Phiếu chưa có mặt hàng xuất trả.");
+
+        // Kiểm tra tồn kho khả dụng tại kho xuất
+        var balances = await BalancesAsync(returnDoc.WarehouseId);
+        var balDict = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        foreach (var line in returnDoc.Lines)
+        {
+            balDict.TryGetValue(line.ProductId, out var available);
+            if (line.Quantity > available)
+            {
+                return (false, $"Kho '{returnDoc.Warehouse.Name}' không đủ tồn cho '{line.Product.Name}': yêu cầu trả {line.Quantity}, hiện có {available}.");
+            }
+        }
+
+        // Tự động sinh phiếu xuất kho StockDoc (DocType.Out)
+        var stockDoc = new StockDoc
+        {
+            Type = DocType.Out,
+            FromWarehouseId = returnDoc.WarehouseId,
+            RefNo = returnDoc.Code,
+            Note = $"Xuất trả hàng NCC {returnDoc.SupplierName} theo phiếu {returnDoc.Code}" + (string.IsNullOrWhiteSpace(returnDoc.Reason) ? "" : $": {returnDoc.Reason}"),
+            CreatedBy = string.IsNullOrWhiteSpace(returnDoc.CreatedBy) ? "return-sup" : returnDoc.CreatedBy
+        };
+
+        var docLines = returnDoc.Lines.Select(l => (l.ProductId, l.Quantity)).ToList();
+        var docId = await CreateDocAsync(stockDoc, docLines);
+
+        // Ghi sổ phiếu xuất để trừ tồn kho ngay
+        var (postOk, postMsg) = await PostDocAsync(docId);
+        if (!postOk) return (false, $"Lỗi ghi sổ phiếu xuất kho: {postMsg}");
+
+        returnDoc.StockDocId = docId;
+        returnDoc.Status = ReturnSupStatus.Finished;
+        returnDoc.FinishedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã duyệt và thực hiện xuất kho trả hàng NCC {returnDoc.Code}. Đã ghi sổ phiếu xuất kho {stockDoc.Code}.");
+    }
+
+    public async Task CancelReturnToSupplierAsync(int id)
+    {
+        var returnDoc = await db.ReturnToSuppliers.FirstOrDefaultAsync(r => r.Id == id)
+            ?? throw new KeyNotFoundException("Không tìm thấy phiếu trả hàng nhà cung cấp.");
+        if (returnDoc.Status == ReturnSupStatus.Finished)
+            throw new InvalidOperationException("Không thể hủy phiếu trả hàng đã duyệt xuất kho.");
+
+        returnDoc.Status = ReturnSupStatus.Cancelled;
+        await db.SaveChangesAsync();
+    }
+
     public async Task<WmsDash> DashboardAsync()
     {
         var balances = await BalancesAsync(null);
@@ -490,7 +592,8 @@ public class WmsService(AppDbContext db) : IWmsService
             balances.Sum(b => b.Qty),
             balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock),
             await db.Audits.CountAsync(a => a.Status == StockAuditStatus.Draft),
-            await db.MoveOrders.CountAsync(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved));
+            await db.MoveOrders.CountAsync(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved),
+            await db.ReturnToSuppliers.CountAsync(r => r.Status == ReturnSupStatus.Draft));
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

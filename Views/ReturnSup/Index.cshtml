@@ -1,0 +1,87 @@
+@model List<ReturnToSupplier>
+@{
+    ViewData["Title"] = "Quản lý trả hàng NCC";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var curWhId = (int?)ViewBag.WarehouseId;
+    var curStatus = (ReturnSupStatus?)ViewBag.Status;
+}
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+            <select name="warehouseId" class="form-select form-select-sm" style="width:190px" onchange="this.form.submit()">
+                <option value="">— Kho xuất: Tất cả —</option>
+                @foreach (var w in whs)
+                {
+                    <option value="@w.Id" selected="@(curWhId == w.Id)">@w.Name</option>
+                }
+            </select>
+            <div class="btn-group btn-group-sm">
+                <a href="/ReturnSup@(curWhId.HasValue ? $"?warehouseId={curWhId}" : "")" class="btn @(!curStatus.HasValue ? "btn-primary" : "btn-outline-primary")">Tất cả</a>
+                <a href="/ReturnSup?status=0@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == ReturnSupStatus.Draft ? "btn-primary" : "btn-outline-primary")">Chờ duyệt</a>
+                <a href="/ReturnSup?status=1@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == ReturnSupStatus.Finished ? "btn-primary" : "btn-outline-primary")">Đã xuất trả</a>
+                <a href="/ReturnSup?status=2@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == ReturnSupStatus.Cancelled ? "btn-primary" : "btn-outline-primary")">Đã hủy</a>
+            </div>
+        </form>
+        <div>
+            <a href="/ReturnSup/Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>+ Lập phiếu trả hàng NCC</a>
+        </div>
+    </div>
+
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Số phiếu</th>
+                <th>Kho xuất trả</th>
+                <th>Nhà cung cấp</th>
+                <th>Phiếu nhập gốc</th>
+                <th>Ngày trả</th>
+                <th class="text-end">Tổng SL</th>
+                <th class="text-end">Tổng tiền hoàn lại</th>
+                <th>Phiếu xuất liên kết</th>
+                <th class="text-center">Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var r in Model)
+        {
+            var (stText, stCss) = Ui.ReturnSupStatusBadge(r.Status);
+            <tr style="cursor:pointer" onclick="location.href='/ReturnSup/Detail/@r.Id'">
+                <td class="fw-semibold text-primary">@r.Code</td>
+                <td><i class="bi bi-building me-1 text-muted"></i>@r.Warehouse.Name</td>
+                <td>
+                    <span class="fw-medium">@r.SupplierName</span>
+                    @if (!string.IsNullOrEmpty(r.SupplierCode))
+                    {
+                        <span class="text-muted small">(@r.SupplierCode)</span>
+                    }
+                </td>
+                <td class="small text-muted">@(string.IsNullOrEmpty(r.RefDocNo) ? "—" : r.RefDocNo)</td>
+                <td class="small text-muted">@r.Date.ToString("dd/MM/yyyy")</td>
+                <td class="text-end fw-bold text-dark">@r.TotalQty.ToString("N0")</td>
+                <td class="text-end fw-semibold text-danger">@r.TotalAmount.ToString("N0") đ</td>
+                <td>
+                    @if (r.StockDoc != null)
+                    {
+                        <span class="badge bg-light text-primary border" onclick="event.stopPropagation(); location.href='/Doc/Detail/@r.StockDocId'">
+                            <i class="bi bi-link-45deg me-1"></i>@r.StockDoc.Code
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="text-muted small">—</span>
+                    }
+                </td>
+                <td class="text-center"><span class="badge bg-@stCss">@stText</span></td>
+            </tr>
+        }
+        @if (Model.Count == 0)
+        {
+            <tr>
+                <td colspan="9" class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-3 d-block mb-1"></i>Chưa có phiếu xuất trả hàng nhà cung cấp nào.
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div></div>

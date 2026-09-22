@@ -381,3 +381,109 @@ public class OrgController(AppDbContext db) : Controller
         Response.Cookies.Append(TenantContext.CookieName, k, o); Response.Cookies.Append("org_name", n, o);
     }
 }
+
+public class ReturnSupController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, ReturnSupStatus? status)
+    {
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        return View(await svc.ReturnToSuppliersAsync(warehouseId, status));
+    }
+
+    public async Task<IActionResult> Create(int? warehouseId)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        var selectedWhId = warehouseId ?? whs.FirstOrDefault()?.Id ?? 0;
+        ViewBag.SelectedWarehouseId = selectedWhId;
+        ViewBag.Products = await svc.ProductsAsync();
+
+        var balances = selectedWhId > 0 ? await svc.BalancesAsync(selectedWhId) : new List<BalanceRow>();
+        ViewBag.Balances = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string supplierName, string? supplierCode, string? refDocNo, string? reason,
+        int[]? productId, int[]? qty, decimal[]? unitPrice, string[]? lineNote)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho xuất trả hàng.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (string.IsNullOrWhiteSpace(supplierName))
+        {
+            TempData["Error"] = "Vui lòng nhập tên nhà cung cấp.";
+            return RedirectToAction(nameof(Create), new { warehouseId });
+        }
+
+        var lines = new List<(int productId, int qty, decimal unitPrice, string? note)>();
+        for (int i = 0; productId != null && i < productId.Length; i++)
+        {
+            var pid = productId[i];
+            var q = (qty != null && i < qty.Length) ? qty[i] : 0;
+            var price = (unitPrice != null && i < unitPrice.Length) ? unitPrice[i] : 0m;
+            var lNote = (lineNote != null && i < lineNote.Length) ? lineNote[i] : null;
+            if (pid > 0 && q > 0) lines.Add((pid, q, price, lNote));
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 mặt hàng với số lượng > 0.";
+            return RedirectToAction(nameof(Create), new { warehouseId });
+        }
+
+        var returnDoc = new ReturnToSupplier
+        {
+            WarehouseId = warehouseId,
+            SupplierName = supplierName.Trim(),
+            SupplierCode = supplierCode?.Trim(),
+            RefDocNo = refDocNo?.Trim(),
+            Reason = reason?.Trim(),
+            CreatedBy = "web"
+        };
+
+        var id = await svc.CreateReturnToSupplierAsync(returnDoc, lines);
+        TempData["Success"] = "Đã lập phiếu xuất trả hàng NCC (Chờ duyệt). Bấm 'Duyệt & Xuất kho' để trừ tồn.";
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var doc = await svc.GetReturnToSupplierAsync(id);
+        if (doc == null) return NotFound();
+
+        var balances = await svc.BalancesAsync(doc.WarehouseId);
+        ViewBag.Balances = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        return View(doc);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApproveReturnToSupplierAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        try
+        {
+            await svc.CancelReturnToSupplierAsync(id);
+            TempData["Success"] = "Đã hủy phiếu trả hàng nhà cung cấp.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+}
+

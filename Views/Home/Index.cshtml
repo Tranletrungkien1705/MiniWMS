@@ -13,10 +13,12 @@
         <a href="/Doc/Create?type=1" class="btn btn-outline-primary"><i class="bi bi-box-arrow-up me-1"></i>Xuất kho</a>
         <a href="/Doc/Create?type=2" class="btn btn-outline-primary"><i class="bi bi-arrow-left-right me-1"></i>Chuyển kho</a>
         <a href="/MoveOrder" class="btn btn-outline-primary"><i class="bi bi-shuffle me-1"></i>Lệnh điều chuyển</a>
+        <a href="/ReturnSup" class="btn btn-outline-primary"><i class="bi bi-arrow-counterclockwise me-1"></i>Trả hàng NCC</a>
         <a href="/Audit" class="btn btn-outline-primary"><i class="bi bi-clipboard-check me-1"></i>Kiểm kê kho</a>
         <a href="/Inventory" class="btn btn-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
     </div>
     @if (d.DraftDocs > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.DraftDocs</b> phiếu Nháp chưa ghi sổ.</div> }
     @if (d.PendingAudits > 0) { <div class="alert alert-info mt-2 mb-0 small"><i class="bi bi-clipboard-check me-1"></i>Có <b>@d.PendingAudits</b> phiếu kiểm kê đang chờ xử lý / cân bằng kho. <a href="/Audit?status=0" class="fw-semibold">Xem ngay</a></div> }
     @if (d.PendingMoveOrders > 0) { <div class="alert alert-primary mt-2 mb-0 small"><i class="bi bi-shuffle me-1"></i>Có <b>@d.PendingMoveOrders</b> lệnh điều chuyển đang chờ duyệt / thực hiện. <a href="/MoveOrder" class="fw-semibold">Xem ngay</a></div> }
+    @if (d.PendingReturns > 0) { <div class="alert alert-warning mt-2 mb-0 small"><i class="bi bi-arrow-counterclockwise me-1"></i>Có <b>@d.PendingReturns</b> phiếu xuất trả hàng NCC đang chờ duyệt & xuất kho. <a href="/ReturnSup?status=0" class="fw-semibold">Xem ngay</a></div> }
 </div></div>

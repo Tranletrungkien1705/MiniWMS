@@ -13,6 +13,7 @@ public enum DocType { In = 0, Out = 1, Transfer = 2 }      // Nhập / Xuất / 
 public enum DocStatus { Draft = 0, Posted = 1, Cancelled = 2 }
 public enum StockAuditStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Đang kiểm kê / Đã cân bằng / Đã hủy
 public enum MoveOrderStatus { Pending = 0, Approved = 1, Finished = 2, Cancelled = 3 } // Chờ duyệt / Đã duyệt / Đã chuyển kho / Đã hủy
+public enum ReturnSupStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Chờ duyệt / Đã xuất trả / Đã hủy
 
 public class Warehouse : IOrgOwned
 {
@@ -181,5 +182,47 @@ public class MoveOrderLine : IOrgOwned
 
     public MoveOrder MoveOrder { get; set; } = null!;
     public Product Product { get; set; } = null!;
+}
+
+/// <summary>Phiếu xuất trả hàng nhà cung cấp (Return to Supplier - port từ InvF_InventoryReturnSup Skycic). Quản lý xuất trả hàng lỗi, hỏng, cận hạn hoặc đổi trả cho NCC.</summary>
+public class ReturnToSupplier : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public int WarehouseId { get; set; }         // Kho xuất trả hàng
+    public string SupplierName { get; set; } = ""; // Tên nhà cung cấp
+    public string? SupplierCode { get; set; }      // Mã NCC
+    public string? RefDocNo { get; set; }          // Số phiếu nhập kho hoặc hóa đơn mua gốc (IF_InvInNo)
+    public DateTime Date { get; set; } = DateTime.Now;
+    public string? Reason { get; set; }            // Lý do trả hàng (lỗi hàng, sai mẫu, hư hỏng, cận date...)
+    public string CreatedBy { get; set; } = "";
+    public ReturnSupStatus Status { get; set; } = ReturnSupStatus.Draft;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? FinishedAt { get; set; }
+    public int? StockDocId { get; set; }          // Phiếu xuất kho sinh ra khi hoàn tất xuất trả hàng
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<ReturnToSupplierLine> Lines { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Quantity);
+    public decimal TotalAmount => Lines.Sum(l => l.Quantity * l.UnitPrice);
+}
+
+public class ReturnToSupplierLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int ReturnToSupplierId { get; set; }
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }        // Đơn giá trả lại / giá mua
+    public string? Note { get; set; }             // Chi tiết tình trạng lỗi mặt hàng
+
+    public ReturnToSupplier ReturnToSupplier { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    public decimal Amount => Quantity * UnitPrice;
 }
 

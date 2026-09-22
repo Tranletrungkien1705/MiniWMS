@@ -33,11 +33,22 @@ public static class Ui
         MoveOrderStatus.Cancelled => ("Đã hủy", "dark"),
         _ => (s.ToString(), "secondary")
     };
+    public static (string text, string css) ReturnSupStatusBadge(ReturnSupStatus s) => s switch
+    {
+        ReturnSupStatus.Draft => ("Chờ duyệt", "warning text-dark"),
+        ReturnSupStatus.Finished => ("Đã xuất trả", "success"),
+        ReturnSupStatus.Cancelled => ("Đã hủy", "dark"),
+        _ => (s.ToString(), "secondary")
+    };
     public static (string text, string css) CardActionBadge(DocType t, string? refNo)
     {
         if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("KK", StringComparison.OrdinalIgnoreCase))
         {
             return t == DocType.In ? ("Kiểm kê (Thừa)", "primary") : ("Kiểm kê (Thiếu)", "warning text-dark");
+        }
+        if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("Xuất trả NCC", "danger");
         }
         return t switch
         {

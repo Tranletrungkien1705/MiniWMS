@@ -1,0 +1,227 @@
+@model ReturnToSupplier
+@{
+    ViewData["Title"] = $"Phiếu trả hàng NCC {Model.Code}";
+    var (stText, stCss) = Ui.ReturnSupStatusBadge(Model.Status);
+    var balMap = (Dictionary<int, int>)ViewBag.Balances;
+    bool allAvailable = true;
+}
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-1">
+                        @Model.Code
+                        <span class="badge bg-@stCss ms-1">@stText</span>
+                    </h5>
+                    <div class="text-muted small">
+                        <span>Kho xuất: <b class="text-dark">@Model.Warehouse.Name</b></span>
+                        <span class="mx-2">·</span>
+                        <span>Nhà cung cấp: <b class="text-primary">@Model.SupplierName</b></span>
+                        @if (!string.IsNullOrEmpty(Model.SupplierCode))
+                        {
+                            <span class="text-muted">(@Model.SupplierCode)</span>
+                        }
+                    </div>
+                    <div class="text-muted small mt-1">
+                        <span>Ngày lập: @Model.Date.ToString("dd/MM/yyyy")</span>
+                        @if (!string.IsNullOrEmpty(Model.RefDocNo))
+                        {
+                            <span class="mx-2">·</span>
+                            <span>Phiếu nhập tham chiếu: <b>@Model.RefDocNo</b></span>
+                        }
+                        @if (!string.IsNullOrEmpty(Model.CreatedBy))
+                        {
+                            <span class="mx-2">·</span>
+                            <span>Người lập: @Model.CreatedBy</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.Reason))
+                    {
+                        <div class="small text-muted mt-2 p-2 bg-light rounded">
+                            <i class="bi bi-chat-left-quote me-1 text-primary"></i><b>Lý do trả hàng:</b> @Model.Reason
+                        </div>
+                    }
+                </div>
+                <div class="text-end">
+                    <span class="text-muted small d-block">Trạng thái</span>
+                    <span class="badge bg-@stCss fs-6">@stText</span>
+                </div>
+            </div>
+
+            <!-- Quy trình xử lý phiếu xuất trả hàng NCC -->
+            <div class="p-3 bg-light rounded border mb-3">
+                <div class="row text-center g-2">
+                    <div class="col-6">
+                        <div class="p-2 rounded @(Model.Status != ReturnSupStatus.Cancelled ? "bg-white shadow-sm border" : "text-muted")">
+                            <div class="small fw-semibold text-secondary"><i class="bi bi-1-circle me-1"></i>Lập phiếu trả hàng</div>
+                            <div class="badge bg-secondary mt-1">Khởi tạo</div>
+                            <div class="small text-muted mt-1" style="font-size:11px">@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 rounded @(Model.Status == ReturnSupStatus.Finished ? "bg-white shadow-sm border" : "text-muted")">
+                            <div class="small fw-semibold @(Model.Status == ReturnSupStatus.Finished ? "text-success" : "text-muted")">
+                                <i class="bi bi-2-circle me-1"></i>Duyệt & Xuất kho trả NCC
+                            </div>
+                            @if (Model.FinishedAt.HasValue)
+                            {
+                                <div class="badge bg-success mt-1">Đã xuất trả</div>
+                                <div class="small text-muted mt-1" style="font-size:11px">@Model.FinishedAt.Value.ToString("dd/MM/yyyy HH:mm")</div>
+                            }
+                            else if (Model.Status == ReturnSupStatus.Cancelled)
+                            {
+                                <div class="badge bg-dark mt-1">Đã hủy</div>
+                            }
+                            else
+                            {
+                                <div class="badge bg-light text-muted border mt-1">Chờ duyệt</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="fw-bold mb-2">Chi tiết mặt hàng xuất trả</h6>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Mã hàng</th>
+                            <th>Tên mặt hàng</th>
+                            <th>ĐVT</th>
+                            <th class="text-end">SL xuất trả</th>
+                            <th class="text-end">Tồn kho hiện tại</th>
+                            <th class="text-end">Đơn giá trả</th>
+                            <th class="text-end">Thành tiền</th>
+                            <th>Chi tiết lỗi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var l in Model.Lines)
+                    {
+                        var have = balMap.TryGetValue(l.ProductId, out var h) ? h : 0;
+                        bool enough = have >= l.Quantity;
+                        if (!enough && Model.Status == ReturnSupStatus.Draft) allAvailable = false;
+                        <tr>
+                            <td class="font-monospace fw-semibold text-muted small">@l.Product.Code</td>
+                            <td class="fw-medium">@l.Product.Name</td>
+                            <td class="small text-muted">@l.Product.Uom</td>
+                            <td class="text-end fw-bold text-dark">@l.Quantity.ToString("N0")</td>
+                            <td class="text-end">
+                                @if (Model.Status == ReturnSupStatus.Draft)
+                                {
+                                    <span class="badge @(enough ? "bg-light text-dark border" : "bg-danger text-white")">
+                                        @have.ToString("N0")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
+                                }
+                            </td>
+                            <td class="text-end">@l.UnitPrice.ToString("N0") đ</td>
+                            <td class="text-end fw-semibold text-danger">@l.Amount.ToString("N0") đ</td>
+                            <td class="small text-muted">@(string.IsNullOrEmpty(l.Note) ? "—" : l.Note)</td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold bg-light">
+                            <td colspan="3" class="text-end">Tổng cộng:</td>
+                            <td class="text-end text-primary">@Model.TotalQty.ToString("N0")</td>
+                            <td></td>
+                            <td></td>
+                            <td class="text-end text-danger">@Model.TotalAmount.ToString("N0") đ</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            @if (!allAvailable && Model.Status == ReturnSupStatus.Draft)
+            {
+                <div class="alert alert-warning small mb-0 mt-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <b>Cảnh báo tồn kho:</b> Một số mặt hàng có số lượng trả lớn hơn tồn kho thực tế hiện có. Vui lòng kiểm tra lại trước khi duyệt.
+                </div>
+            }
+        </div></div>
+
+        <div class="d-flex gap-2">
+            <a href="/ReturnSup" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Quay lại danh sách</a>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-gear me-1 text-primary"></i>Thao tác xử lý</h6>
+
+            @if (Model.Status == ReturnSupStatus.Draft)
+            {
+                <div class="mb-3">
+                    <form asp-action="Approve" asp-route-id="@Model.Id" method="post" onsubmit="return confirm('Xác nhận duyệt và xuất kho trả hàng NCC? Thao tác này sẽ tự động sinh phiếu xuất kho và trừ tồn kho ngay lập tức.');">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-primary w-100 mb-2" @(!allAvailable ? "onclick=\"return confirm('Kho hiện không đủ tồn cho toàn bộ số lượng yêu cầu. Bạn có chắc muốn tiếp tục thử ghi sổ?')\"" : "")>
+                            <i class="bi bi-check-circle me-1"></i>Duyệt & Xuất kho trả NCC
+                        </button>
+                    </form>
+                    <div class="form-text small text-muted">
+                        Khi duyệt, hệ thống kiểm tra tồn kho tại <b>@Model.Warehouse.Name</b>, tự động sinh phiếu xuất kho (PX) và trừ tồn kho.
+                    </div>
+                </div>
+
+                <hr />
+                <form asp-action="Cancel" asp-route-id="@Model.Id" method="post" onsubmit="return confirm('Bạn có chắc muốn hủy phiếu trả hàng NCC này?');">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-outline-danger w-100 btn-sm">
+                        <i class="bi bi-x-circle me-1"></i>Hủy phiếu
+                    </button>
+                </form>
+            }
+            else if (Model.Status == ReturnSupStatus.Finished)
+            {
+                <div class="alert alert-success small mb-3">
+                    <i class="bi bi-check2-circle me-1"></i><b>Đã xuất kho hoàn tất.</b> Hàng hóa đã được trừ khỏi kho và phiếu xuất kho đã được ghi sổ thành công.
+                </div>
+                @if (Model.StockDoc != null)
+                {
+                    <div class="p-3 bg-light rounded border mb-3">
+                        <div class="small text-muted mb-1">Phiếu xuất kho liên kết:</div>
+                        <a href="/Doc/Detail/@Model.StockDocId" class="fw-bold fs-6 text-primary text-decoration-none">
+                            <i class="bi bi-box-arrow-up me-1"></i>@Model.StockDoc.Code
+                        </a>
+                        <div class="small text-muted mt-1">Trạng thái: <span class="badge bg-success">Đã ghi sổ</span></div>
+                    </div>
+                }
+            }
+            else if (Model.Status == ReturnSupStatus.Cancelled)
+            {
+                <div class="alert alert-secondary small mb-0">
+                    <i class="bi bi-slash-circle me-1"></i>Phiếu trả hàng này đã bị hủy.
+                </div>
+            }
+        </div></div>
+
+        <!-- Thông tin nhà cung cấp & tham chiếu -->
+        <div class="card"><div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-info-circle me-1 text-primary"></i>Thông tin chứng từ</h6>
+            <dl class="row mb-0 small">
+                <dt class="col-sm-5 text-muted">Mã phiếu:</dt>
+                <dd class="col-sm-7 fw-semibold">@Model.Code</dd>
+                <dt class="col-sm-5 text-muted">Kho xuất:</dt>
+                <dd class="col-sm-7">@Model.Warehouse.Name</dd>
+                <dt class="col-sm-5 text-muted">Nhà cung cấp:</dt>
+                <dd class="col-sm-7 fw-medium">@Model.SupplierName</dd>
+                <dt class="col-sm-5 text-muted">Mã NCC:</dt>
+                <dd class="col-sm-7">@(string.IsNullOrEmpty(Model.SupplierCode) ? "—" : Model.SupplierCode)</dd>
+                <dt class="col-sm-5 text-muted">Phiếu gốc:</dt>
+                <dd class="col-sm-7">@(string.IsNullOrEmpty(Model.RefDocNo) ? "—" : Model.RefDocNo)</dd>
+                <dt class="col-sm-5 text-muted">Tổng số lượng:</dt>
+                <dd class="col-sm-7 fw-bold text-dark">@Model.TotalQty.ToString("N0")</dd>
+                <dt class="col-sm-5 text-muted">Tổng tiền:</dt>
+                <dd class="col-sm-7 fw-bold text-danger">@Model.TotalAmount.ToString("N0") đ</dd>
+            </dl>
+        </div></div>
+    </div>
+</div>

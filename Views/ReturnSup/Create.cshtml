@@ -1,0 +1,179 @@
+@{
+    ViewData["Title"] = "Lập phiếu trả hàng NCC";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var products = (List<Product>)ViewBag.Products;
+    var selectedWhId = (int)ViewBag.SelectedWarehouseId;
+    var balMap = (Dictionary<int, int>)ViewBag.Balances;
+}
+<form asp-action="Create" method="post" id="returnSupForm">
+    @Html.AntiForgeryToken()
+    <div class="card mb-3"><div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-arrow-counterclockwise me-1 text-primary"></i>Thông tin phiếu xuất trả hàng nhà cung cấp (Return to Supplier)</h6>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho xuất trả hàng *</label>
+                <select name="warehouseId" id="whSelect" class="form-select" required onchange="onWhChange()">
+                    <option value="">— Chọn kho xuất trả —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWhId == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+                <div class="form-text">Tồn khả dụng sẽ hiển thị theo kho được chọn.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tên nhà cung cấp *</label>
+                <input name="supplierName" class="form-control" placeholder="Ví dụ: Công ty TNHH Vải Việt..." required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Mã NCC</label>
+                <input name="supplierCode" class="form-control" placeholder="NCC-001..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Số phiếu nhập gốc</label>
+                <input name="refDocNo" class="form-control" placeholder="PN260330-001..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Lý do trả hàng chung</label>
+                <input name="reason" class="form-control" placeholder="Hàng lỗi, cận hạn dùng..." />
+            </div>
+        </div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h6 class="fw-bold mb-0">Danh sách mặt hàng xuất trả</h6>
+                <div class="small text-muted">Chọn mặt hàng, nhập số lượng trả và đơn giá hoàn lại. Số lượng trả không được vượt quá tồn kho.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
+                <i class="bi bi-plus-lg me-1"></i>Thêm dòng hàng
+            </button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th style="width:30%">Mặt hàng *</th>
+                        <th class="text-end" style="width:12%">Tồn kho xuất</th>
+                        <th class="text-end" style="width:13%">SL trả *</th>
+                        <th class="text-end" style="width:15%">Đơn giá trả (đ)</th>
+                        <th class="text-end" style="width:15%">Thành tiền</th>
+                        <th style="width:12%">Chi tiết lỗi</th>
+                        <th style="width:3%" class="text-center"></th>
+                    </tr>
+                </thead>
+                <tbody id="linesBody">
+                    <tr>
+                        <td>
+                            <select name="productId" class="form-select form-select-sm prod-select" onchange="onProdChange(this)" required>
+                                <option value="">— Chọn mặt hàng —</option>
+                                @foreach (var p in products)
+                                {
+                                    <option value="@p.Id" data-code="@p.Code" data-uom="@p.Uom">@p.Name (@p.Code)</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="text-end text-muted small stock-cell">—</td>
+                        <td>
+                            <input type="number" name="qty" class="form-control form-control-sm text-end qty-input" min="1" value="1" required oninput="calcTotals()" />
+                        </td>
+                        <td>
+                            <input type="number" name="unitPrice" class="form-control form-control-sm text-end price-input" min="0" step="1000" value="0" oninput="calcTotals()" />
+                        </td>
+                        <td class="text-end fw-semibold line-amount">0 đ</td>
+                        <td>
+                            <input type="text" name="lineNote" class="form-control form-control-sm" placeholder="Mô tả lỗi..." />
+                        </td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-link btn-sm text-danger p-0" onclick="removeLine(this)"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr class="fw-bold bg-light">
+                        <td colspan="2" class="text-end">Tổng cộng:</td>
+                        <td class="text-end text-primary" id="totalQtySum">1</td>
+                        <td></td>
+                        <td class="text-end text-danger" id="totalAmountSum">0 đ</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <a href="/ReturnSup" class="btn btn-sm btn-outline-secondary">Hủy bỏ</a>
+            <button type="submit" class="btn btn-sm btn-primary px-4"><i class="bi bi-check-lg me-1"></i>Lập phiếu (Chờ duyệt)</button>
+        </div>
+    </div></div>
+</form>
+
+@section Scripts {
+<script>
+    const balances = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(balMap));
+
+    function onWhChange() {
+        const whId = document.getElementById('whSelect').value;
+        if (whId) {
+            location.href = `/ReturnSup/Create?warehouseId=${whId}`;
+        }
+    }
+
+    function onProdChange(sel) {
+        const row = sel.closest('tr');
+        const pid = parseInt(sel.value) || 0;
+        const stockCell = row.querySelector('.stock-cell');
+        const have = (pid && balances[pid] !== undefined) ? balances[pid] : 0;
+        stockCell.innerHTML = pid ? `<span class="badge ${have > 0 ? 'bg-light text-dark border' : 'bg-danger-subtle text-danger'}">${have.toLocaleString('vi-VN')}</span>` : '—';
+        calcTotals();
+    }
+
+    function removeLine(btn) {
+        const tbody = document.getElementById('linesBody');
+        if (tbody.children.length <= 1) {
+            alert('Phiếu cần ít nhất 1 dòng hàng.');
+            return;
+        }
+        btn.closest('tr').remove();
+        calcTotals();
+    }
+
+    function addLine() {
+        const tbody = document.getElementById('linesBody');
+        const first = tbody.querySelector('tr');
+        const clone = first.cloneNode(true);
+        clone.querySelector('.prod-select').value = '';
+        clone.querySelector('.stock-cell').innerHTML = '—';
+        clone.querySelector('.qty-input').value = '1';
+        clone.querySelector('.price-input').value = '0';
+        clone.querySelector('.line-amount').innerText = '0 đ';
+        clone.querySelector('input[name="lineNote"]').value = '';
+        tbody.appendChild(clone);
+        calcTotals();
+    }
+
+    function calcTotals() {
+        let totalQty = 0;
+        let totalAmount = 0;
+        document.querySelectorAll('#linesBody tr').forEach(row => {
+            const q = parseInt(row.querySelector('.qty-input').value) || 0;
+            const p = parseFloat(row.querySelector('.price-input').value) || 0;
+            const amt = q * p;
+            row.querySelector('.line-amount').innerText = amt.toLocaleString('vi-VN') + ' đ';
+            totalQty += q;
+            totalAmount += amt;
+        });
+        document.getElementById('totalQtySum').innerText = totalQty.toLocaleString('vi-VN');
+        document.getElementById('totalAmountSum').innerText = totalAmount.toLocaleString('vi-VN') + ' đ';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.prod-select').forEach(sel => {
+            if (sel.value) onProdChange(sel);
+        });
+        calcTotals();
+    });
+</script>
+}

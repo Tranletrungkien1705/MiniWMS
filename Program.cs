@@ -170,6 +170,99 @@ app.MapPost("/api/move-orders/{id:int}/cancel", async (int id, IWmsService svc) 
     }
 });
 
+// API Xuất trả hàng nhà cung cấp (Return to Supplier - port từ InvF_InventoryReturnSup Skycic)
+app.MapGet("/api/returns-to-supplier", async (int? warehouseId, ReturnSupStatus? status, IWmsService svc) =>
+    Results.Ok((await svc.ReturnToSuppliersAsync(warehouseId, status)).Select(r => new
+    {
+        r.Id,
+        r.Code,
+        Warehouse = r.Warehouse.Name,
+        r.WarehouseId,
+        r.SupplierName,
+        r.SupplierCode,
+        r.RefDocNo,
+        r.Date,
+        Status = r.Status.ToString(),
+        r.TotalQty,
+        r.TotalAmount,
+        r.StockDocId,
+        StockDocCode = r.StockDoc?.Code,
+        r.Reason,
+        r.CreatedBy,
+        r.CreatedAt,
+        r.FinishedAt,
+        Lines = r.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.UnitPrice, l.Amount, l.Note })
+    })));
+
+app.MapGet("/api/returns-to-supplier/{id:int}", async (int id, IWmsService svc) =>
+{
+    var r = await svc.GetReturnToSupplierAsync(id);
+    if (r == null) return Results.NotFound(new { error = "Không tìm thấy phiếu trả hàng nhà cung cấp." });
+    return Results.Ok(new
+    {
+        r.Id,
+        r.Code,
+        Warehouse = r.Warehouse.Name,
+        r.WarehouseId,
+        r.SupplierName,
+        r.SupplierCode,
+        r.RefDocNo,
+        r.Date,
+        Status = r.Status.ToString(),
+        r.TotalQty,
+        r.TotalAmount,
+        r.StockDocId,
+        StockDocCode = r.StockDoc?.Code,
+        r.Reason,
+        r.CreatedBy,
+        r.CreatedAt,
+        r.FinishedAt,
+        Lines = r.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.UnitPrice, l.Amount, l.Note })
+    });
+});
+
+app.MapPost("/api/returns-to-supplier", async (CreateReturnSupDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0)
+        return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.SupplierName))
+        return Results.BadRequest(new { error = "Cần SupplierName." });
+    if (dto.Lines == null || dto.Lines.Count == 0)
+        return Results.BadRequest(new { error = "Cần ít nhất 1 mặt hàng xuất trả." });
+
+    var returnDoc = new ReturnToSupplier
+    {
+        WarehouseId = dto.WarehouseId,
+        SupplierName = dto.SupplierName.Trim(),
+        SupplierCode = dto.SupplierCode?.Trim(),
+        RefDocNo = dto.RefDocNo?.Trim(),
+        Reason = dto.Reason?.Trim(),
+        CreatedBy = "api"
+    };
+    var lines = dto.Lines.Select(l => (l.ProductId, l.Quantity, l.UnitPrice, l.Note)).ToList();
+    var id = await svc.CreateReturnToSupplierAsync(returnDoc, lines);
+    return Results.Ok(new { id, code = returnDoc.Code, status = returnDoc.Status.ToString() });
+});
+
+app.MapPost("/api/returns-to-supplier/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveReturnToSupplierAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/returns-to-supplier/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    try
+    {
+        await svc.CancelReturnToSupplierAsync(id);
+        return Results.Ok(new { success = true, message = "Đã hủy phiếu trả hàng NCC." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -184,3 +277,5 @@ app.Run();
 record RegisterOrgDto(string Name);
 record CreateMoveOrderDto(int FromWarehouseId, int ToWarehouseId, string? Note, List<MoveOrderItemDto> Lines);
 record MoveOrderItemDto(int ProductId, int Quantity, string? Note);
+record CreateReturnSupDto(int WarehouseId, string SupplierName, string? SupplierCode, string? RefDocNo, string? Reason, List<ReturnSupItemDto> Lines);
+record ReturnSupItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);

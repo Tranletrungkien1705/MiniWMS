@@ -163,13 +163,81 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.ReturnToSuppliers.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+
+            if (hn.HasValue && ao.HasValue)
+            {
+                // Phiếu xuất kho cho hàng xuất trả SEED01
+                var pxReturn = new StockDoc
+                {
+                    Type = DocType.Out,
+                    FromWarehouseId = hn.Value,
+                    Code = "PXSEED-002",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-1),
+                    RefNo = "THNCC-SEED01",
+                    Note = "Xuất trả hàng NCC Tổng Công ty May 10 theo phiếu THNCC-SEED01: Lỗi đường may bung chỉ",
+                    CreatedBy = "seed"
+                };
+                pxReturn.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 5 });
+                db.Docs.Add(pxReturn);
+                await db.SaveChangesAsync();
+
+                // Phiếu trả hàng NCC 1: Đã duyệt & xuất kho
+                var retDone = new ReturnToSupplier
+                {
+                    Code = "THNCC-SEED01",
+                    WarehouseId = hn.Value,
+                    SupplierName = "Tổng Công ty May 10",
+                    SupplierCode = "NCC-MAY10",
+                    RefDocNo = "PNSEED-001",
+                    Reason = "Lỗi đường may bung chỉ ở cổ áo",
+                    Status = ReturnSupStatus.Finished,
+                    Date = DateTime.Now.AddDays(-1),
+                    CreatedAt = DateTime.Now.AddDays(-1),
+                    FinishedAt = DateTime.Now.AddDays(-1),
+                    StockDocId = pxReturn.Id,
+                    CreatedBy = "seed"
+                };
+                retDone.Lines.Add(new ReturnToSupplierLine { ProductId = ao.Value, Quantity = 5, UnitPrice = 180000m, Note = "5 áo size L bung đường chỉ vai" });
+                db.ReturnToSuppliers.Add(retDone);
+
+                // Phiếu trả hàng NCC 2: Chờ duyệt (Draft)
+                if (pk.HasValue)
+                {
+                    var retDraft = new ReturnToSupplier
+                    {
+                        Code = "THNCC-SEED02",
+                        WarehouseId = hn.Value,
+                        SupplierName = "Xưởng Da Thật Hà Nội",
+                        SupplierCode = "NCC-DAHN",
+                        RefDocNo = "HD-9921",
+                        Reason = "Trầy xước mặt khóa kim loại khi kiểm nhận",
+                        Status = ReturnSupStatus.Draft,
+                        Date = DateTime.Now,
+                        CreatedAt = DateTime.Now,
+                        CreatedBy = "seed"
+                    };
+                    retDraft.Lines.Add(new ReturnToSupplierLine { ProductId = pk.Value, Quantity = 3, UnitPrice = 250000m, Note = "Mặt khóa trầy xước không đạt chuẩn xuất bán" });
+                    db.ReturnToSuppliers.Add(retDraft);
+                }
+
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -212,6 +280,36 @@ public static class Seeder
                 ""Note"" TEXT NULL,
                 CONSTRAINT ""FK_MoveOrderLines_MoveOrders_MoveOrderId"" FOREIGN KEY (""MoveOrderId"") REFERENCES ""MoveOrders"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_MoveOrderLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE TABLE IF NOT EXISTS ""ReturnToSuppliers"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""SupplierName"" TEXT NOT NULL,
+                ""SupplierCode"" TEXT NULL,
+                ""RefDocNo"" TEXT NULL,
+                ""Date"" TEXT NOT NULL,
+                ""Reason"" TEXT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""Status"" INTEGER NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""FinishedAt"" TEXT NULL,
+                ""StockDocId"" INTEGER NULL,
+                CONSTRAINT ""FK_ReturnToSuppliers_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_ReturnToSuppliers_Docs_StockDocId"" FOREIGN KEY (""StockDocId"") REFERENCES ""Docs"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ReturnToSuppliers_OrgId_Code"" ON ""ReturnToSuppliers"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""ReturnToSupplierLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""ReturnToSupplierId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""Quantity"" INTEGER NOT NULL,
+                ""UnitPrice"" TEXT NOT NULL DEFAULT '0',
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_ReturnToSupplierLines_ReturnToSuppliers_ReturnToSupplierId"" FOREIGN KEY (""ReturnToSupplierId"") REFERENCES ""ReturnToSuppliers"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_ReturnToSupplierLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );"
         };
         foreach (var s in sql)
