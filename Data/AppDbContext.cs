@@ -15,6 +15,8 @@ public class AppDbContext : DbContext
     public DbSet<StockDocLine> DocLines => Set<StockDocLine>();
     public DbSet<StockAudit> Audits => Set<StockAudit>();
     public DbSet<StockAuditLine> AuditLines => Set<StockAuditLine>();
+    public DbSet<MoveOrder> MoveOrders => Set<MoveOrder>();
+    public DbSet<MoveOrderLine> MoveOrderLines => Set<MoveOrderLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -51,6 +53,21 @@ public class AppDbContext : DbContext
         {
             e.Ignore(x => x.DiffQty);
             e.HasOne(x => x.Audit).WithMany(x => x.Lines).HasForeignKey(x => x.AuditId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<MoveOrder>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.Ignore(x => x.TotalQty);
+            e.HasOne(x => x.FromWarehouse).WithMany().HasForeignKey(x => x.FromWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ToWarehouse).WithMany().HasForeignKey(x => x.ToWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.StockDoc).WithMany().HasForeignKey(x => x.StockDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<MoveOrderLine>(e =>
+        {
+            e.HasOne(x => x.MoveOrder).WithMany(x => x.Lines).HasForeignKey(x => x.MoveOrderId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });

@@ -1,0 +1,235 @@
+@model MoveOrder
+@{
+    ViewData["Title"] = $"Lệnh điều chuyển {Model.Code}";
+    var (stText, stCss) = Ui.MoveOrderStatusBadge(Model.Status);
+    var balMap = (Dictionary<int, int>)ViewBag.Balances;
+    bool allAvailable = true;
+}
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+                <div>
+                    <h5 class="fw-bold mb-1">
+                        @Model.Code
+                        <span class="badge bg-@stCss ms-1">@stText</span>
+                    </h5>
+                    <div class="text-muted small">
+                        <span>Từ kho: <b class="text-dark">@Model.FromWarehouse.Name</b></span>
+                        <i class="bi bi-arrow-right mx-1 text-primary"></i>
+                        <span>Đến kho: <b class="text-dark">@Model.ToWarehouse.Name</b></span>
+                        · Ngày lập: @Model.Date.ToString("dd/MM/yyyy HH:mm")
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.CreatedBy))
+                    {
+                        <div class="small text-muted mt-1"><i class="bi bi-person me-1"></i>Người lập: @Model.CreatedBy</div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Note))
+                    {
+                        <div class="small text-muted mt-1"><i class="bi bi-chat-left-text me-1"></i>Lý do / Ghi chú: @Model.Note</div>
+                    }
+                </div>
+                <div class="text-end">
+                    <span class="text-muted small d-block">Trạng thái</span>
+                    <span class="badge bg-@stCss fs-6">@stText</span>
+                </div>
+            </div>
+
+            <!-- Tiến trình điều chuyển (Workflow Stepper) -->
+            <div class="p-3 bg-light rounded border mb-3">
+                <div class="row text-center g-2">
+                    <div class="col-4">
+                        <div class="p-2 rounded @(Model.Status >= MoveOrderStatus.Pending && Model.Status != MoveOrderStatus.Cancelled ? "bg-white shadow-sm border" : "text-muted")">
+                            <div class="small fw-semibold text-secondary"><i class="bi bi-1-circle me-1"></i>Lập lệnh</div>
+                            <div class="badge bg-secondary mt-1">Khởi tạo</div>
+                            <div class="small text-muted mt-1" style="font-size:11px">@Model.CreatedAt.ToString("dd/MM HH:mm")</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-2 rounded @(Model.Status >= MoveOrderStatus.Approved && Model.Status != MoveOrderStatus.Cancelled ? "bg-white shadow-sm border" : "text-muted")">
+                            <div class="small fw-semibold @(Model.Status >= MoveOrderStatus.Approved && Model.Status != MoveOrderStatus.Cancelled ? "text-primary" : "text-muted")">
+                                <i class="bi bi-2-circle me-1"></i>Phê duyệt
+                            </div>
+                            @if (Model.ApprovedAt.HasValue)
+                            {
+                                <div class="badge bg-primary mt-1">Đã duyệt</div>
+                                <div class="small text-muted mt-1" style="font-size:11px">@Model.ApprovedAt.Value.ToString("dd/MM HH:mm")</div>
+                            }
+                            else
+                            {
+                                <div class="badge bg-light text-muted border mt-1">Chờ duyệt</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-2 rounded @(Model.Status == MoveOrderStatus.Finished ? "bg-white shadow-sm border" : "text-muted")">
+                            <div class="small fw-semibold @(Model.Status == MoveOrderStatus.Finished ? "text-success" : "text-muted")">
+                                <i class="bi bi-3-circle me-1"></i>Chuyển kho
+                            </div>
+                            @if (Model.FinishedAt.HasValue)
+                            {
+                                <div class="badge bg-success mt-1">Đã hoàn thành</div>
+                                <div class="small text-muted mt-1" style="font-size:11px">@Model.FinishedAt.Value.ToString("dd/MM HH:mm")</div>
+                            }
+                            else
+                            {
+                                <div class="badge bg-light text-muted border mt-1">Chưa chuyển</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="fw-bold mb-2">Chi tiết mặt hàng điều chuyển</h6>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Mã hàng</th>
+                            <th>Tên mặt hàng</th>
+                            <th>ĐVT</th>
+                            <th class="text-end">Tồn kho xuất</th>
+                            <th class="text-end">SL chuyển</th>
+                            <th class="text-center">Tồn khả dụng</th>
+                            <th>Ghi chú</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var l in Model.Lines)
+                    {
+                        balMap.TryGetValue(l.ProductId, out var avail);
+                        bool enough = avail >= l.Quantity;
+                        if (!enough) allAvailable = false;
+                        <tr>
+                            <td class="fw-semibold">@l.Product.Code</td>
+                            <td>@l.Product.Name</td>
+                            <td><span class="badge bg-light text-secondary border">@l.Product.Uom</span></td>
+                            <td class="text-end fw-semibold">@avail.ToString("N0")</td>
+                            <td class="text-end fw-bold text-dark">@l.Quantity.ToString("N0")</td>
+                            <td class="text-center">
+                                @if (enough)
+                                {
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check me-1"></i>Đủ hàng</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-exclamation me-1"></i>Thiếu tồn</span>
+                                }
+                            </td>
+                            <td class="small text-muted">@(string.IsNullOrEmpty(l.Note) ? "—" : l.Note)</td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td colspan="4" class="text-end">Tổng số lượng chuyển:</td>
+                            <td class="text-end text-primary fs-6">@Model.TotalQty.ToString("N0")</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            @if (Model.StockDoc != null)
+            {
+                <div class="p-3 bg-light rounded border mt-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <div class="fw-semibold text-dark"><i class="bi bi-link-45deg text-primary me-1"></i>Phiếu kho chuyển hàng tự động sinh:</div>
+                            <div class="small text-muted">Mã phiếu: <b>@Model.StockDoc.Code</b> · Ngày ghi sổ: @Model.StockDoc.Date.ToString("dd/MM/yyyy HH:mm")</div>
+                        </div>
+                        <a href="/Doc/Detail/@Model.StockDocId" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Xem phiếu kho chuyển
+                        </a>
+                    </div>
+                </div>
+            }
+        </div></div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3"><div class="card-body">
+            <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1 text-primary"></i>Thao tác xử lý</h6>
+
+            @if (Model.Status == MoveOrderStatus.Pending)
+            {
+                <div class="alert alert-warning small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>Lệnh đang <b>Chờ duyệt</b>. Vui lòng kiểm tra số lượng và tồn kho xuất trước khi phê duyệt.
+                </div>
+                <form asp-action="Approve" asp-route-id="@Model.Id" method="post" class="mb-2">
+                    @Html.AntiForgeryToken()
+                    <button class="btn btn-primary w-100 mb-2" onclick="return confirm('Xác nhận phê duyệt lệnh điều chuyển này?')">
+                        <i class="bi bi-check2-circle me-1"></i>Phê duyệt lệnh
+                    </button>
+                </form>
+                <form asp-action="Cancel" asp-route-id="@Model.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <button class="btn btn-outline-danger w-100" onclick="return confirm('Xác nhận hủy lệnh điều chuyển này?')">
+                        <i class="bi bi-x-circle me-1"></i>Hủy lệnh
+                    </button>
+                </form>
+            }
+            else if (Model.Status == MoveOrderStatus.Approved)
+            {
+                <div class="alert alert-info small mb-3">
+                    <i class="bi bi-check-circle me-1"></i>Lệnh đã được <b>Phê duyệt</b>. Bấm "Thực hiện chuyển kho" để tự động sinh phiếu xuất/nhập chuyển kho và cập nhật tồn.
+                </div>
+                @if (!allAvailable)
+                {
+                    <div class="alert alert-danger small mb-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Cảnh báo: Tồn kho xuất hiện tại không đủ cho một số mặt hàng!
+                    </div>
+                }
+                <form asp-action="Execute" asp-route-id="@Model.Id" method="post" class="mb-2">
+                    @Html.AntiForgeryToken()
+                    <button class="btn btn-success w-100 mb-2" onclick="return confirm('Xác nhận thực hiện chuyển kho? Phiếu chuyển kho sẽ tự động được sinh và ghi sổ.')">
+                        <i class="bi bi-arrow-left-right me-1"></i>Thực hiện chuyển kho (Ghi sổ)
+                    </button>
+                </form>
+                <form asp-action="Cancel" asp-route-id="@Model.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <button class="btn btn-outline-danger w-100" onclick="return confirm('Xác nhận hủy lệnh điều chuyển này?')">
+                        <i class="bi bi-x-circle me-1"></i>Hủy lệnh
+                    </button>
+                </form>
+            }
+            else if (Model.Status == MoveOrderStatus.Finished)
+            {
+                <div class="alert alert-success small mb-3">
+                    <i class="bi bi-check-circle-fill me-1"></i>Lệnh điều chuyển đã <b>Hoàn tất</b>. Tồn kho đã được trừ ở kho xuất và cộng vào kho nhận.
+                </div>
+            }
+            else if (Model.Status == MoveOrderStatus.Cancelled)
+            {
+                <div class="alert alert-secondary small mb-3">
+                    <i class="bi bi-slash-circle me-1"></i>Lệnh điều chuyển đã bị <b>Hủy</b>. Không thể thao tác thêm.
+                </div>
+            }
+
+            <hr />
+            <a href="/MoveOrder" class="btn btn-outline-secondary w-100">
+                <i class="bi bi-arrow-left me-1"></i>Quay lại danh sách lệnh
+            </a>
+        </div></div>
+
+        <div class="card"><div class="card-body">
+            <h6 class="fw-bold mb-2"><i class="bi bi-info-circle me-1 text-primary"></i>Thông tin chuyển kho</h6>
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+                <span class="text-muted">Kho xuất chuyển</span>
+                <span class="fw-semibold">@Model.FromWarehouse.Name</span>
+            </div>
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+                <span class="text-muted">Kho nhận chuyển</span>
+                <span class="fw-semibold">@Model.ToWarehouse.Name</span>
+            </div>
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+                <span class="text-muted">Số mặt hàng</span>
+                <span class="fw-semibold">@Model.Lines.Count</span>
+            </div>
+            <div class="d-flex justify-content-between py-1 small">
+                <span class="text-muted">Tổng số lượng</span>
+                <span class="fw-bold text-dark">@Model.TotalQty.ToString("N0")</span>
+            </div>
+        </div></div>
+    </div>
+</div>

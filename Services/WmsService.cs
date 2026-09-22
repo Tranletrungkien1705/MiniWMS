@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders);
 
 public interface IWmsService
 {
@@ -23,6 +23,12 @@ public interface IWmsService
     Task<int> CreateAuditAsync(StockAudit audit, List<(int productId, int qtyInit, int qtyActual, string? note)> lines);
     Task<(bool ok, string msg)> BalanceAuditAsync(int id);
     Task CancelAuditAsync(int id);
+    Task<List<MoveOrder>> MoveOrdersAsync(int? fromWhId, int? toWhId, MoveOrderStatus? status);
+    Task<MoveOrder?> GetMoveOrderAsync(int id);
+    Task<int> CreateMoveOrderAsync(MoveOrder order, List<(int productId, int qty, string? note)> lines);
+    Task<(bool ok, string msg)> ApproveMoveOrderAsync(int id);
+    Task<(bool ok, string msg)> ExecuteMoveOrderAsync(int id);
+    Task CancelMoveOrderAsync(int id);
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<WmsDash> DashboardAsync();
@@ -353,6 +359,126 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
+    public async Task<List<MoveOrder>> MoveOrdersAsync(int? fromWhId, int? toWhId, MoveOrderStatus? status)
+    {
+        var q = db.MoveOrders
+            .Include(m => m.FromWarehouse)
+            .Include(m => m.ToWarehouse)
+            .Include(m => m.StockDoc)
+            .Include(m => m.Lines).ThenInclude(l => l.Product)
+            .AsQueryable();
+
+        if (fromWhId.HasValue) q = q.Where(m => m.FromWarehouseId == fromWhId.Value);
+        if (toWhId.HasValue) q = q.Where(m => m.ToWarehouseId == toWhId.Value);
+        if (status.HasValue) q = q.Where(m => m.Status == status.Value);
+
+        var list = await q.ToListAsync();
+        return list.OrderByDescending(m => m.CreatedAt).ToList();
+    }
+
+    public Task<MoveOrder?> GetMoveOrderAsync(int id) =>
+        db.MoveOrders
+            .Include(m => m.FromWarehouse)
+            .Include(m => m.ToWarehouse)
+            .Include(m => m.StockDoc)
+            .Include(m => m.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(m => m.Id == id);
+
+    public async Task<int> CreateMoveOrderAsync(MoveOrder order, List<(int productId, int qty, string? note)> lines)
+    {
+        if (order.FromWarehouseId == order.ToWarehouseId)
+            throw new InvalidOperationException("Kho xuất chuyển và kho nhận chuyển phải khác nhau.");
+
+        order.Code = $"MO{DateTime.Now:yyMMdd}-{await db.MoveOrders.CountAsync() + 1:D3}";
+        order.Status = MoveOrderStatus.Pending;
+        foreach (var (pid, qty, note) in lines.Where(l => l.productId > 0 && l.qty > 0))
+            order.Lines.Add(new MoveOrderLine { ProductId = pid, Quantity = qty, Note = note });
+
+        db.MoveOrders.Add(order);
+        await db.SaveChangesAsync();
+        return order.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ApproveMoveOrderAsync(int id)
+    {
+        var order = await db.MoveOrders
+            .Include(m => m.FromWarehouse)
+            .Include(m => m.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(m => m.Id == id);
+
+        if (order == null) return (false, "Không tìm thấy lệnh điều chuyển.");
+        if (order.Status != MoveOrderStatus.Pending) return (false, "Lệnh không ở trạng thái Chờ duyệt.");
+        if (order.Lines.Count == 0) return (false, "Lệnh chưa có danh sách mặt hàng.");
+
+        // Kiểm tra tồn kho tại kho xuất
+        var balances = await BalancesAsync(order.FromWarehouseId);
+        var balDict = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        foreach (var line in order.Lines)
+        {
+            balDict.TryGetValue(line.ProductId, out var available);
+            if (line.Quantity > available)
+            {
+                return (false, $"Kho xuất '{order.FromWarehouse.Name}' không đủ tồn cho '{line.Product.Name}': yêu cầu {line.Quantity}, hiện có {available}.");
+            }
+        }
+
+        order.Status = MoveOrderStatus.Approved;
+        order.ApprovedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã phê duyệt lệnh điều chuyển {order.Code}. Sẵn sàng thực hiện chuyển hàng.");
+    }
+
+    public async Task<(bool ok, string msg)> ExecuteMoveOrderAsync(int id)
+    {
+        var order = await db.MoveOrders
+            .Include(m => m.FromWarehouse)
+            .Include(m => m.ToWarehouse)
+            .Include(m => m.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(m => m.Id == id);
+
+        if (order == null) return (false, "Không tìm thấy lệnh điều chuyển.");
+        if (order.Status == MoveOrderStatus.Finished) return (false, "Lệnh điều chuyển đã được thực hiện trước đó.");
+        if (order.Status == MoveOrderStatus.Cancelled) return (false, "Lệnh điều chuyển đã bị hủy.");
+        if (order.Lines.Count == 0) return (false, "Lệnh chưa có danh sách mặt hàng.");
+
+        // Tự động sinh phiếu chuyển kho StockDoc (DocType.Transfer)
+        var transferDoc = new StockDoc
+        {
+            Type = DocType.Transfer,
+            FromWarehouseId = order.FromWarehouseId,
+            ToWarehouseId = order.ToWarehouseId,
+            RefNo = order.Code,
+            Note = $"Thực hiện theo Lệnh điều chuyển {order.Code}" + (string.IsNullOrWhiteSpace(order.Note) ? "" : $": {order.Note}"),
+            CreatedBy = string.IsNullOrWhiteSpace(order.CreatedBy) ? "move-order" : order.CreatedBy
+        };
+
+        var docLines = order.Lines.Select(l => (l.ProductId, l.Quantity)).ToList();
+        var docId = await CreateDocAsync(transferDoc, docLines);
+
+        // Ghi sổ phiếu chuyển kho để trừ tồn kho xuất và tăng tồn kho nhập
+        var (postOk, postMsg) = await PostDocAsync(docId);
+        if (!postOk) return (false, $"Lỗi ghi sổ phiếu chuyển kho: {postMsg}");
+
+        order.StockDocId = docId;
+        order.Status = MoveOrderStatus.Finished;
+        order.FinishedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã thực hiện thành công Lệnh điều chuyển {order.Code}. Đã ghi sổ phiếu chuyển kho {transferDoc.Code}.");
+    }
+
+    public async Task CancelMoveOrderAsync(int id)
+    {
+        var order = await db.MoveOrders.FirstOrDefaultAsync(m => m.Id == id)
+            ?? throw new KeyNotFoundException("Không tìm thấy lệnh điều chuyển.");
+        if (order.Status == MoveOrderStatus.Finished)
+            throw new InvalidOperationException("Không thể hủy lệnh điều chuyển đã hoàn thành.");
+
+        order.Status = MoveOrderStatus.Cancelled;
+        await db.SaveChangesAsync();
+    }
+
     public async Task<WmsDash> DashboardAsync()
     {
         var balances = await BalancesAsync(null);
@@ -363,7 +489,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.Docs.CountAsync(d => d.Status == DocStatus.Draft),
             balances.Sum(b => b.Qty),
             balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock),
-            await db.Audits.CountAsync(a => a.Status == StockAuditStatus.Draft));
+            await db.Audits.CountAsync(a => a.Status == StockAuditStatus.Draft),
+            await db.MoveOrders.CountAsync(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved));
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

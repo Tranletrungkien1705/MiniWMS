@@ -12,6 +12,7 @@ public interface IOrgOwned { Guid OrgId { get; set; } }
 public enum DocType { In = 0, Out = 1, Transfer = 2 }      // Nhập / Xuất / Chuyển kho
 public enum DocStatus { Draft = 0, Posted = 1, Cancelled = 2 }
 public enum StockAuditStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Đang kiểm kê / Đã cân bằng / Đã hủy
+public enum MoveOrderStatus { Pending = 0, Approved = 1, Finished = 2, Cancelled = 3 } // Chờ duyệt / Đã duyệt / Đã chuyển kho / Đã hủy
 
 public class Warehouse : IOrgOwned
 {
@@ -142,4 +143,43 @@ public record WarehouseCardReport(
     int ClosingBalance,
     List<WarehouseCardRow> Rows
 );
+
+/// <summary>Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic). Quản lý quy trình yêu cầu, phê duyệt và thực hiện chuyển kho.</summary>
+public class MoveOrder : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public int FromWarehouseId { get; set; }   // Kho xuất chuyển
+    public int ToWarehouseId { get; set; }     // Kho nhận chuyển
+    public DateTime Date { get; set; } = DateTime.Now;
+    public string? Note { get; set; }
+    public string CreatedBy { get; set; } = "";
+    public MoveOrderStatus Status { get; set; } = MoveOrderStatus.Pending;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+
+    public int? StockDocId { get; set; }       // Phiếu kho chuyển hàng được sinh khi thực hiện lệnh
+
+    public Warehouse FromWarehouse { get; set; } = null!;
+    public Warehouse ToWarehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<MoveOrderLine> Lines { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Quantity);
+}
+
+public class MoveOrderLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int MoveOrderId { get; set; }
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+    public string? Note { get; set; }
+
+    public MoveOrder MoveOrder { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
 

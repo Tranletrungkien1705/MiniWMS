@@ -75,6 +75,101 @@ app.MapGet("/api/warehouse-card", async (int productId, int? warehouseId, DateTi
     }
 });
 
+// API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
+app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>
+    Results.Ok((await svc.MoveOrdersAsync(fromWhId, toWhId, status)).Select(m => new
+    {
+        m.Id,
+        m.Code,
+        FromWarehouse = m.FromWarehouse.Name,
+        m.FromWarehouseId,
+        ToWarehouse = m.ToWarehouse.Name,
+        m.ToWarehouseId,
+        m.Date,
+        Status = m.Status.ToString(),
+        m.TotalQty,
+        m.StockDocId,
+        StockDocCode = m.StockDoc?.Code,
+        m.Note,
+        m.CreatedBy,
+        m.CreatedAt,
+        m.ApprovedAt,
+        m.FinishedAt,
+        Lines = m.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.Note })
+    })));
+
+app.MapGet("/api/move-orders/{id:int}", async (int id, IWmsService svc) =>
+{
+    var m = await svc.GetMoveOrderAsync(id);
+    if (m == null) return Results.NotFound(new { error = "Không tìm thấy lệnh điều chuyển." });
+    return Results.Ok(new
+    {
+        m.Id,
+        m.Code,
+        FromWarehouse = m.FromWarehouse.Name,
+        m.FromWarehouseId,
+        ToWarehouse = m.ToWarehouse.Name,
+        m.ToWarehouseId,
+        m.Date,
+        Status = m.Status.ToString(),
+        m.TotalQty,
+        m.StockDocId,
+        StockDocCode = m.StockDoc?.Code,
+        m.Note,
+        m.CreatedBy,
+        m.CreatedAt,
+        m.ApprovedAt,
+        m.FinishedAt,
+        Lines = m.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.Note })
+    });
+});
+
+app.MapPost("/api/move-orders", async (CreateMoveOrderDto dto, IWmsService svc) =>
+{
+    if (dto.FromWarehouseId <= 0 || dto.ToWarehouseId <= 0)
+        return Results.BadRequest(new { error = "Cần FromWarehouseId và ToWarehouseId." });
+    if (dto.FromWarehouseId == dto.ToWarehouseId)
+        return Results.BadRequest(new { error = "Kho xuất và kho nhập phải khác nhau." });
+    if (dto.Lines == null || dto.Lines.Count == 0)
+        return Results.BadRequest(new { error = "Cần ít nhất 1 dòng hàng." });
+
+    var order = new MoveOrder
+    {
+        FromWarehouseId = dto.FromWarehouseId,
+        ToWarehouseId = dto.ToWarehouseId,
+        Note = dto.Note,
+        CreatedBy = "api"
+    };
+    var lines = dto.Lines.Select(l => (l.ProductId, l.Quantity, l.Note)).ToList();
+    var id = await svc.CreateMoveOrderAsync(order, lines);
+    return Results.Ok(new { id, code = order.Code, status = order.Status.ToString() });
+});
+
+app.MapPost("/api/move-orders/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveMoveOrderAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/move-orders/{id:int}/execute", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ExecuteMoveOrderAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/move-orders/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    try
+    {
+        await svc.CancelMoveOrderAsync(id);
+        return Results.Ok(new { success = true, message = "Đã hủy lệnh điều chuyển." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -87,3 +182,5 @@ app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Inde
 app.Run();
 
 record RegisterOrgDto(string Name);
+record CreateMoveOrderDto(int FromWarehouseId, int ToWarehouseId, string? Note, List<MoveOrderItemDto> Lines);
+record MoveOrderItemDto(int ProductId, int Quantity, string? Note);

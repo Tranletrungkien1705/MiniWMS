@@ -1,0 +1,167 @@
+@{
+    ViewData["Title"] = "Lập lệnh điều chuyển kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var products = (List<Product>)ViewBag.Products;
+    var fWh = (int)ViewBag.FromWarehouseId;
+    var tWh = (int)ViewBag.ToWarehouseId;
+    var balMap = (Dictionary<int, int>)ViewBag.Balances;
+}
+<form asp-action="Create" method="post" id="moForm">
+    @Html.AntiForgeryToken()
+    <div class="card mb-3"><div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-shuffle me-1 text-primary"></i>Thông tin lệnh điều chuyển (Move Order)</h6>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted">Kho xuất chuyển (Kho đi) *</label>
+                <select name="fromWarehouseId" id="fromWh" class="form-select" required onchange="onWhChange()">
+                    <option value="">— Chọn kho xuất —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(fWh == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+                <div class="form-text">Tồn khả dụng sẽ hiển thị theo kho xuất được chọn.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted">Kho nhận chuyển (Kho đến) *</label>
+                <select name="toWarehouseId" id="toWh" class="form-select" required>
+                    <option value="">— Chọn kho nhận —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(tWh == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+                <div class="form-text">Kho nhận phải khác kho xuất chuyển.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted">Lý do / Ghi chú</label>
+                <input name="note" class="form-control" placeholder="Ví dụ: Tiếp tế hàng chi nhánh, cân đối kho..." />
+            </div>
+        </div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h6 class="fw-bold mb-0">Danh sách mặt hàng cần điều chuyển</h6>
+                <div class="small text-muted">Nhập số lượng chuyển cho từng mặt hàng. Hệ thống sẽ kiểm tra tồn khả dụng khi duyệt lệnh.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addLine()">
+                <i class="bi bi-plus-lg me-1"></i>Thêm dòng hàng
+            </button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th style="width:40%">Mặt hàng *</th>
+                        <th class="text-end" style="width:15%">Tồn kho xuất</th>
+                        <th class="text-end" style="width:18%">Số lượng chuyển *</th>
+                        <th style="width:22%">Ghi chú dòng</th>
+                        <th style="width:5%" class="text-center"></th>
+                    </tr>
+                </thead>
+                <tbody id="linesBody">
+                    <tr>
+                        <td>
+                            <select name="productId" class="form-select form-select-sm prod-select" onchange="onProdChange(this)" required>
+                                <option value="">— Chọn mặt hàng —</option>
+                                @foreach (var p in products)
+                                {
+                                    balMap.TryGetValue(p.Id, out var curBal);
+                                    <option value="@p.Id" data-stock="@curBal" data-uom="@p.Uom">@p.Code — @p.Name (@p.Uom)</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="text-end stock-cell fw-semibold text-muted">—</td>
+                        <td>
+                            <input name="qty" type="number" min="1" value="1" class="form-control form-control-sm text-end fw-bold" required />
+                        </td>
+                        <td>
+                            <input name="lineNote" class="form-control form-control-sm" placeholder="Ghi chú đóng gói / quy cách..." />
+                        </td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeLine(this)"><i class="bi bi-x"></i></button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Lập lệnh điều chuyển (Chờ duyệt)</button>
+            <a href="/MoveOrder" class="btn btn-outline-secondary">Hủy bỏ</a>
+        </div>
+    </div></div>
+</form>
+
+@section Scripts {
+<script>
+    var prodOptions = `<option value="">— Chọn mặt hàng —</option>` +
+        `@foreach (var p in products) {
+            balMap.TryGetValue(p.Id, out var curBal);
+            <text><option value="@p.Id" data-stock="@curBal" data-uom="@p.Uom">@p.Code — @p.Name (@p.Uom)</option></text>
+        }`;
+
+    function onWhChange() {
+        var f = document.getElementById('fromWh').value;
+        var t = document.getElementById('toWh').value;
+        location.href = '/MoveOrder/Create?fromWarehouseId=' + f + '&toWarehouseId=' + t;
+    }
+
+    function onProdChange(sel) {
+        var opt = sel.options[sel.selectedIndex];
+        var stock = opt.getAttribute('data-stock');
+        var uom = opt.getAttribute('data-uom');
+        var tr = sel.closest('tr');
+        var stockCell = tr.querySelector('.stock-cell');
+        if (opt.value && stock !== null) {
+            stockCell.innerHTML = `<span class="badge bg-light text-dark border">${stock} ${uom}</span>`;
+        } else {
+            stockCell.innerText = '—';
+        }
+    }
+
+    function addLine() {
+        var tbody = document.getElementById('linesBody');
+        var tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <select name="productId" class="form-select form-select-sm prod-select" onchange="onProdChange(this)" required>
+                    ${prodOptions}
+                </select>
+            </td>
+            <td class="text-end stock-cell fw-semibold text-muted">—</td>
+            <td>
+                <input name="qty" type="number" min="1" value="1" class="form-control form-control-sm text-end fw-bold" required />
+            </td>
+            <td>
+                <input name="lineNote" class="form-control form-control-sm" placeholder="Ghi chú đóng gói / quy cách..." />
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeLine(this)"><i class="bi bi-x"></i></button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function removeLine(btn) {
+        var tbody = document.getElementById('linesBody');
+        if (tbody.rows.length > 1) {
+            btn.closest('tr').remove();
+        } else {
+            alert('Lệnh điều chuyển cần ít nhất 1 dòng mặt hàng.');
+        }
+    }
+
+    document.getElementById('moForm').addEventListener('submit', function(e) {
+        var f = document.getElementById('fromWh').value;
+        var t = document.getElementById('toWh').value;
+        if (f && t && f === t) {
+            e.preventDefault();
+            alert('Kho xuất chuyển và kho nhận chuyển phải khác nhau!');
+        }
+    });
+</script>
+}

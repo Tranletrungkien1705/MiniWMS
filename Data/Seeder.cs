@@ -9,6 +9,7 @@ public static class Seeder
     {
         await db.Database.EnsureCreatedAsync();
         await MigratePostgresAsync(db);
+        await MigrateSqliteAsync(db);
 
         if (!await db.Orgs.AnyAsync(o => o.Id == TenantContext.DefaultOrgId))
         {
@@ -109,13 +110,66 @@ public static class Seeder
             db.Audits.Add(kk);
             await db.SaveChangesAsync();
         }
+        if (!await db.MoveOrders.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+
+            if (hn.HasValue && hcm.HasValue && ao.HasValue && quan.HasValue)
+            {
+                var pcSeed = await db.Docs.FirstOrDefaultAsync(d => d.Code == "PCSEED-001");
+
+                // Lệnh 1: Đã hoàn tất, gắn với PCSEED-001
+                var moDone = new MoveOrder
+                {
+                    Code = "MOSEED-001",
+                    FromWarehouseId = hn.Value,
+                    ToWarehouseId = hcm.Value,
+                    Status = MoveOrderStatus.Finished,
+                    Date = DateTime.Now.AddDays(-2),
+                    CreatedAt = DateTime.Now.AddDays(-2),
+                    ApprovedAt = DateTime.Now.AddDays(-2),
+                    FinishedAt = DateTime.Now.AddDays(-2),
+                    StockDocId = pcSeed?.Id,
+                    Note = "Lệnh điều chuyển tiếp tế chi nhánh HCM",
+                    CreatedBy = "seed"
+                };
+                moDone.Lines.Add(new MoveOrderLine { ProductId = ao.Value, Quantity = 20, Note = "Chuyển size M, L" });
+                moDone.Lines.Add(new MoveOrderLine { ProductId = quan.Value, Quantity = 10, Note = "Chuyển theo đơn đặt hàng" });
+                db.MoveOrders.Add(moDone);
+
+                // Lệnh 2: Đang chờ duyệt (Pending)
+                if (pk.HasValue)
+                {
+                    var moPending = new MoveOrder
+                    {
+                        Code = "MOSEED-002",
+                        FromWarehouseId = hn.Value,
+                        ToWarehouseId = hcm.Value,
+                        Status = MoveOrderStatus.Pending,
+                        Date = DateTime.Now,
+                        CreatedAt = DateTime.Now,
+                        Note = "Yêu cầu chuyển gấp phụ kiện thắt lưng cho showroom HCM",
+                        CreatedBy = "seed"
+                    };
+                    moPending.Lines.Add(new MoveOrderLine { ProductId = pk.Value, Quantity = 5, Note = "Thắt lưng da cao cấp" });
+                    db.MoveOrders.Add(moPending);
+                }
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -123,5 +177,46 @@ public static class Seeder
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         foreach (var s in sql) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
+    }
+
+    private static async Task MigrateSqliteAsync(AppDbContext db)
+    {
+        if (db.Database.IsNpgsql()) return;
+        var sql = new[]
+        {
+            @"CREATE TABLE IF NOT EXISTS ""MoveOrders"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""FromWarehouseId"" INTEGER NOT NULL,
+                ""ToWarehouseId"" INTEGER NOT NULL,
+                ""Date"" TEXT NOT NULL,
+                ""Note"" TEXT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""Status"" INTEGER NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""ApprovedAt"" TEXT NULL,
+                ""FinishedAt"" TEXT NULL,
+                ""StockDocId"" INTEGER NULL,
+                CONSTRAINT ""FK_MoveOrders_Warehouses_FromWarehouseId"" FOREIGN KEY (""FromWarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_MoveOrders_Warehouses_ToWarehouseId"" FOREIGN KEY (""ToWarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_MoveOrders_Docs_StockDocId"" FOREIGN KEY (""StockDocId"") REFERENCES ""Docs"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MoveOrders_OrgId_Code"" ON ""MoveOrders"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""MoveOrderLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""MoveOrderId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""Quantity"" INTEGER NOT NULL,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_MoveOrderLines_MoveOrders_MoveOrderId"" FOREIGN KEY (""MoveOrderId"") REFERENCES ""MoveOrders"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_MoveOrderLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );"
+        };
+        foreach (var s in sql)
+        {
+            try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
+        }
     }
 }

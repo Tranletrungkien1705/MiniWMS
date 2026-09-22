@@ -189,6 +189,117 @@ public class AuditController(IWmsService svc) : Controller
     }
 }
 
+public class MoveOrderController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? fromWarehouseId, int? toWarehouseId, MoveOrderStatus? status)
+    {
+        ViewBag.FromWarehouseId = fromWarehouseId;
+        ViewBag.ToWarehouseId = toWarehouseId;
+        ViewBag.Status = status;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        return View(await svc.MoveOrdersAsync(fromWarehouseId, toWarehouseId, status));
+    }
+
+    public async Task<IActionResult> Create(int? fromWarehouseId, int? toWarehouseId)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        var fWh = fromWarehouseId ?? whs.FirstOrDefault()?.Id ?? 0;
+        var tWh = toWarehouseId ?? whs.Skip(1).FirstOrDefault()?.Id ?? 0;
+        ViewBag.FromWarehouseId = fWh;
+        ViewBag.ToWarehouseId = tWh;
+        ViewBag.Products = await svc.ProductsAsync();
+
+        var balances = fWh > 0 ? await svc.BalancesAsync(fWh) : new List<BalanceRow>();
+        ViewBag.Balances = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int fromWarehouseId, int toWarehouseId, string? note, int[]? productId, int[]? qty, string[]? lineNote)
+    {
+        if (fromWarehouseId <= 0 || toWarehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn đầy đủ kho xuất và kho nhận.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (fromWarehouseId == toWarehouseId)
+        {
+            TempData["Error"] = "Kho xuất chuyển và kho nhận chuyển phải khác nhau.";
+            return RedirectToAction(nameof(Create), new { fromWarehouseId, toWarehouseId });
+        }
+
+        var lines = new List<(int productId, int qty, string? note)>();
+        for (int i = 0; productId != null && i < productId.Length; i++)
+        {
+            var pid = productId[i];
+            var q = (qty != null && i < qty.Length) ? qty[i] : 0;
+            var lNote = (lineNote != null && i < lineNote.Length) ? lineNote[i] : null;
+            if (pid > 0 && q > 0) lines.Add((pid, q, lNote));
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 mặt hàng với số lượng > 0.";
+            return RedirectToAction(nameof(Create), new { fromWarehouseId, toWarehouseId });
+        }
+
+        var order = new MoveOrder
+        {
+            FromWarehouseId = fromWarehouseId,
+            ToWarehouseId = toWarehouseId,
+            Note = note,
+            CreatedBy = "web"
+        };
+        var id = await svc.CreateMoveOrderAsync(order, lines);
+        TempData["Success"] = "Đã lập Lệnh điều chuyển kho (Chờ duyệt). Bấm Duyệt lệnh để tiếp tục.";
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var order = await svc.GetMoveOrderAsync(id);
+        if (order == null) return NotFound();
+
+        var balances = await svc.BalancesAsync(order.FromWarehouseId);
+        ViewBag.Balances = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        return View(order);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApproveMoveOrderAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Execute(int id)
+    {
+        var (ok, msg) = await svc.ExecuteMoveOrderAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        try
+        {
+            await svc.CancelMoveOrderAsync(id);
+            TempData["Success"] = "Đã hủy lệnh điều chuyển.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+}
+
 public class InventoryController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? warehouseId)

@@ -1,0 +1,84 @@
+@model List<MoveOrder>
+@{
+    ViewData["Title"] = "Lệnh điều chuyển kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var fromWhId = (int?)ViewBag.FromWarehouseId;
+    var toWhId = (int?)ViewBag.ToWarehouseId;
+    var curStatus = (MoveOrderStatus?)ViewBag.Status;
+}
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+            <select name="fromWarehouseId" class="form-select form-select-sm" style="width:170px" onchange="this.form.submit()">
+                <option value="">— Kho xuất: Tất cả —</option>
+                @foreach (var w in whs)
+                {
+                    <option value="@w.Id" selected="@(fromWhId == w.Id)">@w.Name</option>
+                }
+            </select>
+            <select name="toWarehouseId" class="form-select form-select-sm" style="width:170px" onchange="this.form.submit()">
+                <option value="">— Kho nhận: Tất cả —</option>
+                @foreach (var w in whs)
+                {
+                    <option value="@w.Id" selected="@(toWhId == w.Id)">@w.Name</option>
+                }
+            </select>
+            <div class="btn-group btn-group-sm">
+                <a href="/MoveOrder@(fromWhId.HasValue ? $"?fromWarehouseId={fromWhId}" : "")" class="btn @(!curStatus.HasValue ? "btn-primary" : "btn-outline-primary")">Tất cả</a>
+                <a href="/MoveOrder?status=0@(fromWhId.HasValue ? $"&fromWarehouseId={fromWhId}" : "")" class="btn @(curStatus == MoveOrderStatus.Pending ? "btn-primary" : "btn-outline-primary")">Chờ duyệt</a>
+                <a href="/MoveOrder?status=1@(fromWhId.HasValue ? $"&fromWarehouseId={fromWhId}" : "")" class="btn @(curStatus == MoveOrderStatus.Approved ? "btn-primary" : "btn-outline-primary")">Đã duyệt</a>
+                <a href="/MoveOrder?status=2@(fromWhId.HasValue ? $"&fromWarehouseId={fromWhId}" : "")" class="btn @(curStatus == MoveOrderStatus.Finished ? "btn-primary" : "btn-outline-primary")">Đã chuyển</a>
+                <a href="/MoveOrder?status=3@(fromWhId.HasValue ? $"&fromWarehouseId={fromWhId}" : "")" class="btn @(curStatus == MoveOrderStatus.Cancelled ? "btn-primary" : "btn-outline-primary")">Đã hủy</a>
+            </div>
+        </form>
+        <div>
+            <a href="/MoveOrder/Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>+ Lập lệnh điều chuyển</a>
+        </div>
+    </div>
+
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Số lệnh</th>
+                <th>Kho xuất (Đi)</th>
+                <th>Kho nhận (Đến)</th>
+                <th>Ngày lập</th>
+                <th class="text-end">Số mặt hàng</th>
+                <th class="text-end">Tổng SL chuyển</th>
+                <th>Phiếu kho liên kết</th>
+                <th class="text-center">Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var m in Model)
+        {
+            var (stText, stCss) = Ui.MoveOrderStatusBadge(m.Status);
+            <tr style="cursor:pointer" onclick="location.href='/MoveOrder/Detail/@m.Id'">
+                <td class="fw-semibold text-primary">@m.Code</td>
+                <td><i class="bi bi-box-arrow-up-right me-1 text-muted"></i>@m.FromWarehouse.Name</td>
+                <td><i class="bi bi-box-arrow-in-down-left me-1 text-muted"></i>@m.ToWarehouse.Name</td>
+                <td class="small text-muted">@m.Date.ToString("dd/MM/yyyy HH:mm")</td>
+                <td class="text-end">@m.Lines.Count.ToString("N0")</td>
+                <td class="text-end fw-bold text-dark">@m.TotalQty.ToString("N0")</td>
+                <td>
+                    @if (m.StockDoc != null)
+                    {
+                        <span class="badge bg-light text-primary border" onclick="event.stopPropagation(); location.href='/Doc/Detail/@m.StockDocId'">
+                            <i class="bi bi-link-45deg me-1"></i>@m.StockDoc.Code
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="text-muted small">—</span>
+                    }
+                </td>
+                <td class="text-center"><span class="badge bg-@stCss">@stText</span></td>
+            </tr>
+        }
+        @if (Model.Count == 0)
+        {
+            <tr><td colspan="8" class="text-center text-muted py-4">Chưa có lệnh điều chuyển nào phù hợp.</td></tr>
+        }
+        </tbody>
+    </table>
+</div></div>

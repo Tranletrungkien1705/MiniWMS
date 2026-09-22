@@ -25,6 +25,14 @@ public static class Ui
         StockAuditStatus.Cancelled => ("Đã hủy", "dark"),
         _ => (s.ToString(), "secondary")
     };
+    public static (string text, string css) MoveOrderStatusBadge(MoveOrderStatus s) => s switch
+    {
+        MoveOrderStatus.Pending => ("Chờ duyệt", "warning text-dark"),
+        MoveOrderStatus.Approved => ("Đã duyệt", "primary"),
+        MoveOrderStatus.Finished => ("Đã chuyển kho", "success"),
+        MoveOrderStatus.Cancelled => ("Đã hủy", "dark"),
+        _ => (s.ToString(), "secondary")
+    };
     public static (string text, string css) CardActionBadge(DocType t, string? refNo)
     {
         if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("KK", StringComparison.OrdinalIgnoreCase))
