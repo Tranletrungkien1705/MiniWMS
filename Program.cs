@@ -44,6 +44,22 @@ app.MapGet("/healthz", () => "ok");
 app.MapGet("/api/balance", async (int? warehouseId, IWmsService svc) =>
     Results.Ok((await svc.BalancesAsync(warehouseId)).Select(b => new { b.Warehouse, b.ProductCode, b.ProductName, b.Uom, b.Qty })));
 
+// API kiểm kê kho
+app.MapGet("/api/audits", async (int? warehouseId, StockAuditStatus? status, IWmsService svc) =>
+    Results.Ok((await svc.AuditsAsync(warehouseId, status)).Select(a => new
+    {
+        a.Id,
+        a.Code,
+        Warehouse = a.Warehouse.Name,
+        a.WarehouseId,
+        a.Date,
+        Status = a.Status.ToString(),
+        TotalInit = a.TotalInitQty,
+        TotalActual = a.TotalActualQty,
+        TotalDiff = a.TotalDiffQty,
+        Lines = a.Lines.Select(l => new { l.Product.Code, l.Product.Name, l.QtyInit, l.QtyActual, l.DiffQty })
+    })));
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });

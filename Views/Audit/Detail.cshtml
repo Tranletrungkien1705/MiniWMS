@@ -1,0 +1,175 @@
+@model StockAudit
+@{
+    ViewData["Title"] = $"Phiếu kiểm kê {Model.Code}";
+    var (stText, stCss) = Ui.AuditStatusBadge(Model.Status);
+    var diff = Model.TotalDiffQty;
+}
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card mb-3"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1">
+                        @Model.Code
+                        <span class="badge bg-@stCss ms-1">@stText</span>
+                    </h5>
+                    <div class="text-muted small">
+                        <span>Kho: <b class="text-dark">@Model.Warehouse.Name</b></span>
+                        · Ngày lập: @Model.Date.ToString("dd/MM/yyyy HH:mm")
+                        · Người tạo: @(string.IsNullOrEmpty(Model.CreatedBy) ? "Hệ thống" : Model.CreatedBy)
+                    </div>
+                    @if (Model.FinishedAt.HasValue)
+                    {
+                        <div class="small text-success mt-1">
+                            <i class="bi bi-check-circle me-1"></i>Đã cân bằng tồn lúc: @Model.FinishedAt.Value.ToString("dd/MM/yyyy HH:mm")
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Note))
+                    {
+                        <div class="small text-muted mt-1"><i class="bi bi-chat-left-text me-1"></i>Ghi chú: @Model.Note</div>
+                    }
+                </div>
+                <div class="text-end">
+                    <span class="text-muted small d-block">Trạng thái</span>
+                    <span class="badge bg-@stCss fs-6">@stText</span>
+                </div>
+            </div>
+
+            <div class="row g-2 mb-3 text-center">
+                <div class="col-4">
+                    <div class="p-2 border rounded bg-light">
+                        <div class="text-muted small">Tồn sổ sách</div>
+                        <div class="fs-5 fw-bold">@Model.TotalInitQty.ToString("N0")</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-2 border rounded bg-light">
+                        <div class="text-muted small">Tồn thực tế</div>
+                        <div class="fs-5 fw-bold text-primary">@Model.TotalActualQty.ToString("N0")</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-2 border rounded bg-light">
+                        <div class="text-muted small">Chênh lệch</div>
+                        <div class="fs-5 fw-bold @(diff > 0 ? "text-success" : (diff < 0 ? "text-danger" : "text-secondary"))">
+                            @(diff > 0 ? $"+{diff:N0}" : diff.ToString("N0"))
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6 class="fw-bold mb-2">Chi tiết đối soát hàng hóa</h6>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Mã</th>
+                            <th>Tên hàng</th>
+                            <th>ĐVT</th>
+                            <th class="text-end">Sổ sách</th>
+                            <th class="text-end">Thực tế</th>
+                            <th class="text-end">Chênh lệch</th>
+                            <th>Ghi chú</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var l in Model.Lines)
+                    {
+                        var d = l.DiffQty;
+                        <tr>
+                            <td class="fw-semibold">@l.Product.Code</td>
+                            <td>@l.Product.Name</td>
+                            <td><span class="badge bg-light text-secondary border">@l.Product.Uom</span></td>
+                            <td class="text-end fw-semibold">@l.QtyInit.ToString("N0")</td>
+                            <td class="text-end fw-bold text-primary">@l.QtyActual.ToString("N0")</td>
+                            <td class="text-end">
+                                @if (d > 0)
+                                {
+                                    <span class="badge bg-success">+@d.ToString("N0") (Thừa)</span>
+                                }
+                                else if (d < 0)
+                                {
+                                    <span class="badge bg-danger">@d.ToString("N0") (Thiếu)</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">0 (Khớp)</span>
+                                }
+                            </td>
+                            <td class="small text-muted">@(string.IsNullOrEmpty(l.Note) ? "—" : l.Note)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div></div>
+
+        @if (Model.InDoc != null || Model.OutDoc != null)
+        {
+            <div class="card"><div class="card-body">
+                <h6 class="fw-bold mb-2"><i class="bi bi-arrow-left-right me-1 text-primary"></i>Chứng từ điều chỉnh tồn phát sinh</h6>
+                <div class="d-flex flex-column gap-2">
+                    @if (Model.InDoc != null)
+                    {
+                        <div class="d-flex justify-content-between align-items-center p-2 rounded border bg-light">
+                            <div>
+                                <span class="badge bg-success me-2">Nhập kho thừa</span>
+                                <a href="/Doc/Detail/@Model.InDocId" class="fw-semibold text-decoration-none">@Model.InDoc.Code</a>
+                                <span class="text-muted small ms-2">(@Model.InDoc.TotalQty sản phẩm)</span>
+                            </div>
+                            <a href="/Doc/Detail/@Model.InDocId" class="btn btn-sm btn-outline-primary">Xem phiếu</a>
+                        </div>
+                    }
+                    @if (Model.OutDoc != null)
+                    {
+                        <div class="d-flex justify-content-between align-items-center p-2 rounded border bg-light">
+                            <div>
+                                <span class="badge bg-danger me-2">Xuất kho thiếu</span>
+                                <a href="/Doc/Detail/@Model.OutDocId" class="fw-semibold text-decoration-none">@Model.OutDoc.Code</a>
+                                <span class="text-muted small ms-2">(@Model.OutDoc.TotalQty sản phẩm)</span>
+                            </div>
+                            <a href="/Doc/Detail/@Model.OutDocId" class="btn btn-sm btn-outline-primary">Xem phiếu</a>
+                        </div>
+                    }
+                </div>
+            </div></div>
+        }
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card"><div class="card-body">
+            <h6 class="fw-bold mb-3">Thao tác</h6>
+            @if (Model.Status == StockAuditStatus.Draft)
+            {
+                <form asp-action="Balance" method="post" class="mb-2" onsubmit="return confirm('Hệ thống sẽ tự động sinh phiếu điều chỉnh (nhập thừa / xuất thiếu) và đồng bộ tồn kho về số lượng thực tế. Bạn có chắc chắn muốn cân bằng kho?')">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="id" value="@Model.Id" />
+                    <button class="btn btn-primary w-100 py-2">
+                        <i class="bi bi-arrow-repeat me-1"></i>Cân bằng kho (Đồng bộ tồn)
+                    </button>
+                </form>
+                <form asp-action="Cancel" method="post" onsubmit="return confirm('Hủy phiếu kiểm kê này?')">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="id" value="@Model.Id" />
+                    <button class="btn btn-outline-danger w-100">
+                        <i class="bi bi-x-circle me-1"></i>Hủy phiếu
+                    </button>
+                </form>
+            }
+            else if (Model.Status == StockAuditStatus.Finished)
+            {
+                <div class="alert alert-success small mb-0">
+                    <i class="bi bi-check-circle me-1"></i><b>Đã hoàn thành kiểm kê.</b>
+                    <div class="mt-1">Tồn kho trong hệ thống đã được đồng bộ chính xác với số lượng thực tế đếm được.</div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-secondary small mb-0">
+                    <i class="bi bi-dash-circle me-1"></i>Phiếu kiểm kê đã hủy.
+                </div>
+            }
+            <a href="/Audit" class="btn btn-outline-secondary w-100 mt-2">Về danh sách</a>
+        </div></div>
+    </div>
+</div>

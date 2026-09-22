@@ -41,13 +41,35 @@ public static class Seeder
             db.Docs.Add(pn);
             await db.SaveChangesAsync();
         }
+        if (!await db.Audits.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.First(w => w.Code == "KHO-HN").Id;
+            var kk = new StockAudit
+            {
+                WarehouseId = hn,
+                Code = "KKSEED-001",
+                Status = StockAuditStatus.Draft,
+                Note = "Kiểm kê định kỳ tháng",
+                CreatedBy = "seed"
+            };
+            foreach (var p in prods)
+            {
+                var act = p.Code switch { "AO-001" => 98, "QUAN-001" => 100, "PK-001" => 102, _ => 100 };
+                var note = p.Code switch { "AO-001" => "Hao hụt 2 cái", "QUAN-001" => "Khớp tồn", "PK-001" => "Thừa 2 cái kiểm đếm thêm", _ => "" };
+                kk.Lines.Add(new StockAuditLine { ProductId = p.Id, QtyInit = 100, QtyActual = act, Note = note });
+            }
+            db.Audits.Add(kk);
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",

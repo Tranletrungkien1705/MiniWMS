@@ -1,0 +1,1 @@
+- 2026-03-30: Port nghiep vu Kiem ke kho (Stock Audit - InvF_InvAudit) tu 2020.3.Skycic.Inventory gom lap phieu kiem ke doi soat ton ly thuyet/thuc te, tu dong can bang kho bang phieu xuat/nhap chenh lech, UI va API /api/audits.

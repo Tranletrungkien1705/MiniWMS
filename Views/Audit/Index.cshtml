@@ -1,0 +1,76 @@
+@model List<StockAudit>
+@{
+    ViewData["Title"] = "Kiểm kê kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var wid = (int?)ViewBag.WarehouseId;
+    var curStatus = (StockAuditStatus?)ViewBag.Status;
+}
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+            <select name="warehouseId" class="form-select form-select-sm" style="width:180px" onchange="this.form.submit()">
+                <option value="">— Tất cả kho —</option>
+                @foreach (var w in whs)
+                {
+                    <option value="@w.Id" selected="@(wid == w.Id)">@w.Name</option>
+                }
+            </select>
+            <div class="btn-group btn-group-sm">
+                <a href="/Audit@(wid.HasValue ? $"?warehouseId={wid}" : "")" class="btn @(!curStatus.HasValue ? "btn-primary" : "btn-outline-primary")">Tất cả</a>
+                <a href="/Audit?status=0@(wid.HasValue ? $"&warehouseId={wid}" : "")" class="btn @(curStatus == StockAuditStatus.Draft ? "btn-primary" : "btn-outline-primary")">Đang kiểm kê</a>
+                <a href="/Audit?status=1@(wid.HasValue ? $"&warehouseId={wid}" : "")" class="btn @(curStatus == StockAuditStatus.Finished ? "btn-primary" : "btn-outline-primary")">Đã cân bằng</a>
+                <a href="/Audit?status=2@(wid.HasValue ? $"&warehouseId={wid}" : "")" class="btn @(curStatus == StockAuditStatus.Cancelled ? "btn-primary" : "btn-outline-primary")">Đã hủy</a>
+            </div>
+        </form>
+        <div>
+            <a href="/Audit/Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>+ Tạo phiếu kiểm kê</a>
+        </div>
+    </div>
+
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Số phiếu</th>
+                <th>Kho kiểm kê</th>
+                <th>Ngày lập</th>
+                <th class="text-end">Tồn sổ sách</th>
+                <th class="text-end">Tồn thực tế</th>
+                <th class="text-end">Chênh lệch</th>
+                <th class="text-center">Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var a in Model)
+        {
+            var (stText, stCss) = Ui.AuditStatusBadge(a.Status);
+            var diff = a.TotalDiffQty;
+            <tr style="cursor:pointer" onclick="location.href='/Audit/Detail/@a.Id'">
+                <td class="fw-semibold text-primary">@a.Code</td>
+                <td><i class="bi bi-building me-1 text-muted"></i>@a.Warehouse.Name</td>
+                <td class="small text-muted">@a.Date.ToString("dd/MM/yyyy HH:mm")</td>
+                <td class="text-end fw-semibold">@a.TotalInitQty.ToString("N0")</td>
+                <td class="text-end fw-semibold">@a.TotalActualQty.ToString("N0")</td>
+                <td class="text-end">
+                    @if (diff > 0)
+                    {
+                        <span class="badge bg-success">+@diff.ToString("N0") (Thừa)</span>
+                    }
+                    else if (diff < 0)
+                    {
+                        <span class="badge bg-danger">@diff.ToString("N0") (Thiếu)</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Khớp</span>
+                    }
+                </td>
+                <td class="text-center"><span class="badge bg-@stCss">@stText</span></td>
+            </tr>
+        }
+        @if (Model.Count == 0)
+        {
+            <tr><td colspan="7" class="text-center text-muted py-4">Chưa có phiếu kiểm kê nào.</td></tr>
+        }
+        </tbody>
+    </table>
+</div></div>

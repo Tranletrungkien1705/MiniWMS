@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits);
 
 public interface IWmsService
 {
@@ -18,6 +18,11 @@ public interface IWmsService
     Task<int> CreateDocAsync(StockDoc doc, List<(int productId, int qty)> lines);
     Task<(bool ok, string msg)> PostDocAsync(int id);
     Task CancelDocAsync(int id);
+    Task<List<StockAudit>> AuditsAsync(int? warehouseId, StockAuditStatus? status);
+    Task<StockAudit?> GetAuditAsync(int id);
+    Task<int> CreateAuditAsync(StockAudit audit, List<(int productId, int qtyInit, int qtyActual, string? note)> lines);
+    Task<(bool ok, string msg)> BalanceAuditAsync(int id);
+    Task CancelAuditAsync(int id);
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
     Task<WmsDash> DashboardAsync();
 }
@@ -91,6 +96,102 @@ public class WmsService(AppDbContext db) : IWmsService
         await db.SaveChangesAsync();
     }
 
+    public async Task<List<StockAudit>> AuditsAsync(int? warehouseId, StockAuditStatus? status)
+    {
+        var q = db.Audits.Include(a => a.Warehouse).Include(a => a.Lines).ThenInclude(l => l.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(a => a.WarehouseId == warehouseId.Value);
+        if (status.HasValue) q = q.Where(a => a.Status == status.Value);
+        var list = await q.ToListAsync();
+        return list.OrderByDescending(a => a.CreatedAt).ToList();
+    }
+
+    public Task<StockAudit?> GetAuditAsync(int id) =>
+        db.Audits.Include(a => a.Warehouse)
+                 .Include(a => a.InDoc)
+                 .Include(a => a.OutDoc)
+                 .Include(a => a.Lines).ThenInclude(l => l.Product)
+                 .FirstOrDefaultAsync(a => a.Id == id);
+
+    public async Task<int> CreateAuditAsync(StockAudit audit, List<(int productId, int qtyInit, int qtyActual, string? note)> lines)
+    {
+        audit.Code = $"KK{DateTime.Now:yyMMdd}-{await db.Audits.CountAsync() + 1:D3}";
+        audit.Status = StockAuditStatus.Draft;
+        foreach (var (pid, qInit, qAct, note) in lines.Where(l => l.productId > 0))
+            audit.Lines.Add(new StockAuditLine { ProductId = pid, QtyInit = qInit, QtyActual = qAct, Note = note });
+        db.Audits.Add(audit);
+        await db.SaveChangesAsync();
+        return audit.Id;
+    }
+
+    public async Task<(bool ok, string msg)> BalanceAuditAsync(int id)
+    {
+        var audit = await db.Audits.Include(a => a.Lines).ThenInclude(l => l.Product).FirstOrDefaultAsync(a => a.Id == id);
+        if (audit == null) return (false, "Không tìm thấy phiếu kiểm kê.");
+        if (audit.Status != StockAuditStatus.Draft) return (false, "Phiếu kiểm kê không ở trạng thái Đang kiểm kê.");
+        if (audit.Lines.Count == 0) return (false, "Phiếu kiểm kê chưa có mặt hàng.");
+
+        var excessLines = audit.Lines.Where(l => l.QtyActual > l.QtyInit).ToList();
+        var shortageLines = audit.Lines.Where(l => l.QtyActual < l.QtyInit).ToList();
+
+        if (excessLines.Count == 0 && shortageLines.Count == 0)
+        {
+            audit.Status = StockAuditStatus.Finished;
+            audit.FinishedAt = DateTime.Now;
+            await db.SaveChangesAsync();
+            return (true, $"Phiếu {audit.Code} khớp tồn sổ sách. Đã đánh dấu hoàn tất kiểm kê.");
+        }
+
+        // Tự động sinh phiếu nhập kho nếu có hàng thừa sau kiểm kê
+        if (excessLines.Count > 0)
+        {
+            var inLines = excessLines.Select(l => (l.ProductId, l.QtyActual - l.QtyInit)).ToList();
+            var inDoc = new StockDoc
+            {
+                Type = DocType.In,
+                ToWarehouseId = audit.WarehouseId,
+                RefNo = audit.Code,
+                Note = $"Tự động điều chỉnh thừa sau kiểm kê {audit.Code}",
+                CreatedBy = string.IsNullOrWhiteSpace(audit.CreatedBy) ? "audit-balance" : audit.CreatedBy
+            };
+            var inDocId = await CreateDocAsync(inDoc, inLines);
+            var (postOk, postMsg) = await PostDocAsync(inDocId);
+            if (!postOk) return (false, $"Lỗi ghi sổ phiếu nhập thừa: {postMsg}");
+            audit.InDocId = inDocId;
+        }
+
+        // Tự động sinh phiếu xuất kho nếu có hàng thiếu sau kiểm kê
+        if (shortageLines.Count > 0)
+        {
+            var outLines = shortageLines.Select(l => (l.ProductId, l.QtyInit - l.QtyActual)).ToList();
+            var outDoc = new StockDoc
+            {
+                Type = DocType.Out,
+                FromWarehouseId = audit.WarehouseId,
+                RefNo = audit.Code,
+                Note = $"Tự động điều chỉnh thiếu sau kiểm kê {audit.Code}",
+                CreatedBy = string.IsNullOrWhiteSpace(audit.CreatedBy) ? "audit-balance" : audit.CreatedBy
+            };
+            var outDocId = await CreateDocAsync(outDoc, outLines);
+            var (postOk, postMsg) = await PostDocAsync(outDocId);
+            if (!postOk) return (false, $"Lỗi ghi sổ phiếu xuất thiếu: {postMsg}");
+            audit.OutDocId = outDocId;
+        }
+
+        audit.Status = StockAuditStatus.Finished;
+        audit.FinishedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã cân bằng kho cho phiếu {audit.Code}. Tồn kho đã khớp số lượng thực tế kiểm kê.");
+    }
+
+    public async Task CancelAuditAsync(int id)
+    {
+        var audit = await db.Audits.FirstOrDefaultAsync(a => a.Id == id) ?? throw new KeyNotFoundException();
+        if (audit.Status == StockAuditStatus.Finished)
+            throw new InvalidOperationException("Không thể hủy phiếu kiểm kê đã cân bằng.");
+        audit.Status = StockAuditStatus.Cancelled;
+        await db.SaveChangesAsync();
+    }
+
     /// <summary>Tồn kho tính từ các phiếu ĐÃ GHI SỔ (In:+To, Out:-From, Transfer:-From+To).</summary>
     public async Task<List<BalanceRow>> BalancesAsync(int? warehouseId)
     {
@@ -130,7 +231,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.Docs.CountAsync(d => d.Status == DocStatus.Posted),
             await db.Docs.CountAsync(d => d.Status == DocStatus.Draft),
             balances.Sum(b => b.Qty),
-            balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock));
+            balances.Count(b => b.MinStock > 0 && b.Qty <= b.MinStock),
+            await db.Audits.CountAsync(a => a.Status == StockAuditStatus.Draft));
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

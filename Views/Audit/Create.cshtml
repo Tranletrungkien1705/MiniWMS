@@ -1,0 +1,126 @@
+@{
+    ViewData["Title"] = "Tạo phiếu kiểm kê kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selWhId = (int)ViewBag.SelectedWarehouseId;
+    var items = (dynamic)ViewBag.Items;
+}
+<form asp-action="Create" method="post" id="auditForm">
+    @Html.AntiForgeryToken()
+    <div class="card mb-3"><div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted">Kho kiểm kê *</label>
+                <select name="warehouseId" class="form-select" required onchange="changeWarehouse(this.value)">
+                    <option value="">— Chọn kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selWhId == w.Id)">@w.Name</option>
+                    }
+                </select>
+                <div class="form-text">Đổi kho sẽ tự động tải tồn sổ sách tương ứng.</div>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label small fw-semibold text-muted">Ghi chú kiểm kê</label>
+                <input name="note" class="form-control" placeholder="Ví dụ: Kiểm kê định kỳ tháng, đối soát kho..." />
+            </div>
+        </div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h6 class="fw-bold mb-0">Danh sách mặt hàng kiểm kê</h6>
+                <div class="small text-muted">Nhập số lượng thực tế đếm được. Hệ thống sẽ so sánh với tồn sổ sách hiện tại.</div>
+            </div>
+            <span class="badge bg-light text-dark border"><i class="bi bi-box-seam me-1"></i>@items.Count mặt hàng</span>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th style="width:12%">Mã hàng</th>
+                        <th style="width:25%">Tên hàng</th>
+                        <th style="width:10%">ĐVT</th>
+                        <th class="text-end" style="width:13%">Tồn sổ sách</th>
+                        <th class="text-end" style="width:15%">Tồn thực tế *</th>
+                        <th class="text-end" style="width:12%">Chênh lệch</th>
+                        <th style="width:13%">Ghi chú</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @for (int i = 0; i < items.Count; i++)
+                {
+                    var it = items[i];
+                    int qInit = (int)it.QtyInit;
+                    Product prod = (Product)it.Product;
+                    <tr>
+                        <td class="fw-semibold">
+                            <input type="hidden" name="productId" value="@prod.Id" />
+                            <input type="hidden" name="qtyInit" value="@qInit" class="qty-init" id="init_@i" />
+                            @prod.Code
+                        </td>
+                        <td>@prod.Name</td>
+                        <td><span class="badge bg-light text-secondary border">@prod.Uom</span></td>
+                        <td class="text-end fw-semibold">@qInit.ToString("N0")</td>
+                        <td>
+                            <input type="number" name="qtyActual" value="@qInit" min="0" class="form-control form-control-sm text-end fw-bold qty-actual" id="act_@i" oninput="calcDiff(@i)" required />
+                        </td>
+                        <td class="text-end">
+                            <span id="diff_@i" class="badge bg-secondary">0</span>
+                        </td>
+                        <td>
+                            <input name="lineNote" class="form-control form-control-sm" placeholder="Ghi chú..." />
+                        </td>
+                    </tr>
+                }
+                @if (items.Count == 0)
+                {
+                    <tr><td colspan="7" class="text-center text-muted py-4">Chưa có sản phẩm nào trong hệ thống.</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+            <a href="/Audit" class="btn btn-outline-secondary">Hủy</a>
+            <button type="submit" class="btn btn-primary" @(items.Count == 0 ? "disabled" : "")>
+                <i class="bi bi-check-lg me-1"></i>Lưu phiếu kiểm kê (Nháp)
+            </button>
+        </div>
+    </div></div>
+</form>
+
+@section Scripts {
+<script>
+function changeWarehouse(wid) {
+    if (wid) {
+        window.location.href = '/Audit/Create?warehouseId=' + wid;
+    }
+}
+function calcDiff(idx) {
+    const initEl = document.getElementById('init_' + idx);
+    const actEl = document.getElementById('act_' + idx);
+    const diffEl = document.getElementById('diff_' + idx);
+    if (!initEl || !actEl || !diffEl) return;
+    const initVal = parseInt(initEl.value) || 0;
+    const actVal = parseInt(actEl.value) || 0;
+    const diff = actVal - initVal;
+    if (diff > 0) {
+        diffEl.className = 'badge bg-success';
+        diffEl.innerText = '+' + diff + ' (Thừa)';
+    } else if (diff < 0) {
+        diffEl.className = 'badge bg-danger';
+        diffEl.innerText = diff + ' (Thiếu)';
+    } else {
+        diffEl.className = 'badge bg-secondary';
+        diffEl.innerText = '0 (Khớp)';
+    }
+}
+// Init diff calculations on load
+document.addEventListener('DOMContentLoaded', function() {
+    const actualInputs = document.querySelectorAll('.qty-actual');
+    actualInputs.forEach((_, idx) => calcDiff(idx));
+});
+</script>
+}

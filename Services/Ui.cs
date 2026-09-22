@@ -18,4 +18,11 @@ public static class Ui
         DocStatus.Cancelled => ("Đã hủy", "dark"),
         _ => (s.ToString(), "secondary")
     };
+    public static (string text, string css) AuditStatusBadge(StockAuditStatus s) => s switch
+    {
+        StockAuditStatus.Draft => ("Đang kiểm kê", "warning text-dark"),
+        StockAuditStatus.Finished => ("Đã cân bằng", "success"),
+        StockAuditStatus.Cancelled => ("Đã hủy", "dark"),
+        _ => (s.ToString(), "secondary")
+    };
 }

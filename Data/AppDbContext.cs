@@ -13,6 +13,8 @@ public class AppDbContext : DbContext
     public DbSet<Product> Products => Set<Product>();
     public DbSet<StockDoc> Docs => Set<StockDoc>();
     public DbSet<StockDocLine> DocLines => Set<StockDocLine>();
+    public DbSet<StockAudit> Audits => Set<StockAudit>();
+    public DbSet<StockAuditLine> AuditLines => Set<StockAuditLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -31,6 +33,24 @@ public class AppDbContext : DbContext
         b.Entity<StockDocLine>(e =>
         {
             e.HasOne(x => x.Doc).WithMany(x => x.Lines).HasForeignKey(x => x.DocId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<StockAudit>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.Ignore(x => x.TotalInitQty);
+            e.Ignore(x => x.TotalActualQty);
+            e.Ignore(x => x.TotalDiffQty);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.InDoc).WithMany().HasForeignKey(x => x.InDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.OutDoc).WithMany().HasForeignKey(x => x.OutDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<StockAuditLine>(e =>
+        {
+            e.Ignore(x => x.DiffQty);
+            e.HasOne(x => x.Audit).WithMany(x => x.Lines).HasForeignKey(x => x.AuditId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });

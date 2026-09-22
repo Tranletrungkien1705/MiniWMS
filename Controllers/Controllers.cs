@@ -91,6 +91,104 @@ public class DocController(IWmsService svc) : Controller
     }
 }
 
+public class AuditController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, StockAuditStatus? status)
+    {
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        return View(await svc.AuditsAsync(warehouseId, status));
+    }
+
+    public async Task<IActionResult> Create(int? warehouseId)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        var selectedWhId = warehouseId ?? whs.FirstOrDefault()?.Id ?? 0;
+        ViewBag.SelectedWarehouseId = selectedWhId;
+
+        var prods = await svc.ProductsAsync();
+        var balances = selectedWhId > 0 ? await svc.BalancesAsync(selectedWhId) : new List<BalanceRow>();
+        var balDict = balances.ToDictionary(b => b.ProductId, b => b.Qty);
+
+        var items = prods.Select(p => new
+        {
+            Product = p,
+            QtyInit = balDict.TryGetValue(p.Id, out var q) ? q : 0
+        }).ToList();
+
+        ViewBag.Items = items;
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string? note, int[]? productId, int[]? qtyInit, int[]? qtyActual, string[]? lineNote)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho kiểm kê.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        var lines = new List<(int productId, int qtyInit, int qtyActual, string? note)>();
+        for (int i = 0; productId != null && i < productId.Length; i++)
+        {
+            var pid = productId[i];
+            var qInit = (qtyInit != null && i < qtyInit.Length) ? qtyInit[i] : 0;
+            var qAct = (qtyActual != null && i < qtyActual.Length) ? qtyActual[i] : 0;
+            var lNote = (lineNote != null && i < lineNote.Length) ? lineNote[i] : null;
+            lines.Add((pid, qInit, qAct, lNote));
+        }
+
+        if (!lines.Any(l => l.productId > 0))
+        {
+            TempData["Error"] = "Cần ít nhất 1 mặt hàng để kiểm kê.";
+            return RedirectToAction(nameof(Create), new { warehouseId });
+        }
+
+        var audit = new StockAudit
+        {
+            WarehouseId = warehouseId,
+            Note = note,
+            CreatedBy = "web"
+        };
+        var id = await svc.CreateAuditAsync(audit, lines);
+        TempData["Success"] = "Đã tạo phiếu kiểm kê (Nháp). Bấm Cân bằng kho để tự động điều chỉnh tồn.";
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var audit = await svc.GetAuditAsync(id);
+        if (audit == null) return NotFound();
+        return View(audit);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Balance(int id)
+    {
+        var (ok, msg) = await svc.BalanceAuditAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        try
+        {
+            await svc.CancelAuditAsync(id);
+            TempData["Success"] = "Đã hủy phiếu kiểm kê.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+}
+
 public class InventoryController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? warehouseId)
