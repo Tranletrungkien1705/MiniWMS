@@ -1,0 +1,89 @@
+@model List<CustomerReturn>
+@{
+    ViewData["Title"] = "Quản lý khách hàng trả lại";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var curWhId = (int?)ViewBag.WarehouseId;
+    var curStatus = (CusReturnStatus?)ViewBag.Status;
+}
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <form method="get" class="d-flex gap-2 align-items-center flex-wrap">
+            <select name="warehouseId" class="form-select form-select-sm" style="width:190px" onchange="this.form.submit()">
+                <option value="">— Kho nhận: Tất cả —</option>
+                @foreach (var w in whs)
+                {
+                    <option value="@w.Id" selected="@(curWhId == w.Id)">@w.Name</option>
+                }
+            </select>
+            <div class="btn-group btn-group-sm">
+                <a href="/CustomerReturn@(curWhId.HasValue ? $"?warehouseId={curWhId}" : "")" class="btn @(!curStatus.HasValue ? "btn-primary" : "btn-outline-primary")">Tất cả</a>
+                <a href="/CustomerReturn?status=0@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == CusReturnStatus.Draft ? "btn-primary" : "btn-outline-primary")">Chờ nhận hàng</a>
+                <a href="/CustomerReturn?status=1@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == CusReturnStatus.Finished ? "btn-primary" : "btn-outline-primary")">Đã nhập kho</a>
+                <a href="/CustomerReturn?status=2@(curWhId.HasValue ? $"&warehouseId={curWhId}" : "")" class="btn @(curStatus == CusReturnStatus.Cancelled ? "btn-primary" : "btn-outline-primary")">Đã hủy</a>
+            </div>
+        </form>
+        <div>
+            <a href="/CustomerReturn/Create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>+ Lập phiếu nhận hàng khách trả</a>
+        </div>
+    </div>
+
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Số phiếu</th>
+                <th>Kho nhận trả</th>
+                <th>Khách hàng</th>
+                <th>Hóa đơn bán gốc</th>
+                <th>Đơn hàng/Phiếu xuất</th>
+                <th>Ngày trả</th>
+                <th class="text-end">Tổng SL</th>
+                <th class="text-end">Tổng giá trị</th>
+                <th>Phiếu nhập liên kết</th>
+                <th class="text-center">Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var c in Model)
+        {
+            var (stText, stCss) = Ui.CusReturnStatusBadge(c.Status);
+            <tr style="cursor:pointer" onclick="location.href='/CustomerReturn/Detail/@c.Id'">
+                <td class="fw-semibold text-primary">@c.Code</td>
+                <td><i class="bi bi-building me-1 text-muted"></i>@c.Warehouse.Name</td>
+                <td>
+                    <span class="fw-medium">@c.CustomerName</span>
+                    @if (!string.IsNullOrEmpty(c.CustomerCode))
+                    {
+                        <span class="text-muted small">(@c.CustomerCode)</span>
+                    }
+                </td>
+                <td class="small text-muted">@(string.IsNullOrEmpty(c.InvoiceNo) ? "—" : c.InvoiceNo)</td>
+                <td class="small text-muted">@(string.IsNullOrEmpty(c.RefOrderNo) ? "—" : c.RefOrderNo)</td>
+                <td class="small text-muted">@c.Date.ToString("dd/MM/yyyy")</td>
+                <td class="text-end fw-bold text-dark">@c.TotalQty.ToString("N0")</td>
+                <td class="text-end fw-semibold text-success">@c.TotalAmount.ToString("N0") đ</td>
+                <td>
+                    @if (c.StockDoc != null)
+                    {
+                        <span class="badge bg-light text-primary border" onclick="event.stopPropagation(); location.href='/Doc/Detail/@c.StockDocId'">
+                            <i class="bi bi-link-45deg me-1"></i>@c.StockDoc.Code
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="text-muted small">—</span>
+                    }
+                </td>
+                <td class="text-center"><span class="badge bg-@stCss">@stText</span></td>
+            </tr>
+        }
+        @if (Model.Count == 0)
+        {
+            <tr>
+                <td colspan="10" class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-3 d-block mb-1"></i>Chưa có phiếu khách hàng trả lại nào.
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div></div>

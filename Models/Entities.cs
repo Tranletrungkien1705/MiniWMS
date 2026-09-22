@@ -14,6 +14,7 @@ public enum DocStatus { Draft = 0, Posted = 1, Cancelled = 2 }
 public enum StockAuditStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Đang kiểm kê / Đã cân bằng / Đã hủy
 public enum MoveOrderStatus { Pending = 0, Approved = 1, Finished = 2, Cancelled = 3 } // Chờ duyệt / Đã duyệt / Đã chuyển kho / Đã hủy
 public enum ReturnSupStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Chờ duyệt / Đã xuất trả / Đã hủy
+public enum CusReturnStatus { Draft = 0, Finished = 1, Cancelled = 2 } // Chờ nhận hàng / Đã nhập kho / Đã hủy
 
 public class Warehouse : IOrgOwned
 {
@@ -225,4 +226,48 @@ public class ReturnToSupplierLine : IOrgOwned
 
     public decimal Amount => Quantity * UnitPrice;
 }
+
+/// <summary>Phiếu nhập hàng khách trả lại (Customer Return - port từ InvF_InventoryCusReturn Skycic). Quản lý nhận hàng hoàn, đổi size, đổi trả từ khách hàng.</summary>
+public class CustomerReturn : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public int WarehouseId { get; set; }         // Kho tiếp nhận hàng trả
+    public string CustomerName { get; set; } = ""; // Tên khách hàng
+    public string? CustomerCode { get; set; }      // Mã khách hàng
+    public string? InvoiceNo { get; set; }         // Số hóa đơn bán hàng gốc
+    public string? RefOrderNo { get; set; }        // Số đơn hàng / phiếu xuất gốc
+    public DateTime Date { get; set; } = DateTime.Now;
+    public string? Reason { get; set; }            // Lý do trả lại (đổi size, lỗi vải, khách hoàn đơn...)
+    public string CreatedBy { get; set; } = "";
+    public CusReturnStatus Status { get; set; } = CusReturnStatus.Draft;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? FinishedAt { get; set; }
+    public int? StockDocId { get; set; }          // Phiếu nhập kho tự động sinh khi nhận hàng & hoàn tất
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<CustomerReturnLine> Lines { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Quantity);
+    public decimal TotalAmount => Lines.Sum(l => l.Quantity * l.UnitPrice);
+}
+
+public class CustomerReturnLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int CustomerReturnId { get; set; }
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }        // Đơn giá bán / giá nhận hoàn trả
+    public string? Note { get; set; }             // Chi tiết lý do đổi trả mặt hàng
+
+    public CustomerReturn CustomerReturn { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    public decimal Amount => Quantity * UnitPrice;
+}
+
 

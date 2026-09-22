@@ -487,3 +487,101 @@ public class ReturnSupController(IWmsService svc) : Controller
     }
 }
 
+public class CustomerReturnController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, CusReturnStatus? status)
+    {
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        return View(await svc.CustomerReturnsAsync(warehouseId, status));
+    }
+
+    public async Task<IActionResult> Create(int? warehouseId)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        var selectedWhId = warehouseId ?? whs.FirstOrDefault()?.Id ?? 0;
+        ViewBag.SelectedWarehouseId = selectedWhId;
+        ViewBag.Products = await svc.ProductsAsync();
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string customerName, string? customerCode, string? invoiceNo, string? refOrderNo, string? reason,
+        int[]? productId, int[]? qty, decimal[]? unitPrice, string[]? lineNote)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho nhận hàng trả lại.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (string.IsNullOrWhiteSpace(customerName))
+        {
+            TempData["Error"] = "Vui lòng nhập tên khách hàng trả lại.";
+            return RedirectToAction(nameof(Create), new { warehouseId });
+        }
+
+        var lines = new List<(int productId, int qty, decimal unitPrice, string? note)>();
+        for (int i = 0; productId != null && i < productId.Length; i++)
+        {
+            var pid = productId[i];
+            var q = (qty != null && i < qty.Length) ? qty[i] : 0;
+            var price = (unitPrice != null && i < unitPrice.Length) ? unitPrice[i] : 0m;
+            var lNote = (lineNote != null && i < lineNote.Length) ? lineNote[i] : null;
+            if (pid > 0 && q > 0) lines.Add((pid, q, price, lNote));
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 mặt hàng nhận trả với số lượng > 0.";
+            return RedirectToAction(nameof(Create), new { warehouseId });
+        }
+
+        var returnDoc = new CustomerReturn
+        {
+            WarehouseId = warehouseId,
+            CustomerName = customerName.Trim(),
+            CustomerCode = customerCode?.Trim(),
+            InvoiceNo = invoiceNo?.Trim(),
+            RefOrderNo = refOrderNo?.Trim(),
+            Reason = reason?.Trim(),
+            CreatedBy = "web"
+        };
+
+        var id = await svc.CreateCustomerReturnAsync(returnDoc, lines);
+        TempData["Success"] = "Đã lập phiếu nhận hàng khách trả lại (Chờ nhận). Bấm 'Duyệt & Nhập kho' để cộng tồn.";
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var doc = await svc.GetCustomerReturnAsync(id);
+        if (doc == null) return NotFound();
+        return View(doc);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApproveCustomerReturnAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        try
+        {
+            await svc.CancelCustomerReturnAsync(id);
+            TempData["Success"] = "Đã hủy phiếu khách hàng trả lại.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+}
+

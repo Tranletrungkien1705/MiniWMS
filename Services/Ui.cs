@@ -40,6 +40,13 @@ public static class Ui
         ReturnSupStatus.Cancelled => ("Đã hủy", "dark"),
         _ => (s.ToString(), "secondary")
     };
+    public static (string text, string css) CusReturnStatusBadge(CusReturnStatus s) => s switch
+    {
+        CusReturnStatus.Draft => ("Chờ nhận hàng", "warning text-dark"),
+        CusReturnStatus.Finished => ("Đã nhập kho", "success"),
+        CusReturnStatus.Cancelled => ("Đã hủy", "dark"),
+        _ => (s.ToString(), "secondary")
+    };
     public static (string text, string css) CardActionBadge(DocType t, string? refNo)
     {
         if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("KK", StringComparison.OrdinalIgnoreCase))
@@ -49,6 +56,10 @@ public static class Ui
         if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase))
         {
             return ("Xuất trả NCC", "danger");
+        }
+        if (!string.IsNullOrWhiteSpace(refNo) && refNo.StartsWith("THKH", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("Khách trả lại", "info");
         }
         return t switch
         {

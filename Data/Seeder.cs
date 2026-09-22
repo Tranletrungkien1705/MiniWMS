@@ -231,13 +231,83 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.CustomerReturns.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+
+            if (hn.HasValue && ao.HasValue)
+            {
+                // Phiếu nhập kho cho hàng khách trả đã duyệt SEED01
+                var pnReturn = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = hn.Value,
+                    Code = "PNSEED-003",
+                    Status = DocStatus.Posted,
+                    Date = DateTime.Now.AddDays(-1),
+                    RefNo = "THKH-SEED01",
+                    Note = "Nhập hàng khách trả lại: Đại lý Thời trang An Phát theo phiếu THKH-SEED01: Đổi size L sang XL",
+                    CreatedBy = "seed"
+                };
+                pnReturn.Lines.Add(new StockDocLine { ProductId = ao.Value, Quantity = 3 });
+                db.Docs.Add(pnReturn);
+                await db.SaveChangesAsync();
+
+                // Phiếu khách trả 1: Đã duyệt & nhập kho (Finished)
+                var cusDone = new CustomerReturn
+                {
+                    Code = "THKH-SEED01",
+                    WarehouseId = hn.Value,
+                    CustomerName = "Đại lý Thời trang An Phát",
+                    CustomerCode = "KH-ANPHAT",
+                    InvoiceNo = "HD-2026-0312",
+                    RefOrderNo = "PXSEED-001",
+                    Reason = "Khách đổi hàng size L sang XL do mặc chật",
+                    Status = CusReturnStatus.Finished,
+                    Date = DateTime.Now.AddDays(-1),
+                    CreatedAt = DateTime.Now.AddDays(-1),
+                    FinishedAt = DateTime.Now.AddDays(-1),
+                    StockDocId = pnReturn.Id,
+                    CreatedBy = "seed"
+                };
+                cusDone.Lines.Add(new CustomerReturnLine { ProductId = ao.Value, Quantity = 3, UnitPrice = 220000m, Note = "3 áo sơ mi trắng nguyên tem mác" });
+                db.CustomerReturns.Add(cusDone);
+
+                // Phiếu khách trả 2: Chờ nhận hàng (Draft)
+                if (quan.HasValue)
+                {
+                    var cusDraft = new CustomerReturn
+                    {
+                        Code = "THKH-SEED02",
+                        WarehouseId = hn.Value,
+                        CustomerName = "Cửa hàng Thời trang Hải Đăng",
+                        CustomerCode = "KH-HAIDANG",
+                        InvoiceNo = "HD-2026-0318",
+                        RefOrderNo = "ORD-8821",
+                        Reason = "Khách phản hồi màu đậm hơn ảnh mẫu, yêu cầu hoàn trả",
+                        Status = CusReturnStatus.Draft,
+                        Date = DateTime.Now,
+                        CreatedAt = DateTime.Now,
+                        CreatedBy = "seed"
+                    };
+                    cusDraft.Lines.Add(new CustomerReturnLine { ProductId = quan.Value, Quantity = 2, UnitPrice = 350000m, Note = "2 quần jeans slim nguyên bao bì" });
+                    db.CustomerReturns.Add(cusDraft);
+                }
+
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -310,6 +380,37 @@ public static class Seeder
                 ""Note"" TEXT NULL,
                 CONSTRAINT ""FK_ReturnToSupplierLines_ReturnToSuppliers_ReturnToSupplierId"" FOREIGN KEY (""ReturnToSupplierId"") REFERENCES ""ReturnToSuppliers"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_ReturnToSupplierLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE TABLE IF NOT EXISTS ""CustomerReturns"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""CustomerName"" TEXT NOT NULL,
+                ""CustomerCode"" TEXT NULL,
+                ""InvoiceNo"" TEXT NULL,
+                ""RefOrderNo"" TEXT NULL,
+                ""Date"" TEXT NOT NULL,
+                ""Reason"" TEXT NULL,
+                ""CreatedBy"" TEXT NOT NULL,
+                ""Status"" INTEGER NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""FinishedAt"" TEXT NULL,
+                ""StockDocId"" INTEGER NULL,
+                CONSTRAINT ""FK_CustomerReturns_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_CustomerReturns_Docs_StockDocId"" FOREIGN KEY (""StockDocId"") REFERENCES ""Docs"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CustomerReturns_OrgId_Code"" ON ""CustomerReturns"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""CustomerReturnLines"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""CustomerReturnId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""Quantity"" INTEGER NOT NULL,
+                ""UnitPrice"" TEXT NOT NULL DEFAULT '0',
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_CustomerReturnLines_CustomerReturns_CustomerReturnId"" FOREIGN KEY (""CustomerReturnId"") REFERENCES ""CustomerReturns"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_CustomerReturnLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );"
         };
         foreach (var s in sql)

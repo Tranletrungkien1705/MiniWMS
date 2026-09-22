@@ -263,6 +263,102 @@ app.MapPost("/api/returns-to-supplier/{id:int}/cancel", async (int id, IWmsServi
     }
 });
 
+// API Nhập hàng khách trả lại (Customer Return - port từ InvF_InventoryCusReturn Skycic)
+app.MapGet("/api/customer-returns", async (int? warehouseId, CusReturnStatus? status, IWmsService svc) =>
+    Results.Ok((await svc.CustomerReturnsAsync(warehouseId, status)).Select(c => new
+    {
+        c.Id,
+        c.Code,
+        Warehouse = c.Warehouse.Name,
+        c.WarehouseId,
+        c.CustomerName,
+        c.CustomerCode,
+        c.InvoiceNo,
+        c.RefOrderNo,
+        c.Date,
+        Status = c.Status.ToString(),
+        c.TotalQty,
+        c.TotalAmount,
+        c.StockDocId,
+        StockDocCode = c.StockDoc?.Code,
+        c.Reason,
+        c.CreatedBy,
+        c.CreatedAt,
+        c.FinishedAt,
+        Lines = c.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.UnitPrice, l.Amount, l.Note })
+    })));
+
+app.MapGet("/api/customer-returns/{id:int}", async (int id, IWmsService svc) =>
+{
+    var c = await svc.GetCustomerReturnAsync(id);
+    if (c == null) return Results.NotFound(new { error = "Không tìm thấy phiếu khách hàng trả lại." });
+    return Results.Ok(new
+    {
+        c.Id,
+        c.Code,
+        Warehouse = c.Warehouse.Name,
+        c.WarehouseId,
+        c.CustomerName,
+        c.CustomerCode,
+        c.InvoiceNo,
+        c.RefOrderNo,
+        c.Date,
+        Status = c.Status.ToString(),
+        c.TotalQty,
+        c.TotalAmount,
+        c.StockDocId,
+        StockDocCode = c.StockDoc?.Code,
+        c.Reason,
+        c.CreatedBy,
+        c.CreatedAt,
+        c.FinishedAt,
+        Lines = c.Lines.Select(l => new { l.ProductId, l.Product.Code, l.Product.Name, l.Product.Uom, l.Quantity, l.UnitPrice, l.Amount, l.Note })
+    });
+});
+
+app.MapPost("/api/customer-returns", async (CreateCustomerReturnDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0)
+        return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.CustomerName))
+        return Results.BadRequest(new { error = "Cần CustomerName." });
+    if (dto.Lines == null || dto.Lines.Count == 0)
+        return Results.BadRequest(new { error = "Cần ít nhất 1 mặt hàng nhận trả." });
+
+    var returnDoc = new CustomerReturn
+    {
+        WarehouseId = dto.WarehouseId,
+        CustomerName = dto.CustomerName.Trim(),
+        CustomerCode = dto.CustomerCode?.Trim(),
+        InvoiceNo = dto.InvoiceNo?.Trim(),
+        RefOrderNo = dto.RefOrderNo?.Trim(),
+        Reason = dto.Reason?.Trim(),
+        CreatedBy = "api"
+    };
+    var lines = dto.Lines.Select(l => (l.ProductId, l.Quantity, l.UnitPrice, l.Note)).ToList();
+    var id = await svc.CreateCustomerReturnAsync(returnDoc, lines);
+    return Results.Ok(new { id, code = returnDoc.Code, status = returnDoc.Status.ToString() });
+});
+
+app.MapPost("/api/customer-returns/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveCustomerReturnAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/customer-returns/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    try
+    {
+        await svc.CancelCustomerReturnAsync(id);
+        return Results.Ok(new { success = true, message = "Đã hủy phiếu khách hàng trả lại." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+});
+
 app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
@@ -279,3 +375,5 @@ record CreateMoveOrderDto(int FromWarehouseId, int ToWarehouseId, string? Note, 
 record MoveOrderItemDto(int ProductId, int Quantity, string? Note);
 record CreateReturnSupDto(int WarehouseId, string SupplierName, string? SupplierCode, string? RefDocNo, string? Reason, List<ReturnSupItemDto> Lines);
 record ReturnSupItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
+record CreateCustomerReturnDto(int WarehouseId, string CustomerName, string? CustomerCode, string? InvoiceNo, string? RefOrderNo, string? Reason, List<CustomerReturnItemDto> Lines);
+record CustomerReturnItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
