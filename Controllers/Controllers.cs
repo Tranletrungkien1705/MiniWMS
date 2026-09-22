@@ -1392,6 +1392,206 @@ public class CartonController(IWmsService svc) : Controller
     }
 }
 
+public class BoxController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        var prods = await svc.ProductsAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.Products = prods;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ProductId = productId;
+        ViewBag.CartonId = cartonId;
+        ViewBag.Status = status;
+        ViewBag.FlagMap = flagMap;
+        ViewBag.Keyword = q ?? "";
+
+        if (warehouseId.HasValue)
+        {
+            ViewBag.AvailableCartons = await svc.AvailableCartonsAsync(warehouseId.Value);
+        }
+        else
+        {
+            var allCartonsReport = await svc.CartonsAsync(null, null, null, null);
+            ViewBag.AvailableCartons = allCartonsReport.Rows.Select(r => new { r.Id, r.CartonCode }).ToList();
+        }
+
+        var report = await svc.BoxesAsync(warehouseId, productId, cartonId, status, flagMap, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var box = await svc.GetBoxAsync(id);
+        if (box == null) return NotFound();
+
+        ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.AvailableCartons = await svc.AvailableCartonsAsync(box.WarehouseId);
+        return View(box);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string? boxCode, string? boxType, double lengthCm, double widthCm, double heightCm, int capacity, int? cartonId, string? shelfLocation, string? remark)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho lưu trữ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var box = new InventoryBox
+            {
+                WarehouseId = warehouseId,
+                BoxCode = boxCode?.Trim() ?? "",
+                BoxType = string.IsNullOrWhiteSpace(boxType) ? "Hộp duplex tiêu chuẩn" : boxType.Trim(),
+                LengthCm = lengthCm > 0 ? lengthCm : 20,
+                WidthCm = widthCm > 0 ? widthCm : 15,
+                HeightCm = heightCm > 0 ? heightCm : 10,
+                Capacity = capacity > 0 ? capacity : 10,
+                CartonId = (cartonId.HasValue && cartonId.Value > 0) ? cartonId : null,
+                FlagMap = (cartonId.HasValue && cartonId.Value > 0),
+                ShelfLocation = shelfLocation?.Trim(),
+                Remark = remark?.Trim(),
+                Status = (cartonId.HasValue && cartonId.Value > 0) ? BoxStatus.InCarton : BoxStatus.Empty
+            };
+
+            var id = await svc.CreateBoxAsync(box);
+            TempData["Success"] = $"Đã tạo mã hộp {box.BoxCode} thành công.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+            return RedirectToAction(nameof(Index), new { warehouseId });
+        }
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> GenerateBatch(int warehouseId, string? boxType, int count, double lengthCm, double widthCm, double heightCm, int capacity, int? cartonId, string? shelfLocation, string? prefix)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho lưu trữ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (ok, msg, _) = await svc.GenerateBoxesBatchAsync(
+            warehouseId,
+            boxType ?? "Hộp duplex tiêu chuẩn",
+            count,
+            lengthCm,
+            widthCm,
+            heightCm,
+            capacity,
+            (cartonId.HasValue && cartonId.Value > 0) ? cartonId : null,
+            shelfLocation,
+            prefix);
+
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId, cartonId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Pack(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? secretNo, string? note)
+    {
+        var (ok, msg) = await svc.PackBoxAsync(id, productId, quantity, lotNo, grossWeightKg, packerName, secretNo, note);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Seal(int id, string? secretNo)
+    {
+        var (ok, msg) = await svc.SealBoxAsync(id, secretNo);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> MapCarton(int id, int cartonId)
+    {
+        if (cartonId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn thùng carton muốn gán hộp vào.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+
+        var (ok, msg) = await svc.MapBoxToCartonAsync(id, cartonId);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> UnmapCarton(int id)
+    {
+        var (ok, msg) = await svc.UnmapBoxFromCartonAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Unpack(int id, string? reason)
+    {
+        var (ok, msg) = await svc.UnpackBoxAsync(id, reason);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Ship(int id, string refDocNo)
+    {
+        if (string.IsNullOrWhiteSpace(refDocNo))
+        {
+            TempData["Error"] = "Vui lòng nhập số chứng từ / phiếu xuất kho.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+
+        var (ok, msg) = await svc.ShipBoxAsync(id, refDocNo);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id, int? warehouseId)
+    {
+        var (ok, msg) = await svc.DeleteBoxAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q)
+    {
+        var report = await svc.BoxesAsync(warehouseId, productId, cartonId, status, flagMap, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BẢNG KÊ QUẢN LÝ HỘP ĐÓNG GÓI & PHÂN CẤP BAO BÌ KHO");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Mặt hàng:;{(report.ProductName ?? "Tất cả")};Thùng Carton:;{(report.CartonCode ?? "Tất cả")}");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Trạng thái lọc:;{(status.HasValue ? status.Value.ToString() : "Tất cả trạng thái")};Gán thùng:;{(flagMap.HasValue ? (flagMap.Value ? "Đã gán thùng" : "Chưa gán thùng") : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hộp (BoxNo);Mã QR;Đợt sinh mã;Mã niêm phong/Secret;Kho lưu trữ;Thùng Carton chứa;Quy cách hộp;Mã hàng;Tên mặt hàng;ĐVT;Số lô;Số lượng đóng;Sức chứa;Dài (cm);Rộng (cm);Cao (cm);Thể tích (m3);Trọng lượng cả bì (kg);Trạng thái;Trạng thái gán thùng;Vị trí kệ;Người đóng;Ngày đóng;Ngày niêm phong;Chứng từ liên quan;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var packed = r.PackedAt.HasValue ? r.PackedAt.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+            var sealedDate = r.SealedAt.HasValue ? r.SealedAt.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+            sb.AppendLine($"{stt++};\"{r.BoxCode}\";\"{r.QrCode ?? ""}\";\"{r.GenTimesBoxNo ?? ""}\";\"{r.SecretNo ?? ""}\";\"{r.WarehouseName}\";\"{r.CartonCode ?? "Chưa gán"}\";\"{r.BoxType}\";\"{r.ProductCode ?? ""}\";\"{r.ProductName?.Replace("\"", "\"\"") ?? ""}\";\"{r.Uom ?? ""}\";\"{r.LotNo ?? ""}\";{r.Quantity};{r.Capacity};{r.LengthCm};{r.WidthCm};{r.HeightCm};{r.VolumeM3:F4};{r.GrossWeightKg:F2};\"{r.StatusLabel}\";\"{r.MapLabel}\";\"{r.ShelfLocation ?? ""}\";\"{r.PackerName ?? ""}\";{packed};{sealedDate};\"{r.RefDocNo ?? ""}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalBoxes} hộp;;;;{report.TotalItemsPacked} sản phẩm;;;;;{report.TotalVolumeM3:F4} m3;{report.TotalWeightKg:F2} kg;Niêm phong: {report.SealedCount};Trong thùng: {report.InCartonCount};Đang đóng: {report.PackingCount};Hộp rỗng: {report.EmptyCount};Đã xuất: {report.ShippedCount}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_HopDongGoi_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 public class InventoryInFGController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)

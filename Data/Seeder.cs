@@ -1336,13 +1336,210 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Quản lý Hộp đóng gói & Phân cấp bao bì kho (InventoryBox - port từ Inv_InventoryBox Skycic)
+        if (!await db.InventoryBoxes.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001");
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001");
+
+            var ctn1 = await db.InventoryCartons.FirstOrDefaultAsync(c => c.CartonCode == "CTN2603-HN01");
+            var ctn2 = await db.InventoryCartons.FirstOrDefaultAsync(c => c.CartonCode == "CTN2603-HN02");
+
+            var today = DateTime.Today;
+
+            if (whHn != null && ao != null && quan != null && pk != null && vay != null)
+            {
+                var boxes = new List<InventoryBox>
+                {
+                    // 1. Hộp đã niêm phong & đã đóng vào Thùng carton CTN2603-HN01 (Áo sơ mi trắng - Hộp 1)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = ctn1?.Id,
+                        BoxCode = "BOX2603-HN01",
+                        QrCode = "BOX2603-HN01",
+                        GenTimesBoxNo = "GTB2603251000",
+                        SecretNo = "SEC-8839-A1",
+                        BoxType = "Hộp duplex nắp gài (20x15x10)",
+                        ProductId = ao.Id,
+                        LotNo = "LOT-AO26-01",
+                        Quantity = 10,
+                        Capacity = 10,
+                        LengthCm = 20, WidthCm = 15, HeightCm = 10,
+                        GrossWeightKg = 2.1,
+                        Status = BoxStatus.InCarton,
+                        FlagMap = true,
+                        FlagUsed = true,
+                        ShelfLocation = "A-01-01",
+                        PackerName = "Nguyễn Văn Đóng",
+                        PackedAt = today.AddDays(-5),
+                        SealedAt = today.AddDays(-5).AddHours(1),
+                        Remark = "Hộp 1/3 đóng vào thùng carton CTN2603-HN01"
+                    },
+                    // 2. Hộp đã niêm phong & đã đóng vào Thùng carton CTN2603-HN01 (Áo sơ mi trắng - Hộp 2)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = ctn1?.Id,
+                        BoxCode = "BOX2603-HN02",
+                        QrCode = "BOX2603-HN02",
+                        GenTimesBoxNo = "GTB2603251000",
+                        SecretNo = "SEC-8839-A2",
+                        BoxType = "Hộp duplex nắp gài (20x15x10)",
+                        ProductId = ao.Id,
+                        LotNo = "LOT-AO26-01",
+                        Quantity = 10,
+                        Capacity = 10,
+                        LengthCm = 20, WidthCm = 15, HeightCm = 10,
+                        GrossWeightKg = 2.1,
+                        Status = BoxStatus.InCarton,
+                        FlagMap = true,
+                        FlagUsed = true,
+                        ShelfLocation = "A-01-01",
+                        PackerName = "Nguyễn Văn Đóng",
+                        PackedAt = today.AddDays(-5),
+                        SealedAt = today.AddDays(-5).AddHours(1),
+                        Remark = "Hộp 2/3 đóng vào thùng carton CTN2603-HN01"
+                    },
+                    // 3. Hộp đã niêm phong & đã đóng vào Thùng carton CTN2603-HN02 (Quần jeans slim)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = ctn2?.Id,
+                        BoxCode = "BOX2603-HN03",
+                        QrCode = "BOX2603-HN03",
+                        GenTimesBoxNo = "GTB2603260930",
+                        SecretNo = "SEC-9921-B1",
+                        BoxType = "Hộp carton bồi sóng E (30x20x12)",
+                        ProductId = quan.Id,
+                        LotNo = "LOT-QJ26-01",
+                        Quantity = 10,
+                        Capacity = 10,
+                        LengthCm = 30, WidthCm = 20, HeightCm = 12,
+                        GrossWeightKg = 4.5,
+                        Status = BoxStatus.InCarton,
+                        FlagMap = true,
+                        FlagUsed = true,
+                        ShelfLocation = "A-01-02",
+                        PackerName = "Trần Thị Kiện",
+                        PackedAt = today.AddDays(-4),
+                        SealedAt = today.AddDays(-4).AddHours(1),
+                        Remark = "Hộp quần jeans đóng trong thùng CTN2603-HN02"
+                    },
+                    // 4. Hộp đã niêm phong ĐỘC LẬP / CHỜ GÁN THÙNG (Thắt lưng da cao cấp)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = null,
+                        BoxCode = "BOX2603-HN04",
+                        QrCode = "BOX2603-HN04",
+                        GenTimesBoxNo = "GTB2603281400",
+                        SecretNo = "SEC-7712-PK",
+                        BoxType = "Hộp quà tặng bọc nhung (15x12x8)",
+                        ProductId = pk.Id,
+                        LotNo = "LOT-TL26-01",
+                        Quantity = 5,
+                        Capacity = 5,
+                        LengthCm = 15, WidthCm = 12, HeightCm = 8,
+                        GrossWeightKg = 1.2,
+                        Status = BoxStatus.Sealed,
+                        FlagMap = false,
+                        FlagUsed = true,
+                        ShelfLocation = "B-01-01",
+                        PackerName = "Lê Văn Hộp",
+                        PackedAt = today.AddDays(-2),
+                        SealedAt = today.AddDays(-2).AddHours(2),
+                        Remark = "Hộp quà tặng thắt lưng da cao cấp, dán tem cào bảo mật, chờ gán thùng"
+                    },
+                    // 5. Hộp đang đóng dở dang (Váy đầm công sở)
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = null,
+                        BoxCode = "BOX2603-HN05",
+                        QrCode = "BOX2603-HN05",
+                        GenTimesBoxNo = "GTB2603290800",
+                        SecretNo = null,
+                        BoxType = "Hộp duplex nắp gài (25x20x10)",
+                        ProductId = vay.Id,
+                        LotNo = "LOT-VD26-01",
+                        Quantity = 3,
+                        Capacity = 5,
+                        LengthCm = 25, WidthCm = 20, HeightCm = 10,
+                        GrossWeightKg = 1.0,
+                        Status = BoxStatus.Packing,
+                        FlagMap = false,
+                        FlagUsed = true,
+                        ShelfLocation = "A-02-01",
+                        PackerName = "Lê Văn Hộp",
+                        PackedAt = today.AddDays(-1),
+                        Remark = "Đang đóng dở 3/5 váy đầm công sở chờ KCS hoàn thiện"
+                    },
+                    // 6. Hộp rỗng mới khởi tạo theo đợt
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = null,
+                        BoxCode = "BOX2603-HN06",
+                        QrCode = "BOX2603-HN06",
+                        GenTimesBoxNo = "GTB2603300800",
+                        SecretNo = null,
+                        BoxType = "Hộp duplex tiêu chuẩn (20x15x10)",
+                        Quantity = 0,
+                        Capacity = 10,
+                        LengthCm = 20, WidthCm = 15, HeightCm = 10,
+                        GrossWeightKg = 0.2,
+                        Status = BoxStatus.Empty,
+                        FlagMap = false,
+                        FlagUsed = false,
+                        ShelfLocation = "B-01-02",
+                        Remark = "Hộp rỗng mới sinh mã sẵn sàng sử dụng"
+                    },
+                    // 7. Hộp đã xuất kho giao lẻ
+                    new()
+                    {
+                        WarehouseId = whHn.Id,
+                        CartonId = null,
+                        BoxCode = "BOX2603-HN07",
+                        QrCode = "BOX2603-HN07",
+                        GenTimesBoxNo = "GTB2603271100",
+                        SecretNo = "SEC-6623-EX",
+                        BoxType = "Hộp quà tặng bọc nhung (15x12x8)",
+                        ProductId = pk.Id,
+                        LotNo = "LOT-TL26-01",
+                        Quantity = 5,
+                        Capacity = 5,
+                        LengthCm = 15, WidthCm = 12, HeightCm = 8,
+                        GrossWeightKg = 1.2,
+                        Status = BoxStatus.Shipped,
+                        FlagMap = false,
+                        FlagUsed = true,
+                        ShelfLocation = "B-01-01",
+                        PackerName = "Nguyễn Văn Đóng",
+                        PackedAt = today.AddDays(-3),
+                        SealedAt = today.AddDays(-3).AddHours(1),
+                        ShippedAt = today.AddDays(-1),
+                        RefDocNo = "PXSEED-001",
+                        Remark = "Đã xuất bán lẻ kèm phiếu xuất kho PXSEED-001"
+                    }
+                };
+
+                db.InventoryBoxes.AddRange(boxes);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -1689,7 +1886,44 @@ public static class Seeder
                 CONSTRAINT ""FK_InventoryOutFGSerials_InventoryOutFGs_InventoryOutFGId"" FOREIGN KEY (""InventoryOutFGId"") REFERENCES ""InventoryOutFGs"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_InventoryOutFGSerials_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE RESTRICT
             );",
-            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryOutFGSerials_OrgId_InventoryOutFGId_ProductId_SerialNo"" ON ""InventoryOutFGSerials"" (""OrgId"", ""InventoryOutFGId"", ""ProductId"", ""SerialNo"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryOutFGSerials_OrgId_InventoryOutFGId_ProductId_SerialNo"" ON ""InventoryOutFGSerials"" (""OrgId"", ""InventoryOutFGId"", ""ProductId"", ""SerialNo"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryBoxes"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""BoxCode"" TEXT NOT NULL,
+                ""QrCode"" TEXT NULL,
+                ""GenTimesBoxNo"" TEXT NULL,
+                ""SecretNo"" TEXT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""CartonId"" INTEGER NULL,
+                ""BoxType"" TEXT NOT NULL DEFAULT 'Hộp duplex tiêu chuẩn',
+                ""ProductId"" INTEGER NULL,
+                ""LotNo"" TEXT NULL,
+                ""Quantity"" INTEGER NOT NULL DEFAULT 0,
+                ""Capacity"" INTEGER NOT NULL DEFAULT 10,
+                ""LengthCm"" REAL NOT NULL DEFAULT 20,
+                ""WidthCm"" REAL NOT NULL DEFAULT 15,
+                ""HeightCm"" REAL NOT NULL DEFAULT 10,
+                ""GrossWeightKg"" REAL NOT NULL DEFAULT 0,
+                ""Status"" INTEGER NOT NULL DEFAULT 0,
+                ""FlagMap"" INTEGER NOT NULL DEFAULT 0,
+                ""FlagUsed"" INTEGER NOT NULL DEFAULT 0,
+                ""ShelfLocation"" TEXT NULL,
+                ""PackerName"" TEXT NULL,
+                ""PackedAt"" TEXT NULL,
+                ""SealedAt"" TEXT NULL,
+                ""ShippedAt"" TEXT NULL,
+                ""RefDocNo"" TEXT NULL,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL,
+                CONSTRAINT ""FK_InventoryBoxes_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_InventoryBoxes_InventoryCartons_CartonId"" FOREIGN KEY (""CartonId"") REFERENCES ""InventoryCartons"" (""Id"") ON DELETE SET NULL,
+                CONSTRAINT ""FK_InventoryBoxes_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_BoxCode"" ON ""InventoryBoxes"" (""OrgId"", ""BoxCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_WarehouseId_Status"" ON ""InventoryBoxes"" (""OrgId"", ""WarehouseId"", ""Status"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryBoxes_OrgId_CartonId"" ON ""InventoryBoxes"" (""OrgId"", ""CartonId"");"
         };
         foreach (var s in sql)
         {

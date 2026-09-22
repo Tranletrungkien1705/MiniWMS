@@ -888,6 +888,151 @@ app.MapDelete("/api/inventory-cartons/{id:int}", async (int id, IWmsService svc)
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Hộp đóng gói & Phân cấp bao bì kho (Warehouse Box Packaging - port từ Inv_InventoryBox Skycic)
+app.MapGet("/api/inventory-boxes", async (int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q, IWmsService svc) =>
+{
+    var report = await svc.BoxesAsync(warehouseId, productId, cartonId, status, flagMap, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-boxes/{id:int}", async (int id, IWmsService svc) =>
+{
+    var b = await svc.GetBoxAsync(id);
+    if (b == null) return Results.NotFound(new { error = "Không tìm thấy hộp đóng gói." });
+    return Results.Ok(new
+    {
+        b.Id,
+        b.BoxCode,
+        b.QrCode,
+        b.GenTimesBoxNo,
+        b.SecretNo,
+        Warehouse = b.Warehouse.Name,
+        b.WarehouseId,
+        CartonCode = b.Carton?.CartonCode,
+        b.CartonId,
+        b.BoxType,
+        ProductCode = b.Product?.Code,
+        ProductName = b.Product?.Name,
+        b.ProductId,
+        b.LotNo,
+        b.Quantity,
+        b.Capacity,
+        b.LengthCm,
+        b.WidthCm,
+        b.HeightCm,
+        b.VolumeM3,
+        b.GrossWeightKg,
+        Status = b.Status.ToString(),
+        b.FlagMap,
+        b.FlagUsed,
+        b.ShelfLocation,
+        b.PackerName,
+        PackedAt = b.PackedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        SealedAt = b.SealedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        ShippedAt = b.ShippedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        b.RefDocNo,
+        b.Remark,
+        b.CreatedAt,
+        b.UpdatedAt
+    });
+});
+
+app.MapPost("/api/inventory-boxes", async (CreateBoxDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    try
+    {
+        var box = new InventoryBox
+        {
+            WarehouseId = dto.WarehouseId,
+            BoxCode = dto.BoxCode?.Trim() ?? "",
+            BoxType = string.IsNullOrWhiteSpace(dto.BoxType) ? "Hộp duplex tiêu chuẩn" : dto.BoxType.Trim(),
+            LengthCm = dto.LengthCm > 0 ? dto.LengthCm : 20,
+            WidthCm = dto.WidthCm > 0 ? dto.WidthCm : 15,
+            HeightCm = dto.HeightCm > 0 ? dto.HeightCm : 10,
+            Capacity = dto.Capacity > 0 ? dto.Capacity : 10,
+            CartonId = (dto.CartonId.HasValue && dto.CartonId.Value > 0) ? dto.CartonId : null,
+            FlagMap = (dto.CartonId.HasValue && dto.CartonId.Value > 0),
+            ShelfLocation = dto.ShelfLocation?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            Status = (dto.CartonId.HasValue && dto.CartonId.Value > 0) ? BoxStatus.InCarton : BoxStatus.Empty
+        };
+        var id = await svc.CreateBoxAsync(box);
+        return Results.Ok(new { id, boxCode = box.BoxCode, status = box.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/inventory-boxes/generate-batch", async (GenerateBoxBatchDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (dto.Count <= 0 || dto.Count > 1000) return Results.BadRequest(new { error = "Số lượng sinh phải từ 1 đến 1000." });
+
+    var (ok, msg, ids) = await svc.GenerateBoxesBatchAsync(
+        dto.WarehouseId,
+        dto.BoxType ?? "Hộp duplex tiêu chuẩn",
+        dto.Count,
+        dto.LengthCm,
+        dto.WidthCm,
+        dto.HeightCm,
+        dto.Capacity,
+        (dto.CartonId.HasValue && dto.CartonId.Value > 0) ? dto.CartonId : null,
+        dto.ShelfLocation,
+        dto.Prefix);
+
+    return ok ? Results.Ok(new { success = true, message = msg, ids, count = ids.Count }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/pack", async (int id, PackBoxDto dto, IWmsService svc) =>
+{
+    if (dto.ProductId <= 0) return Results.BadRequest(new { error = "Cần ProductId." });
+    if (dto.Quantity <= 0) return Results.BadRequest(new { error = "Số lượng đóng phải > 0." });
+
+    var (ok, msg) = await svc.PackBoxAsync(id, dto.ProductId, dto.Quantity, dto.LotNo, dto.GrossWeightKg, dto.PackerName, dto.SecretNo, dto.Note);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/seal", async (int id, SealBoxDto? dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.SealBoxAsync(id, dto?.SecretNo);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/map-carton", async (int id, MapBoxCartonDto dto, IWmsService svc) =>
+{
+    if (dto.CartonId <= 0) return Results.BadRequest(new { error = "Cần CartonId." });
+    var (ok, msg) = await svc.MapBoxToCartonAsync(id, dto.CartonId);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/unmap-carton", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.UnmapBoxFromCartonAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/unpack", async (int id, UnpackBoxDto? dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.UnpackBoxAsync(id, dto?.Reason);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-boxes/{id:int}/ship", async (int id, ShipBoxDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.RefDocNo)) return Results.BadRequest(new { error = "Cần RefDocNo (Mã chứng từ xuất kho)." });
+    var (ok, msg) = await svc.ShipBoxAsync(id, dto.RefDocNo);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-boxes/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteBoxAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Quản lý Nhập kho thành phẩm sản xuất (port từ InvF_InventoryInFG Skycic)
 app.MapGet("/api/inventory-in-fg", async (int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
 {
@@ -1149,6 +1294,13 @@ record GenerateCartonBatchDto(int WarehouseId, string? CartonType, int Count, do
 record PackCartonDto(int ProductId, int Quantity, string? LotNo, double GrossWeightKg, string? PackerName, string? Note);
 record ShipCartonDto(string RefDocNo);
 record UnpackCartonDto(string? Reason);
+record CreateBoxDto(int WarehouseId, string? BoxCode, string? BoxType, double LengthCm, double WidthCm, double HeightCm, int Capacity, int? CartonId, string? ShelfLocation, string? Remark);
+record GenerateBoxBatchDto(int WarehouseId, string? BoxType, int Count, double LengthCm, double WidthCm, double HeightCm, int Capacity, int? CartonId, string? ShelfLocation, string? Prefix);
+record PackBoxDto(int ProductId, int Quantity, string? LotNo, double GrossWeightKg, string? PackerName, string? SecretNo, string? Note);
+record SealBoxDto(string? SecretNo);
+record MapBoxCartonDto(int CartonId);
+record ShipBoxDto(string RefDocNo);
+record UnpackBoxDto(string? Reason);
 record CreateInventoryInFGDto(int WarehouseId, InvInFGFormType FormType, string WorkshopName, string? WorkOrderNo, string? ShiftLeader, DateTime? Date, string? Remark, List<InventoryInFGLineDto> Lines, List<InventoryInFGSerialDto>? Serials);
 record InventoryInFGLineDto(int ProductId, int PlanQty, int ActualQty, int DefectQty, decimal UnitCost, string? Note);
 record InventoryInFGSerialDto(int ProductId, string SerialNo, string? Note);

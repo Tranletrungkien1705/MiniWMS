@@ -1,0 +1,444 @@
+@model BoxReport
+@{
+    ViewData["Title"] = "Quản lý Hộp đóng gói & Phân cấp Bao bì kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var prods = (List<Product>)ViewBag.Products;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedPid = (int?)ViewBag.ProductId;
+    var selectedCid = (int?)ViewBag.CartonId;
+    var selectedStatus = (BoxStatus?)ViewBag.Status;
+    var selectedFlagMap = (bool?)ViewBag.FlagMap;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Kho lưu trữ</label>
+                <select name="warehouseId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Mặt hàng đóng hộp</label>
+                <select name="productId" class="form-select form-select-sm">
+                    <option value="">— Tất cả mặt hàng —</option>
+                    @foreach (var p in prods)
+                    {
+                        <option value="@p.Id" selected="@(selectedPid == p.Id)">@p.Code — @p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Trạng thái hộp</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="Empty" selected="@(selectedStatus == BoxStatus.Empty)">Hộp rỗng</option>
+                    <option value="Packing" selected="@(selectedStatus == BoxStatus.Packing)">Đang đóng hàng</option>
+                    <option value="Sealed" selected="@(selectedStatus == BoxStatus.Sealed)">Đã niêm phong</option>
+                    <option value="InCarton" selected="@(selectedStatus == BoxStatus.InCarton)">Đã đóng vào thùng</option>
+                    <option value="Shipped" selected="@(selectedStatus == BoxStatus.Shipped)">Đã xuất kho</option>
+                    <option value="Unpacked" selected="@(selectedStatus == BoxStatus.Unpacked)">Đã tháo dỡ</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Gán vào Thùng Master</label>
+                <select name="flagMap" class="form-select form-select-sm">
+                    <option value="">— Tất cả phân cấp —</option>
+                    <option value="true" selected="@(selectedFlagMap == true)">Đã gán vào thùng Carton</option>
+                    <option value="false" selected="@(selectedFlagMap == false)">Chưa gán vào thùng</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Tìm kiếm mã hộp / QR</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hộp, QR, đợt sinh, seal..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Lọc dữ liệu">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/Box" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/Box/ExportCsv?warehouseId=@selectedWid&productId=@selectedPid&cartonId=@selectedCid&status=@selectedStatus&flagMap=@selectedFlagMap&q=@Uri.EscapeDataString(keyword ?? "")"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i>
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In bảng kê hộp">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Tổng số hộp</span>
+                    <i class="bi bi-boxes text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalBoxes</div>
+                <div class="text-muted" style="font-size:11px">Thể tích: <b>@Model.TotalVolumeM3.ToString("F4")</b> m³</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm border-start border-success border-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Trong Thùng Carton</span>
+                    <i class="bi bi-box-seam-fill text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.InCartonCount</div>
+                <div class="text-muted" style="font-size:11px">Phân cấp đã gán kiện</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm border-start border-info border-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Đã niêm phong</span>
+                    <i class="bi bi-shield-lock-fill text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SealedCount</div>
+                <div class="text-muted" style="font-size:11px">Sẵn sàng gán thùng/xuất</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm border-start border-warning border-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Đang đóng hàng</span>
+                    <i class="bi bi-hourglass-split text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@Model.PackingCount</div>
+                <div class="text-muted" style="font-size:11px">Chưa đủ số lượng định mức</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm border-start border-secondary border-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Hộp rỗng</span>
+                    <i class="bi bi-box text-muted fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-secondary">@Model.EmptyCount</div>
+                <div class="text-muted" style="font-size:11px">Khả dụng đóng gói</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="card h-100 border-0 bg-white shadow-sm border-start border-primary border-3">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small">Tổng SP đóng hộp</span>
+                    <i class="bi bi-stack text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.TotalItemsPacked.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Tổng KL: <b>@Model.TotalWeightKg.ToString("F1")</b> kg</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-boxes me-2 text-primary"></i>Danh sách Hộp đóng gói & Phân cấp Bao bì</h6>
+            <div class="text-muted small">
+                Đang hiển thị <b>@Model.Rows.Count</b> / @Model.TotalBoxes hộp tại <b>@Model.WarehouseName</b>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#generateBatchModal">
+                <i class="bi bi-magic me-1"></i> Sinh dải mã hộp hàng loạt
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createBoxModal">
+                <i class="bi bi-plus-lg me-1"></i> Tạo hộp đơn lẻ
+            </button>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:40px" class="text-center">#</th>
+                    <th>Mã hộp & QR</th>
+                    <th>Kho & Thùng Carton Master</th>
+                    <th>Quy cách hộp</th>
+                    <th>Mặt hàng & Số lô</th>
+                    <th class="text-center">Số lượng / Sức chứa</th>
+                    <th class="text-end">Khối lượng (Kg)</th>
+                    <th class="text-center">Trạng thái hộp</th>
+                    <th class="text-center">Phân cấp thùng</th>
+                    <th>Người đóng / Niêm phong</th>
+                    <th class="text-end" style="width:140px">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="11" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                            Không tìm thấy hộp đóng gói nào phù hợp với bộ lọc.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        var fillPct = r.Capacity > 0 ? Math.Min(100, (int)Math.Round((double)r.Quantity / r.Capacity * 100)) : 0;
+                        <tr>
+                            <td class="text-center text-muted small">@(stt++)</td>
+                            <td>
+                                <div class="fw-bold text-primary font-monospace">
+                                    <a href="/Box/Detail/@r.Id" class="text-decoration-none">
+                                        <i class="bi bi-box me-1"></i>@r.BoxCode
+                                    </a>
+                                </div>
+                                <div class="text-muted small" style="font-size:11px">
+                                    <i class="bi bi-qr-code-scan me-1"></i>@(r.QrCode ?? r.BoxCode)
+                                    @if (!string.IsNullOrWhiteSpace(r.SecretNo))
+                                    {
+                                        <span class="badge bg-light text-danger border ms-1" title="Mã bảo mật cào / SecretNo">
+                                            <i class="bi bi-shield-check"></i> @r.SecretNo
+                                        </span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@r.WarehouseName</div>
+                                @if (r.CartonId.HasValue && !string.IsNullOrWhiteSpace(r.CartonCode))
+                                {
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:11px">
+                                        <i class="bi bi-box-seam me-1"></i>Thùng: <a href="/Carton/Detail/@r.CartonId" class="text-decoration-none fw-bold">@r.CartonCode</a>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small" style="font-size:11px">
+                                        <i class="bi bi-dash-circle me-1"></i>Chưa gán thùng
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                <div class="text-truncate" style="max-width:160px" title="@r.BoxType">@r.BoxType</div>
+                                <div class="text-muted small" style="font-size:11px">
+                                    @r.LengthCm &times; @r.WidthCm &times; @r.HeightCm cm · <b>@r.VolumeM3.ToString("F4")</b> m³
+                                </div>
+                            </td>
+                            <td>
+                                @if (r.ProductId.HasValue && !string.IsNullOrWhiteSpace(r.ProductCode))
+                                {
+                                    <div class="fw-semibold text-dark">@r.ProductCode — @r.ProductName</div>
+                                    <div class="text-muted small" style="font-size:11px">
+                                        @if (!string.IsNullOrWhiteSpace(r.LotNo))
+                                        {
+                                            <span class="badge bg-light text-secondary border me-1">Lô: @r.LotNo</span>
+                                        }
+                                        ĐVT: @r.Uom
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted fst-italic">Hộp trống</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                <div class="fw-bold @(r.Quantity >= r.Capacity && r.Capacity > 0 ? "text-success" : "text-dark")">
+                                    @r.Quantity / @r.Capacity
+                                </div>
+                                <div class="progress mt-1" style="height: 5px; width: 80px; margin: 0 auto;">
+                                    <div class="progress-bar @(fillPct >= 100 ? "bg-success" : (fillPct > 50 ? "bg-info" : "bg-warning"))"
+                                         style="width: @fillPct%"></div>
+                                </div>
+                            </td>
+                            <td class="text-end fw-semibold">
+                                @(r.GrossWeightKg > 0 ? r.GrossWeightKg.ToString("F2") : "—")
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.BadgeClass">@r.StatusLabel</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @r.MapBadgeClass">@r.MapLabel</span>
+                            </td>
+                            <td>
+                                <div class="small">@(string.IsNullOrWhiteSpace(r.PackerName) ? "—" : r.PackerName)</div>
+                                <div class="text-muted" style="font-size:11px">
+                                    @(r.PackedAt.HasValue ? r.PackedAt.Value.ToString("dd/MM/yyyy") : (r.CreatedAt.ToString("dd/MM/yyyy")))
+                                </div>
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="/Box/Detail/@r.Id" class="btn btn-outline-primary" title="Xem chi tiết & in tem">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    @if (r.Status == BoxStatus.Empty)
+                                    {
+                                        <form method="post" action="/Box/Delete/@r.Id" class="d-inline" onsubmit="return confirm('Xác nhận xóa hộp @r.BoxCode?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa hộp rỗng">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Tạo Hộp Đơn Lẻ -->
+<div class="modal fade" id="createBoxModal" tabindex="-1" aria-labelledby="createBoxModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/Box/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="createBoxModalLabel"><i class="bi bi-plus-circle me-1 text-primary"></i> Khởi tạo Hộp Đóng Gói Mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Kho lưu trữ <span class="text-danger">*</span></label>
+                        <select name="warehouseId" class="form-select form-select-sm" required>
+                            @foreach (var w in whs)
+                            {
+                                <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã hộp (BoxCode / BoxNo)</label>
+                        <input type="text" name="boxCode" class="form-control form-control-sm" placeholder="Tự động sinh (vd: BOX2603-0001) nếu để trống" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Quy cách / Loại hộp</label>
+                        <input type="text" name="boxType" class="form-control form-control-sm" value="Hộp duplex tiêu chuẩn (20x15x10)" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Dài (cm)</label>
+                            <input type="number" step="0.1" name="lengthCm" class="form-control form-control-sm" value="20" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Rộng (cm)</label>
+                            <input type="number" step="0.1" name="widthCm" class="form-control form-control-sm" value="15" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Cao (cm)</label>
+                            <input type="number" step="0.1" name="heightCm" class="form-control form-control-sm" value="10" required />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Sức chứa tối đa (Capacity)</label>
+                            <input type="number" name="capacity" class="form-control form-control-sm" value="10" required min="1" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Vị trí kệ lưu trữ</label>
+                            <input type="text" name="shelfLocation" class="form-control form-control-sm" placeholder="vd: A-01-01" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú hộp</label>
+                        <textarea name="remark" class="form-control form-control-sm" rows="2" placeholder="Ghi chú điều kiện bảo quản, yêu cầu đóng gói..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Tạo hộp</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sinh Dải Mã Hộp Hàng Loạt (Inv_GenTimesBox) -->
+<div class="modal fade" id="generateBatchModal" tabindex="-1" aria-labelledby="generateBatchModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/Box/GenerateBatch">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="generateBatchModalLabel"><i class="bi bi-magic me-1 text-primary"></i> Sinh Dải Mã Hộp Hàng Loạt (Batch Generation)</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info py-2" style="font-size:12px">
+                        <i class="bi bi-info-circle me-1"></i> Hệ thống sẽ tự động gán mã đợt sinh (GenTimesBoxNo) và sinh dải mã hộp kèm QR Code liên tiếp theo chuẩn WMS.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Kho lưu trữ <span class="text-danger">*</span></label>
+                        <select name="warehouseId" class="form-select form-select-sm" required>
+                            @foreach (var w in whs)
+                            {
+                                <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Tiền tố mã hộp (Prefix)</label>
+                            <input type="text" name="prefix" class="form-control form-control-sm font-monospace" value="BOX" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Số lượng hộp cần sinh <span class="text-danger">*</span></label>
+                            <input type="number" name="count" class="form-control form-control-sm" value="10" min="1" max="500" required />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Loại / Quy cách hộp</label>
+                        <input type="text" name="boxType" class="form-control form-control-sm" value="Hộp duplex nắp gài (20x15x10)" required />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Dài (cm)</label>
+                            <input type="number" step="0.1" name="lengthCm" class="form-control form-control-sm" value="20" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Rộng (cm)</label>
+                            <input type="number" step="0.1" name="widthCm" class="form-control form-control-sm" value="15" required />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Cao (cm)</label>
+                            <input type="number" step="0.1" name="heightCm" class="form-control form-control-sm" value="10" required />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Sức chứa định mức / Hộp</label>
+                            <input type="number" name="capacity" class="form-control form-control-sm" value="10" required min="1" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Vị trí khay kệ</label>
+                            <input type="text" name="shelfLocation" class="form-control form-control-sm" placeholder="vd: A-01-01" />
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-lightning-charge me-1"></i> Sinh dải mã hộp</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

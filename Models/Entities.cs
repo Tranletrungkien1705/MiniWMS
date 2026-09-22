@@ -1186,6 +1186,122 @@ public record InventoryOutFGReport(
     List<InventoryOutFGRow> Rows
 );
 
+/// <summary>Trạng thái vòng đời của Hộp đóng gói / Inner Box (port từ Inv_InventoryBox Skycic).</summary>
+public enum BoxStatus
+{
+    Empty = 0,    // Hộp rỗng / Mới khởi tạo mã hộp (FlagUsed = 0)
+    Packing = 1,  // Đang đóng hàng dở dang / Chưa niêm phong
+    Sealed = 2,   // Đã niêm phong / Hoàn tất đóng gói, sẵn sàng gán thùng hoặc xuất lẻ
+    InCarton = 3, // Đã đóng vào thùng Carton Master (FlagMap = 1)
+    Shipped = 4,  // Đã xuất kho giao hàng
+    Unpacked = 5  // Đã mở hộp / Tháo dỡ hoàn kho
+}
+
+/// <summary>Quản lý Hộp đóng gói & Phân cấp bao bì kho (Warehouse Box Packaging - port từ Inv_InventoryBox & Inv_GenTimesBox Skycic).</summary>
+public class InventoryBox : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string BoxCode { get; set; } = "";                         // Mã hộp (BoxNo, vd: BOX2603-HN01)
+    public string? QrCode { get; set; }                              // Mã QR định danh dán nhãn nắp hộp (QR_BoxNo)
+    public string? GenTimesBoxNo { get; set; }                       // Đợt sinh mã hộp (GenTimesBoxNo)
+    public string? SecretNo { get; set; }                            // Số niêm phong / Mã cào bảo mật tem chống giả (SecretNo)
+    public int WarehouseId { get; set; }                             // Kho lưu trữ hộp
+    public int? CartonId { get; set; }                               // Thùng Carton chứa hộp này (nếu đã đóng vào thùng)
+    public string BoxType { get; set; } = "Hộp duplex tiêu chuẩn";   // Quy cách loại hộp
+    public int? ProductId { get; set; }                              // Mặt hàng đóng trong hộp
+    public string? LotNo { get; set; }                               // Số lô hàng (ProductLotNo)
+    public int Quantity { get; set; } = 0;                           // Số lượng hàng trong hộp (Qty)
+    public int Capacity { get; set; } = 10;                          // Sức chứa định mức tối đa của hộp
+    public double LengthCm { get; set; } = 20;                       // Dài (cm)
+    public double WidthCm { get; set; } = 15;                        // Rộng (cm)
+    public double HeightCm { get; set; } = 10;                       // Cao (cm)
+    public double GrossWeightKg { get; set; } = 0;                   // Trọng lượng cả bì (kg)
+    public BoxStatus Status { get; set; } = BoxStatus.Empty;         // Trạng thái vòng đời hộp
+    public bool FlagMap { get; set; } = false;                       // Trạng thái gán vào thùng Carton (0: Chưa gán, 1: Đã gán)
+    public bool FlagUsed { get; set; } = false;                      // Cờ đã đóng hàng / in tem (0: Chưa dùng, 1: Đã dùng)
+    public string? ShelfLocation { get; set; }                       // Vị trí lưu kho (kệ/ô) nếu để riêng ngoài thùng
+    public string? PackerName { get; set; }                          // Người thực hiện đóng hộp
+    public DateTime? PackedAt { get; set; }                          // Thời điểm đóng hộp
+    public DateTime? SealedAt { get; set; }                          // Thời điểm niêm phong
+    public DateTime? ShippedAt { get; set; }                         // Thời điểm xuất kho
+    public string? RefDocNo { get; set; }                            // Số chứng từ xuất/nhập/lệnh liên quan
+    public string? Remark { get; set; }                              // Ghi chú hộp hàng
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public InventoryCarton? Carton { get; set; }
+    public Product? Product { get; set; }
+
+    /// <summary>Thể tích khối tính bằng m3 = (LengthCm * WidthCm * HeightCm) / 1,000,000</summary>
+    public double VolumeM3 => Math.Round((LengthCm * WidthCm * HeightCm) / 1000000.0, 4);
+}
+
+/// <summary>Dòng hiển thị Hộp đóng gói kèm trạng thái bao bì và phân cấp thùng.</summary>
+public record BoxRow(
+    int Id,
+    string BoxCode,
+    string? QrCode,
+    string? GenTimesBoxNo,
+    string? SecretNo,
+    int WarehouseId,
+    string WarehouseName,
+    int? CartonId,
+    string? CartonCode,
+    string BoxType,
+    int? ProductId,
+    string? ProductCode,
+    string? ProductName,
+    string? Uom,
+    string? LotNo,
+    int Quantity,
+    int Capacity,
+    double LengthCm,
+    double WidthCm,
+    double HeightCm,
+    double VolumeM3,
+    double GrossWeightKg,
+    BoxStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    bool FlagMap,
+    string MapLabel,
+    string MapBadgeClass,
+    bool FlagUsed,
+    string? ShelfLocation,
+    string? PackerName,
+    DateTime? PackedAt,
+    DateTime? SealedAt,
+    DateTime? ShippedAt,
+    string? RefDocNo,
+    string? Remark,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo & Tổng hợp Danh sách Quản lý Hộp đóng gói (port từ Inv_InventoryBox Skycic).</summary>
+public record BoxReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int? ProductId,
+    string? ProductName,
+    int? CartonId,
+    string? CartonCode,
+    BoxStatus? StatusFilter,
+    bool? FlagMapFilter,
+    string? Keyword,
+    int TotalBoxes,
+    int EmptyCount,
+    int PackingCount,
+    int SealedCount,
+    int InCartonCount,
+    int ShippedCount,
+    int TotalItemsPacked,
+    double TotalVolumeM3,
+    double TotalWeightKg,
+    List<BoxRow> Rows
+);
+
 
 
 

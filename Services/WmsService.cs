@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int PendingInFGs = 0, int PendingOutFGs = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0);
 
 public interface IWmsService
 {
@@ -80,6 +80,18 @@ public interface IWmsService
     Task<(bool ok, string msg)> UnpackCartonAsync(int id, string? reason);
     Task<(bool ok, string msg)> ShipCartonAsync(int id, string refDocNo);
     Task<(bool ok, string msg)> DeleteCartonAsync(int id);
+    Task<BoxReport> BoxesAsync(int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q);
+    Task<InventoryBox?> GetBoxAsync(int id);
+    Task<int> CreateBoxAsync(InventoryBox box);
+    Task<(bool ok, string msg, List<int> ids)> GenerateBoxesBatchAsync(int warehouseId, string boxType, int count, double length, double width, double height, int capacity, int? cartonId, string? shelfLocation, string? prefix);
+    Task<(bool ok, string msg)> PackBoxAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? secretNo, string? note);
+    Task<(bool ok, string msg)> SealBoxAsync(int id, string? secretNo);
+    Task<(bool ok, string msg)> MapBoxToCartonAsync(int boxId, int cartonId);
+    Task<(bool ok, string msg)> UnmapBoxFromCartonAsync(int boxId);
+    Task<(bool ok, string msg)> UnpackBoxAsync(int id, string? reason);
+    Task<(bool ok, string msg)> ShipBoxAsync(int id, string refDocNo);
+    Task<(bool ok, string msg)> DeleteBoxAsync(int id);
+    Task<List<InventoryCarton>> AvailableCartonsAsync(int warehouseId);
     Task<InventoryInFGReport> InventoryInFGsAsync(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q);
     Task<InventoryInFG?> GetInventoryInFGAsync(int id);
     Task<int> CreateInventoryInFGAsync(InventoryInFG doc, List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
@@ -1334,6 +1346,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalCostPrices = await db.CostPriceHists.CountAsync(c => c.IsCurrent);
         var totalClosedPeriods = await db.PeriodClosings.CountAsync(p => p.Status == PeriodClosingStatus.Closed);
         var totalCartons = await db.InventoryCartons.CountAsync();
+        var totalBoxes = await db.InventoryBoxes.CountAsync();
         var pendingInFGs = await db.InventoryInFGs.CountAsync(f => f.Status == InvInFGStatus.Pending);
         var pendingOutFGs = await db.InventoryOutFGs.CountAsync(f => f.Status == InvOutFGStatus.Pending);
 
@@ -1355,6 +1368,7 @@ public class WmsService(AppDbContext db) : IWmsService
             totalCostPrices,
             totalClosedPeriods,
             totalCartons,
+            totalBoxes,
             pendingInFGs,
             pendingOutFGs);
     }
@@ -2469,6 +2483,423 @@ public class WmsService(AppDbContext db) : IWmsService
         await db.SaveChangesAsync();
         return (true, $"Đã xóa thùng carton {carton.CartonCode}.");
     }
+
+    /// <summary>Báo cáo & Danh sách Quản lý Hộp đóng gói (Warehouse Box Packaging - port từ Inv_InventoryBox Skycic).</summary>
+    public async Task<BoxReport> BoxesAsync(int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        string? prodName = null;
+        if (productId.HasValue)
+        {
+            var p = await db.Products.FirstOrDefaultAsync(x => x.Id == productId.Value);
+            if (p != null) prodName = p.Name;
+        }
+
+        string? ctnCode = null;
+        if (cartonId.HasValue)
+        {
+            var c = await db.InventoryCartons.FirstOrDefaultAsync(x => x.Id == cartonId.Value);
+            if (c != null) ctnCode = c.CartonCode;
+        }
+
+        var query = db.InventoryBoxes.Include(b => b.Warehouse).Include(b => b.Carton).Include(b => b.Product).AsQueryable();
+        if (warehouseId.HasValue) query = query.Where(b => b.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) query = query.Where(b => b.ProductId == productId.Value);
+        if (cartonId.HasValue) query = query.Where(b => b.CartonId == cartonId.Value);
+        if (status.HasValue) query = query.Where(b => b.Status == status.Value);
+        if (flagMap.HasValue) query = query.Where(b => b.FlagMap == flagMap.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(b => b.BoxCode.ToLower().Contains(kw) ||
+                                     (b.QrCode != null && b.QrCode.ToLower().Contains(kw)) ||
+                                     (b.GenTimesBoxNo != null && b.GenTimesBoxNo.ToLower().Contains(kw)) ||
+                                     (b.SecretNo != null && b.SecretNo.ToLower().Contains(kw)) ||
+                                     (b.LotNo != null && b.LotNo.ToLower().Contains(kw)) ||
+                                     (b.ShelfLocation != null && b.ShelfLocation.ToLower().Contains(kw)) ||
+                                     (b.PackerName != null && b.PackerName.ToLower().Contains(kw)) ||
+                                     (b.RefDocNo != null && b.RefDocNo.ToLower().Contains(kw)) ||
+                                     (b.Remark != null && b.Remark.ToLower().Contains(kw)) ||
+                                     (b.Product != null && (b.Product.Code.ToLower().Contains(kw) || b.Product.Name.ToLower().Contains(kw))) ||
+                                     (b.Carton != null && b.Carton.CartonCode.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderByDescending(b => b.CreatedAt).ToListAsync();
+
+        int totalBoxes = list.Count;
+        int emptyCount = list.Count(b => b.Status == BoxStatus.Empty);
+        int packingCount = list.Count(b => b.Status == BoxStatus.Packing);
+        int sealedCount = list.Count(b => b.Status == BoxStatus.Sealed);
+        int inCartonCount = list.Count(b => b.Status == BoxStatus.InCarton || b.FlagMap);
+        int shippedCount = list.Count(b => b.Status == BoxStatus.Shipped);
+        int totalItemsPacked = list.Sum(b => b.Quantity);
+        double totalVolumeM3 = Math.Round(list.Sum(b => b.VolumeM3), 4);
+        double totalWeightKg = Math.Round(list.Sum(b => b.GrossWeightKg), 2);
+
+        var rows = list.Select(b =>
+        {
+            var (statusLabel, badgeClass) = b.Status switch
+            {
+                BoxStatus.Empty => ("Hộp rỗng", "bg-secondary"),
+                BoxStatus.Packing => ("Đang đóng hàng", "bg-warning text-dark"),
+                BoxStatus.Sealed => ("Đã niêm phong", "bg-info text-dark"),
+                BoxStatus.InCarton => ("Đã đóng vào thùng", "bg-success"),
+                BoxStatus.Shipped => ("Đã xuất kho", "bg-primary"),
+                BoxStatus.Unpacked => ("Đã tháo dỡ", "bg-dark"),
+                _ => ("Khác", "bg-secondary")
+            };
+
+            var (mapLabel, mapBadgeClass) = b.FlagMap
+                ? ("Đã gán thùng", "bg-success")
+                : ("Chưa gán thùng", "bg-light text-muted border");
+
+            return new BoxRow(
+                b.Id,
+                b.BoxCode,
+                b.QrCode,
+                b.GenTimesBoxNo,
+                b.SecretNo,
+                b.WarehouseId,
+                b.Warehouse.Name,
+                b.CartonId,
+                b.Carton?.CartonCode,
+                b.BoxType,
+                b.ProductId,
+                b.Product?.Code,
+                b.Product?.Name,
+                b.Product?.Uom,
+                b.LotNo,
+                b.Quantity,
+                b.Capacity,
+                b.LengthCm,
+                b.WidthCm,
+                b.HeightCm,
+                b.VolumeM3,
+                b.GrossWeightKg,
+                b.Status,
+                statusLabel,
+                badgeClass,
+                b.FlagMap,
+                mapLabel,
+                mapBadgeClass,
+                b.FlagUsed,
+                b.ShelfLocation,
+                b.PackerName,
+                b.PackedAt,
+                b.SealedAt,
+                b.ShippedAt,
+                b.RefDocNo,
+                b.Remark,
+                b.CreatedAt
+            );
+        }).ToList();
+
+        return new BoxReport(
+            warehouseId,
+            whName,
+            productId,
+            prodName,
+            cartonId,
+            ctnCode,
+            status,
+            flagMap,
+            q,
+            totalBoxes,
+            emptyCount,
+            packingCount,
+            sealedCount,
+            inCartonCount,
+            shippedCount,
+            totalItemsPacked,
+            totalVolumeM3,
+            totalWeightKg,
+            rows
+        );
+    }
+
+    public Task<InventoryBox?> GetBoxAsync(int id) =>
+        db.InventoryBoxes
+          .Include(b => b.Warehouse)
+          .Include(b => b.Carton)
+          .Include(b => b.Product)
+          .FirstOrDefaultAsync(b => b.Id == id);
+
+    public async Task<int> CreateBoxAsync(InventoryBox box)
+    {
+        if (string.IsNullOrWhiteSpace(box.BoxCode))
+        {
+            var seq = await db.InventoryBoxes.CountAsync() + 1;
+            box.BoxCode = $"BOX{DateTime.Now:yyMM}-{seq:D4}";
+        }
+        if (string.IsNullOrWhiteSpace(box.QrCode))
+        {
+            box.QrCode = box.BoxCode;
+        }
+
+        if (box.CartonId.HasValue && box.CartonId.Value > 0)
+        {
+            box.FlagMap = true;
+            if (box.Status == BoxStatus.Empty) box.Status = BoxStatus.InCarton;
+        }
+
+        db.InventoryBoxes.Add(box);
+        await db.SaveChangesAsync();
+        return box.Id;
+    }
+
+    /// <summary>Sinh dải mã hộp hàng loạt (port từ Inv_GenTimesBox Skycic).</summary>
+    public async Task<(bool ok, string msg, List<int> ids)> GenerateBoxesBatchAsync(
+        int warehouseId,
+        string boxType,
+        int count,
+        double length,
+        double width,
+        double height,
+        int capacity,
+        int? cartonId,
+        string? shelfLocation,
+        string? prefix)
+    {
+        var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
+        if (wh == null) return (false, "Không tìm thấy kho lưu trữ.", []);
+
+        InventoryCarton? carton = null;
+        if (cartonId.HasValue && cartonId.Value > 0)
+        {
+            carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == cartonId.Value);
+            if (carton == null) return (false, "Không tìm thấy thùng carton chỉ định.", []);
+        }
+
+        var pref = string.IsNullOrWhiteSpace(prefix) ? "BOX" : prefix.Trim().ToUpper();
+        var nextSeq = await db.InventoryBoxes.CountAsync() + 1;
+        var genTimesNo = $"GTB{DateTime.Now:yyMMddHHmm}";
+
+        var list = new List<InventoryBox>();
+        for (int i = 0; i < count; i++)
+        {
+            var code = $"{pref}{DateTime.Now:yyMM}-{(nextSeq + i):D4}";
+            list.Add(new InventoryBox
+            {
+                WarehouseId = warehouseId,
+                BoxCode = code,
+                QrCode = code,
+                GenTimesBoxNo = genTimesNo,
+                BoxType = string.IsNullOrWhiteSpace(boxType) ? "Hộp duplex tiêu chuẩn" : boxType.Trim(),
+                CartonId = carton?.Id,
+                FlagMap = carton != null,
+                LengthCm = length > 0 ? length : 20,
+                WidthCm = width > 0 ? width : 15,
+                HeightCm = height > 0 ? height : 10,
+                Capacity = capacity > 0 ? capacity : 10,
+                ShelfLocation = shelfLocation?.Trim(),
+                Status = carton != null ? BoxStatus.InCarton : BoxStatus.Empty,
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        db.InventoryBoxes.AddRange(list);
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã sinh thành công {count} mã hộp mới theo đợt '{genTimesNo}' ({list.First().BoxCode} &rarr; {list.Last().BoxCode}).", list.Select(b => b.Id).ToList());
+    }
+
+    public async Task<(bool ok, string msg)> PackBoxAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? secretNo, string? note)
+    {
+        var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
+        if (box == null) return (false, "Không tìm thấy hộp đóng gói.");
+        if (box.Status == BoxStatus.Sealed) return (false, "Hộp đã được niêm phong, vui lòng mở hộp trước khi đóng thêm hàng.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Hộp hàng đã xuất kho, không thể thao tác đóng hàng.");
+
+        var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId);
+        if (prod == null) return (false, "Không tìm thấy mặt hàng.");
+        if (quantity <= 0) return (false, "Số lượng đóng hộp phải lớn hơn 0.");
+
+        box.ProductId = productId;
+        box.Quantity = quantity;
+        box.LotNo = lotNo?.Trim();
+        if (grossWeightKg > 0) box.GrossWeightKg = grossWeightKg;
+        if (!string.IsNullOrWhiteSpace(secretNo)) box.SecretNo = secretNo.Trim();
+        box.PackerName = string.IsNullOrWhiteSpace(packerName) ? "thukho" : packerName.Trim();
+        box.PackedAt = DateTime.Now;
+        box.FlagUsed = true;
+        box.Status = BoxStatus.Packing;
+        if (!string.IsNullOrWhiteSpace(note)) box.Remark = note.Trim();
+        box.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã đóng {quantity} {prod.Uom} '{prod.Name}' vào hộp {box.BoxCode}.");
+    }
+
+    public async Task<(bool ok, string msg)> SealBoxAsync(int id, string? secretNo)
+    {
+        var box = await db.InventoryBoxes.Include(b => b.Product).FirstOrDefaultAsync(b => b.Id == id);
+        if (box == null) return (false, "Không tìm thấy hộp đóng gói.");
+        if (box.Status == BoxStatus.Sealed) return (false, "Hộp đã được niêm phong trước đó.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Hộp hàng đã xuất kho.");
+
+        box.Status = BoxStatus.Sealed;
+        box.SealedAt = DateTime.Now;
+        if (!string.IsNullOrWhiteSpace(secretNo)) box.SecretNo = secretNo.Trim();
+        box.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã niêm phong thành công hộp {box.BoxCode}. Sẵn sàng gán vào thùng carton hoặc xuất kho.");
+    }
+
+    /// <summary>Gán hộp vào thùng carton (port từ Inv_InventoryBalanceSerial_UpdCanFromBox Skycic).</summary>
+    public async Task<(bool ok, string msg)> MapBoxToCartonAsync(int boxId, int cartonId)
+    {
+        var box = await db.InventoryBoxes.Include(b => b.Product).FirstOrDefaultAsync(b => b.Id == boxId);
+        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Hộp đã xuất kho, không thể gán vào thùng.");
+
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == cartonId);
+        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng carton đã xuất kho, không thể gán thêm hộp.");
+        if (carton.WarehouseId != box.WarehouseId) return (false, "Hộp và Thùng carton phải ở cùng một kho lưu trữ.");
+
+        // Gán hộp vào thùng
+        box.CartonId = carton.Id;
+        box.FlagMap = true;
+        box.Status = BoxStatus.InCarton;
+        box.UpdatedAt = DateTime.Now;
+
+        // Đồng bộ thông tin mặt hàng và cập nhật số lượng thùng carton
+        if (!carton.ProductId.HasValue && box.ProductId.HasValue)
+        {
+            carton.ProductId = box.ProductId;
+            carton.LotNo = box.LotNo;
+        }
+
+        if (box.Quantity > 0)
+        {
+            carton.Quantity += box.Quantity;
+        }
+        if (box.GrossWeightKg > 0)
+        {
+            carton.GrossWeightKg = Math.Round(carton.GrossWeightKg + box.GrossWeightKg, 2);
+        }
+        if (carton.Status == CartonStatus.Empty)
+        {
+            carton.Status = CartonStatus.Packing;
+        }
+        carton.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã gán thành công hộp '{box.BoxCode}' vào thùng carton '{carton.CartonCode}'.");
+    }
+
+    /// <summary>Gỡ hộp khỏi thùng carton.</summary>
+    public async Task<(bool ok, string msg)> UnmapBoxFromCartonAsync(int boxId)
+    {
+        var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == boxId);
+        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Hộp đã xuất kho, không thể gỡ.");
+        if (!box.CartonId.HasValue) return (false, "Hộp này chưa được gán vào thùng nào.");
+
+        var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == box.CartonId.Value);
+        if (carton != null)
+        {
+            if (box.Quantity > 0)
+            {
+                carton.Quantity = Math.Max(0, carton.Quantity - box.Quantity);
+            }
+            if (box.GrossWeightKg > 0)
+            {
+                carton.GrossWeightKg = Math.Max(0, Math.Round(carton.GrossWeightKg - box.GrossWeightKg, 2));
+            }
+            if (carton.Quantity == 0)
+            {
+                carton.Status = CartonStatus.Empty;
+            }
+            carton.UpdatedAt = DateTime.Now;
+        }
+
+        var oldCartonCode = carton?.CartonCode ?? "thùng carton";
+        box.CartonId = null;
+        box.FlagMap = false;
+        box.Status = box.Quantity > 0 ? BoxStatus.Sealed : BoxStatus.Empty;
+        box.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã tách hộp '{box.BoxCode}' ra khỏi {oldCartonCode}.");
+    }
+
+    public async Task<(bool ok, string msg)> UnpackBoxAsync(int id, string? reason)
+    {
+        var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
+        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Không thể tháo dỡ hộp hàng đã xuất kho.");
+
+        // Nếu hộp đang nằm trong thùng carton thì cần gỡ khỏi thùng trước
+        if (box.CartonId.HasValue)
+        {
+            var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == box.CartonId.Value);
+            if (carton != null)
+            {
+                carton.Quantity = Math.Max(0, carton.Quantity - box.Quantity);
+                carton.GrossWeightKg = Math.Max(0, Math.Round(carton.GrossWeightKg - box.GrossWeightKg, 2));
+                if (carton.Quantity == 0) carton.Status = CartonStatus.Empty;
+            }
+            box.CartonId = null;
+            box.FlagMap = false;
+        }
+
+        box.ProductId = null;
+        box.Quantity = 0;
+        box.LotNo = null;
+        box.GrossWeightKg = 0;
+        box.Status = BoxStatus.Empty;
+        box.FlagUsed = false;
+        box.SealedAt = null;
+        box.PackedAt = null;
+        var r = string.IsNullOrWhiteSpace(reason) ? "Đã dỡ hàng về hộp trống" : reason.Trim();
+        box.Remark = string.IsNullOrWhiteSpace(box.Remark) ? r : $"{box.Remark} | {r}";
+        box.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã tháo dỡ hàng khỏi hộp {box.BoxCode}. Hộp đã đưa về trạng thái trống.");
+    }
+
+    public async Task<(bool ok, string msg)> ShipBoxAsync(int id, string refDocNo)
+    {
+        var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
+        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box.Status == BoxStatus.Empty) return (false, "Hộp rỗng không thể thực hiện xuất kho giao hàng.");
+
+        box.Status = BoxStatus.Shipped;
+        box.ShippedAt = DateTime.Now;
+        box.RefDocNo = refDocNo.Trim();
+        box.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã ghi nhận xuất kho cho hộp {box.BoxCode} theo chứng từ {box.RefDocNo}.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteBoxAsync(int id)
+    {
+        var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
+        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box.Status != BoxStatus.Empty)
+            return (false, "Chỉ có thể xóa hộp rỗng. Vui lòng tháo dỡ hoặc gỡ hộp khỏi thùng trước khi xóa.");
+
+        db.InventoryBoxes.Remove(box);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa hộp {box.BoxCode}.");
+    }
+
+    public Task<List<InventoryCarton>> AvailableCartonsAsync(int warehouseId) =>
+        db.InventoryCartons
+          .Where(c => c.WarehouseId == warehouseId && c.Status != CartonStatus.Shipped)
+          .OrderBy(c => c.CartonCode)
+          .ToListAsync();
 
     public async Task<InventoryInFGReport> InventoryInFGsAsync(int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
     {

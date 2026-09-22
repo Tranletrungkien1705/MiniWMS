@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<PeriodClosing> PeriodClosings => Set<PeriodClosing>();
     public DbSet<PeriodClosingLine> PeriodClosingLines => Set<PeriodClosingLine>();
     public DbSet<InventoryCarton> InventoryCartons => Set<InventoryCarton>();
+    public DbSet<InventoryBox> InventoryBoxes => Set<InventoryBox>();
     public DbSet<InventoryInFG> InventoryInFGs => Set<InventoryInFG>();
     public DbSet<InventoryInFGLine> InventoryInFGLines => Set<InventoryInFGLine>();
     public DbSet<InventoryInFGSerial> InventoryInFGSerials => Set<InventoryInFGSerial>();
@@ -181,6 +182,17 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
             e.Ignore(x => x.VolumeM3);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryBox>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.BoxCode }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
+            e.HasIndex(x => new { x.OrgId, x.CartonId });
+            e.Ignore(x => x.VolumeM3);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Carton).WithMany().HasForeignKey(x => x.CartonId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
