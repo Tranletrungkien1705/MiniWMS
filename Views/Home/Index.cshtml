@@ -18,9 +18,11 @@
         <a href="/Audit" class="btn btn-outline-primary"><i class="bi bi-clipboard-check me-1"></i>Kiểm kê kho</a>
         <a href="/Inventory" class="btn btn-outline-primary"><i class="bi bi-clipboard-data me-1"></i>Xem tồn kho</a>
         <a href="/StockMinimum" class="btn btn-outline-danger"><i class="bi bi-shield-exclamation me-1"></i>Cảnh báo tồn tối thiểu</a>
+        <a href="/LotExpiry" class="btn btn-outline-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Lô & Hạn sử dụng</a>
         <a href="/InventoryInOut" class="btn btn-primary"><i class="bi bi-graph-up-arrow me-1"></i>Báo cáo NXT</a>
     </div>
-    @if (d.LowStock > 0) { <div class="alert alert-danger mt-3 mb-0 small"><i class="bi bi-shield-exclamation me-1"></i>Có <b>@d.LowStock</b> mặt hàng đang chạm hoặc dưới định mức tồn tối thiểu. <a href="/StockMinimum" class="fw-semibold text-danger text-decoration-underline">Xem cảnh báo ngay</a></div> }
+    @if (d.ExpiringLots > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-alarm me-1"></i>Có <b>@d.ExpiringLots</b> lô hàng đã hết hạn hoặc cận hạn nguy cấp (&le; 30 ngày). <a href="/LotExpiry" class="fw-semibold text-dark text-decoration-underline">Kiểm tra hạn sử dụng ngay</a></div> }
+    @if (d.LowStock > 0) { <div class="alert alert-danger mt-2 mb-0 small"><i class="bi bi-shield-exclamation me-1"></i>Có <b>@d.LowStock</b> mặt hàng đang chạm hoặc dưới định mức tồn tối thiểu. <a href="/StockMinimum" class="fw-semibold text-danger text-decoration-underline">Xem cảnh báo ngay</a></div> }
     @if (d.DraftDocs > 0) { <div class="alert alert-warning mt-3 mb-0 small"><i class="bi bi-hourglass-split me-1"></i>Có <b>@d.DraftDocs</b> phiếu Nháp chưa ghi sổ.</div> }
     @if (d.PendingAudits > 0) { <div class="alert alert-info mt-2 mb-0 small"><i class="bi bi-clipboard-check me-1"></i>Có <b>@d.PendingAudits</b> phiếu kiểm kê đang chờ xử lý / cân bằng kho. <a href="/Audit?status=0" class="fw-semibold">Xem ngay</a></div> }
     @if (d.PendingMoveOrders > 0) { <div class="alert alert-primary mt-2 mb-0 small"><i class="bi bi-shuffle me-1"></i>Có <b>@d.PendingMoveOrders</b> lệnh điều chuyển đang chờ duyệt / thực hiện. <a href="/MoveOrder" class="fw-semibold">Xem ngay</a></div> }

@@ -341,4 +341,67 @@ public record StockMinimumReport(
     List<StockMinimumRow> Rows
 );
 
+/// <summary>Trạng thái hạn sử dụng của Lô hàng (port từ Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
+public enum LotExpiryStatus
+{
+    Expired = 0,    // Đã hết hạn (DaysToExpiry < 0)
+    Critical = 1,   // Cận hạn nguy cấp (0 <= DaysToExpiry <= 30 ngày)
+    Warning = 2,    // Cận hạn cảnh báo (31 <= DaysToExpiry <= 90 ngày)
+    Good = 3        // Còn hạn an toàn (> 90 ngày)
+}
+
+/// <summary>Thông tin tồn kho theo Lô & Hạn sử dụng (port từ Inv_InventoryBalanceLot Skycic).</summary>
+public class StockLot : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int WarehouseId { get; set; }
+    public int ProductId { get; set; }
+    public string LotNo { get; set; } = "";             // Số lô sản xuất (ProductLotNo)
+    public DateTime? ProductionDate { get; set; }        // Ngày sản xuất
+    public DateTime ExpiredDate { get; set; }            // Ngày hết hạn (MaxExpiredDate)
+    public DateTime InDate { get; set; } = DateTime.Now; // Ngày nhập kho (LastInInvDate)
+    public int Quantity { get; set; }                    // Số lượng tồn theo lô (QtyTotalOK)
+    public string? Note { get; set; }                    // Ghi chú lô hàng
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng chi tiết Báo cáo Theo dõi Lô & Hạn sử dụng (port từ Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
+public record StockLotReportRow(
+    int LotId,
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string LotNo,
+    DateTime? ProductionDate,
+    DateTime ExpiredDate,
+    DateTime InDate,
+    int DaysInStock,        // Số ngày tồn kho (QtyDayInv = DATEDIFF(day, InDate, Today))
+    int DaysToExpiry,       // Số ngày còn lại đến hạn (DATEDIFF(day, Today, ExpiredDate))
+    int Quantity,           // Số lượng tồn theo lô
+    LotExpiryStatus Status, // Trạng thái hạn dùng
+    string StatusLabel,     // Nhãn trạng thái tiếng Việt
+    string BadgeClass       // Bootstrap badge class
+);
+
+/// <summary>Báo cáo Quản lý Lô & Hạn sử dụng tổng hợp (port từ Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
+public record StockLotExpiryReport(
+    int? WarehouseId,
+    string WarehouseName,
+    LotExpiryStatus? StatusFilter,
+    string? Keyword,
+    int TotalLots,
+    int ExpiredLotsCount,
+    int CriticalLotsCount,
+    int WarningLotsCount,
+    int GoodLotsCount,
+    int TotalQuantity,
+    List<StockLotReportRow> Rows
+);
+
 

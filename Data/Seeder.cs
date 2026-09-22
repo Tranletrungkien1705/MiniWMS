@@ -302,13 +302,159 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.StockLots.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001")?.Id;
+
+            var today = DateTime.Today;
+
+            if (hn.HasValue && ao.HasValue && quan.HasValue && pk.HasValue && vay.HasValue)
+            {
+                var lots = new List<StockLot>
+                {
+                    // 1. Áo sơ mi trắng - Kho HN: Lô an toàn (> 90 ngày)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = ao.Value,
+                        LotNo = "LOT-AO26-01",
+                        ProductionDate = today.AddDays(-60),
+                        ExpiredDate = today.AddDays(365),
+                        InDate = today.AddDays(-55),
+                        Quantity = 50,
+                        Note = "Lô hàng sản xuất đầu năm 2026, chất vải cotton cao cấp"
+                    },
+                    // 2. Áo sơ mi trắng - Kho HN: Lô cận hạn nguy cấp (<= 30 ngày)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = ao.Value,
+                        LotNo = "LOT-AO25-04",
+                        ProductionDate = today.AddDays(-340),
+                        ExpiredDate = today.AddDays(15),
+                        InDate = today.AddDays(-330),
+                        Quantity = 20,
+                        Note = "Lô hàng cuối năm 2025 còn lại, cần ưu tiên xuất bán sớm (FEFO)"
+                    },
+                    // 3. Quần jeans slim - Kho HN: Lô an toàn
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = quan.Value,
+                        LotNo = "LOT-QJ26-01",
+                        ProductionDate = today.AddDays(-45),
+                        ExpiredDate = today.AddDays(700),
+                        InDate = today.AddDays(-40),
+                        Quantity = 70,
+                        Note = "Lô quần jeans co giãn 4 chiều"
+                    },
+                    // 4. Thắt lưng da - Kho HN: Lô ĐÃ QUÁ HẠN (Expired < 0 ngày) để kiểm tra cảnh báo
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = pk.Value,
+                        LotNo = "LOT-TL25-01",
+                        ProductionDate = today.AddDays(-400),
+                        ExpiredDate = today.AddDays(-15),
+                        InDate = today.AddDays(-380),
+                        Quantity = 12,
+                        Note = "Lô phụ kiện lưu kho quá hạn kiểm định, cần lập biên bản thanh lý/trả lại"
+                    },
+                    // 5. Thắt lưng da - Kho HN: Lô cận hạn cảnh báo (31 - 90 ngày)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = pk.Value,
+                        LotNo = "LOT-TL25-03",
+                        ProductionDate = today.AddDays(-300),
+                        ExpiredDate = today.AddDays(45),
+                        InDate = today.AddDays(-280),
+                        Quantity = 28,
+                        Note = "Mặt khóa hợp kim, kiểm định lớp mạ còn 45 ngày"
+                    },
+                    // 6. Thắt lưng da - Kho HN: Lô an toàn
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = pk.Value,
+                        LotNo = "LOT-TL26-01",
+                        ProductionDate = today.AddDays(-30),
+                        ExpiredDate = today.AddDays(600),
+                        InDate = today.AddDays(-25),
+                        Quantity = 40,
+                        Note = "Hàng mới nhập đầu quý"
+                    },
+                    // 7. Váy đầm công sở - Kho HN: Lô cận hạn nguy cấp (<= 30 ngày)
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = vay.Value,
+                        LotNo = "LOT-VD25-02",
+                        ProductionDate = today.AddDays(-335),
+                        ExpiredDate = today.AddDays(25),
+                        InDate = today.AddDays(-320),
+                        Quantity = 25,
+                        Note = "Mẫu thiết kế mùa trước, cận hạn lưu kho theo cam kết đại lý"
+                    },
+                    // 8. Váy đầm công sở - Kho HN: Lô an toàn
+                    new()
+                    {
+                        WarehouseId = hn.Value,
+                        ProductId = vay.Value,
+                        LotNo = "LOT-VD26-01",
+                        ProductionDate = today.AddDays(-20),
+                        ExpiredDate = today.AddDays(500),
+                        InDate = today.AddDays(-15),
+                        Quantity = 75,
+                        Note = "Bộ sưu tập xuân hè mới nhất"
+                    }
+                };
+
+                // Lô tại Kho TP.HCM
+                if (hcm.HasValue)
+                {
+                    lots.Add(new StockLot
+                    {
+                        WarehouseId = hcm.Value,
+                        ProductId = ao.Value,
+                        LotNo = "LOT-AO26-HCM1",
+                        ProductionDate = today.AddDays(-30),
+                        ExpiredDate = today.AddDays(400),
+                        InDate = today.AddDays(-2),
+                        Quantity = 20,
+                        Note = "Hàng nhận điều chuyển từ Kho Hà Nội"
+                    });
+                    lots.Add(new StockLot
+                    {
+                        WarehouseId = hcm.Value,
+                        ProductId = quan.Value,
+                        LotNo = "LOT-QJ26-HCM1",
+                        ProductionDate = today.AddDays(-35),
+                        ExpiredDate = today.AddDays(650),
+                        InDate = today.AddDays(-2),
+                        Quantity = 10,
+                        Note = "Hàng nhận điều chuyển từ Kho Hà Nội"
+                    });
+                }
+
+                db.StockLots.AddRange(lots);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -414,6 +560,21 @@ public static class Seeder
                 CONSTRAINT ""FK_CustomerReturnLines_CustomerReturns_CustomerReturnId"" FOREIGN KEY (""CustomerReturnId"") REFERENCES ""CustomerReturns"" (""Id"") ON DELETE CASCADE,
                 CONSTRAINT ""FK_CustomerReturnLines_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
             );",
+            @"CREATE TABLE IF NOT EXISTS ""StockLots"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""LotNo"" TEXT NOT NULL,
+                ""ProductionDate"" TEXT NULL,
+                ""ExpiredDate"" TEXT NOT NULL,
+                ""InDate"" TEXT NOT NULL,
+                ""Quantity"" INTEGER NOT NULL,
+                ""Note"" TEXT NULL,
+                CONSTRAINT ""FK_StockLots_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE RESTRICT,
+                CONSTRAINT ""FK_StockLots_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StockLots_OrgId_WarehouseId_ProductId_LotNo"" ON ""StockLots"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""LotNo"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""MaxStock"" INTEGER NOT NULL DEFAULT 0;"
         };
         foreach (var s in sql)

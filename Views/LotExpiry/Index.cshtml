@@ -1,0 +1,257 @@
+@model StockLotExpiryReport
+@{
+    ViewData["Title"] = "Quản lý Lô & Hạn sử dụng hàng hóa";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedStatus = (LotExpiryStatus?)ViewBag.Status;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Trạng thái hạn sử dụng</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="@((int)LotExpiryStatus.Expired)" selected="@(selectedStatus == LotExpiryStatus.Expired)">Đã hết hạn (Quá hạn lưu kho)</option>
+                    <option value="@((int)LotExpiryStatus.Critical)" selected="@(selectedStatus == LotExpiryStatus.Critical)">Cận hạn nguy cấp (&le; 30 ngày)</option>
+                    <option value="@((int)LotExpiryStatus.Warning)" selected="@(selectedStatus == LotExpiryStatus.Warning)">Cận hạn cảnh báo (31 - 90 ngày)</option>
+                    <option value="@((int)LotExpiryStatus.Good)" selected="@(selectedStatus == LotExpiryStatus.Good)">Đạt chuẩn an toàn (> 90 ngày)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Tìm hàng hóa / số lô</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hàng, tên hoặc số lô..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc dữ liệu
+                </button>
+                <a href="/LotExpiry" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/LotExpiry/ExportCsv?warehouseId=@selectedWid&status=@(selectedStatus.HasValue ? (int)selectedStatus.Value : "")&q=@Uri.EscapeDataString(keyword ?? "")"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In báo cáo">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐÃ HẾT HẠN</span>
+                    <i class="bi bi-exclamation-octagon-fill text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.ExpiredLotsCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Lô hàng quá date cần tiêu hủy/trả NCC</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CẬN HẠN NGUY CẤP (&le; 30D)</span>
+                    <i class="bi bi-alarm-fill text-warning fs-5"></i>
+                </div>
+                <div class="stat-num text-warning">@Model.CriticalLotsCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Cần ưu tiên xuất bán gấp (FEFO)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CẢNH BÁO (31 - 90D)</span>
+                    <i class="bi bi-clock-history text-info fs-5"></i>
+                </div>
+                <div class="stat-num text-info">@Model.WarningLotsCount.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Sắp tới hạn, cần kế hoạch điều phối</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỒN KHO THEO LÔ</span>
+                    <i class="bi bi-boxes text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.TotalQuantity.ToString("N0")</div>
+                <div class="text-muted" style="font-size:11px">Tổng lượng tồn trong @Model.TotalLots lô hàng</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-hourglass-split text-primary me-2"></i>Chi tiết theo dõi Hạn sử dụng & Lô hàng tồn kho (FEFO)</h6>
+            <span class="text-muted small">Kho: <b>@Model.WarehouseName</b> — Hiển thị <b>@Model.Rows.Count</b> lô</span>
+        </div>
+        <div>
+            <a href="/Doc/Create?type=1" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-box-arrow-up me-1"></i> Xuất xả hàng cận date
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:40px">#</th>
+                        <th>Kho hàng</th>
+                        <th>Mã hàng</th>
+                        <th>Tên hàng hoá</th>
+                        <th>ĐVT</th>
+                        <th>Số Lô (Lot No)</th>
+                        <th class="text-center">Ngày SX</th>
+                        <th class="text-center">Hạn sử dụng</th>
+                        <th class="text-center">Ngày nhập</th>
+                        <th class="text-end">Lưu kho</th>
+                        <th class="text-end">Còn lại</th>
+                        <th class="text-end">Tồn kho</th>
+                        <th class="text-center">Trạng thái hạn dùng</th>
+                        <th class="text-end" style="width:130px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count > 0)
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            var rowClass = r.Status switch
+                            {
+                                LotExpiryStatus.Expired => "table-danger",
+                                LotExpiryStatus.Critical => "table-warning",
+                                _ => ""
+                            };
+
+                            var remainBadge = r.Status switch
+                            {
+                                LotExpiryStatus.Expired => "text-danger fw-bold",
+                                LotExpiryStatus.Critical => "text-danger fw-bold",
+                                LotExpiryStatus.Warning => "text-warning-emphasis fw-bold",
+                                _ => "text-success fw-bold"
+                            };
+
+                            <tr class="@rowClass">
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td><i class="bi bi-building me-1 text-muted"></i>@r.WarehouseName</td>
+                                <td class="fw-semibold">
+                                    <a href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId" class="text-decoration-none">
+                                        @r.ProductCode
+                                    </a>
+                                </td>
+                                <td>@r.ProductName</td>
+                                <td><span class="badge bg-light text-dark border">@r.Uom</span></td>
+                                <td>
+                                    <span class="badge bg-dark-subtle text-dark border font-monospace px-2">@r.LotNo</span>
+                                </td>
+                                <td class="text-center text-muted small">
+                                    @(r.ProductionDate.HasValue ? r.ProductionDate.Value.ToString("dd/MM/yyyy") : "—")
+                                </td>
+                                <td class="text-center fw-semibold">
+                                    @r.ExpiredDate.ToString("dd/MM/yyyy")
+                                </td>
+                                <td class="text-center text-muted small">
+                                    @r.InDate.ToString("dd/MM/yyyy")
+                                </td>
+                                <td class="text-end text-muted small">
+                                    @r.DaysInStock.ToString("N0") ngày
+                                </td>
+                                <td class="text-end @remainBadge">
+                                    @if (r.DaysToExpiry < 0)
+                                    {
+                                        <span>Quá @Math.Abs(r.DaysToExpiry) ngày</span>
+                                    }
+                                    else
+                                    {
+                                        <span>@r.DaysToExpiry ngày</span>
+                                    }
+                                </td>
+                                <td class="text-end fw-bold fs-6">
+                                    @r.Quantity.ToString("N0")
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.StatusLabel</span>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="/WarehouseCard?productId=@r.ProductId&warehouseId=@r.WarehouseId" class="btn btn-outline-secondary" title="Xem Thẻ kho mặt hàng">
+                                            <i class="bi bi-journal-text"></i>
+                                        </a>
+                                        @if (r.Status == LotExpiryStatus.Expired)
+                                        {
+                                            <a href="/ReturnSup/Create?warehouseId=@r.WarehouseId" class="btn btn-outline-danger" title="Lập phiếu trả hàng NCC">
+                                                <i class="bi bi-arrow-counterclockwise"></i>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="/Doc/Create?type=1&fromWarehouseId=@r.WarehouseId" class="btn btn-outline-primary" title="Lập phiếu xuất kho">
+                                                <i class="bi bi-box-arrow-up"></i>
+                                            </a>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="14" class="text-center py-5">
+                                <div class="text-muted mb-2"><i class="bi bi-inbox display-6"></i></div>
+                                <h6 class="fw-bold text-muted mb-1">Không tìm thấy lô hàng nào phù hợp</h6>
+                                <p class="text-muted small mb-0">Vui lòng thay đổi bộ lọc kho, trạng thái hạn sử dụng hoặc từ khóa tìm kiếm.</p>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                @if (Model.Rows.Count > 0)
+                {
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="11" class="text-center text-uppercase">TỔNG CỘNG LƯỢNG TỒN THEO LÔ HÀNG ĐANG LƯU KHO</td>
+                            <td class="text-end text-primary fs-6">@Model.TotalQuantity.ToString("N0")</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    @@media print {
+        .sidebar, .topbar, #filterForm, .btn-group, .card-header .btn { display: none !important; }
+        body { background: #fff !important; }
+        .main-content { margin: 0 !important; padding: 0 !important; }
+        .card { border: none !important; box-shadow: none !important; }
+    }
+</style>

@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<ReturnToSupplierLine> ReturnToSupplierLines => Set<ReturnToSupplierLine>();
     public DbSet<CustomerReturn> CustomerReturns => Set<CustomerReturn>();
     public DbSet<CustomerReturnLine> CustomerReturnLines => Set<CustomerReturnLine>();
+    public DbSet<StockLot> StockLots => Set<StockLot>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -105,6 +106,13 @@ public class AppDbContext : DbContext
             e.Ignore(x => x.Amount);
             e.HasOne(x => x.CustomerReturn).WithMany(x => x.Lines).HasForeignKey(x => x.CustomerReturnId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<StockLot>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.ProductId, x.LotNo }).IsUnique();
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

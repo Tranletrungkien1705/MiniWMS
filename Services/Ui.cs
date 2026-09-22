@@ -69,4 +69,12 @@ public static class Ui
             _ => (t.ToString(), "secondary")
         };
     }
+    public static (string text, string css) LotExpiryBadge(LotExpiryStatus s) => s switch
+    {
+        LotExpiryStatus.Expired => ("Đã hết hạn", "bg-danger text-white"),
+        LotExpiryStatus.Critical => ("Cận hạn nguy cấp (<= 30 ngày)", "bg-danger-subtle text-danger border border-danger"),
+        LotExpiryStatus.Warning => ("Cảnh báo cận hạn (31-90 ngày)", "bg-warning text-dark"),
+        LotExpiryStatus.Good => ("Đạt chuẩn an toàn (> 90 ngày)", "bg-success text-white"),
+        _ => (s.ToString(), "bg-secondary text-white")
+    };
 }

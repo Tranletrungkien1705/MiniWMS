@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0);
 
 public interface IWmsService
 {
@@ -43,6 +43,8 @@ public interface IWmsService
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<InventoryInOutReport> InventoryInOutReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
+    Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
+    Task<List<StockLot>> StockLotsAsync(int? warehouseId, int? productId);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -963,9 +965,131 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
+    public Task<List<StockLot>> StockLotsAsync(int? warehouseId, int? productId)
+    {
+        var q = db.StockLots.Include(l => l.Warehouse).Include(l => l.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(l => l.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) q = q.Where(l => l.ProductId == productId.Value);
+        return q.OrderBy(l => l.ExpiredDate).ToListAsync();
+    }
+
+    /// <summary>Báo cáo Quản lý Lô & Hạn sử dụng hàng hóa (port từ Inv_InventoryBalanceLot & Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
+    public async Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var q = db.StockLots.Include(l => l.Warehouse).Include(l => l.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(l => l.WarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            q = q.Where(l => l.LotNo.ToLower().Contains(kw) ||
+                             l.Product.Code.ToLower().Contains(kw) ||
+                             l.Product.Name.ToLower().Contains(kw));
+        }
+
+        var lots = await q.ToListAsync();
+        var today = DateTime.Today;
+
+        var rows = new List<StockLotReportRow>();
+        foreach (var l in lots)
+        {
+            int daysInStock = Math.Max(0, (today - l.InDate.Date).Days);
+            int daysToExpiry = (l.ExpiredDate.Date - today).Days;
+
+            LotExpiryStatus st;
+            string label;
+            string badge;
+
+            if (daysToExpiry < 0)
+            {
+                st = LotExpiryStatus.Expired;
+                label = $"Đã hết hạn ({Math.Abs(daysToExpiry)} ngày trước)";
+                badge = "bg-danger";
+            }
+            else if (daysToExpiry <= 30)
+            {
+                st = LotExpiryStatus.Critical;
+                label = $"Cận hạn nguy cấp (còn {daysToExpiry} ngày)";
+                badge = "bg-warning text-dark";
+            }
+            else if (daysToExpiry <= 90)
+            {
+                st = LotExpiryStatus.Warning;
+                label = $"Cảnh báo cận hạn (còn {daysToExpiry} ngày)";
+                badge = "bg-info text-dark";
+            }
+            else
+            {
+                st = LotExpiryStatus.Good;
+                label = $"Đạt an toàn (còn {daysToExpiry} ngày)";
+                badge = "bg-success";
+            }
+
+            if (status.HasValue && st != status.Value) continue;
+
+            rows.Add(new StockLotReportRow(
+                l.Id,
+                l.WarehouseId,
+                l.Warehouse.Name,
+                l.ProductId,
+                l.Product.Code,
+                l.Product.Name,
+                l.Product.Uom,
+                l.LotNo,
+                l.ProductionDate,
+                l.ExpiredDate,
+                l.InDate,
+                daysInStock,
+                daysToExpiry,
+                l.Quantity,
+                st,
+                label,
+                badge
+            ));
+        }
+
+        // Sắp xếp theo ưu tiên xuất hàng FEFO (First Expired First Out): hạn sớm nhất lên đầu
+        rows = rows
+            .OrderBy(r => r.Status)
+            .ThenBy(r => r.ExpiredDate)
+            .ThenBy(r => r.ProductCode)
+            .ToList();
+
+        int totalLots = rows.Count;
+        int expiredCount = rows.Count(r => r.Status == LotExpiryStatus.Expired);
+        int criticalCount = rows.Count(r => r.Status == LotExpiryStatus.Critical);
+        int warningCount = rows.Count(r => r.Status == LotExpiryStatus.Warning);
+        int goodCount = rows.Count(r => r.Status == LotExpiryStatus.Good);
+        int totalQty = rows.Sum(r => r.Quantity);
+
+        return new StockLotExpiryReport(
+            warehouseId,
+            whName,
+            status,
+            keyword,
+            totalLots,
+            expiredCount,
+            criticalCount,
+            warningCount,
+            goodCount,
+            totalQty,
+            rows
+        );
+    }
+
     public async Task<WmsDash> DashboardAsync()
     {
         var balances = await BalancesAsync(null);
+        var today = DateTime.Today;
+        var expiringLots = await db.StockLots.CountAsync(l => l.ExpiredDate <= today.AddDays(30));
+
         return new WmsDash(
             await db.Warehouses.CountAsync(),
             await db.Products.CountAsync(),
@@ -976,7 +1100,8 @@ public class WmsService(AppDbContext db) : IWmsService
             await db.Audits.CountAsync(a => a.Status == StockAuditStatus.Draft),
             await db.MoveOrders.CountAsync(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved),
             await db.ReturnToSuppliers.CountAsync(r => r.Status == ReturnSupStatus.Draft),
-            await db.CustomerReturns.CountAsync(c => c.Status == CusReturnStatus.Draft));
+            await db.CustomerReturns.CountAsync(c => c.Status == CusReturnStatus.Draft),
+            expiringLots);
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

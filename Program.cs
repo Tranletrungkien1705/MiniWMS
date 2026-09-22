@@ -91,6 +91,34 @@ app.MapGet("/api/reports/min-stock-alert", async (int? warehouseId, bool? onlyBe
     return Results.Ok(report);
 });
 
+// API Báo cáo Quản lý Lô & Hạn sử dụng hàng hóa (Lot & Expiry Date - port từ Inv_InventoryBalanceLot & Rpt_InvBalLot_MaxExpiredDateByInv Skycic)
+app.MapGet("/api/reports/lot-expiry", async (int? warehouseId, LotExpiryStatus? status, string? q, IWmsService svc) =>
+{
+    var report = await svc.StockLotExpiryReportAsync(warehouseId, status, q);
+    return Results.Ok(report);
+});
+
+// API Tra cứu tồn theo Lô hàng (Stock Lots)
+app.MapGet("/api/stock-lots", async (int? warehouseId, int? productId, IWmsService svc) =>
+{
+    var lots = await svc.StockLotsAsync(warehouseId, productId);
+    return Results.Ok(lots.Select(l => new
+    {
+        l.Id,
+        Warehouse = l.Warehouse.Name,
+        l.WarehouseId,
+        ProductCode = l.Product.Code,
+        ProductName = l.Product.Name,
+        l.ProductId,
+        l.LotNo,
+        ProductionDate = l.ProductionDate?.ToString("yyyy-MM-dd"),
+        ExpiredDate = l.ExpiredDate.ToString("yyyy-MM-dd"),
+        InDate = l.InDate.ToString("yyyy-MM-dd"),
+        l.Quantity,
+        l.Note
+    }));
+});
+
 
 // API Lệnh điều chuyển kho (Move Order - port từ InvF_MoveOrd Skycic)
 app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatus? status, IWmsService svc) =>

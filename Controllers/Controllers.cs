@@ -675,3 +675,49 @@ public class StockMinimumController(IWmsService svc) : Controller
     }
 }
 
+public class LotExpiryController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, LotExpiryStatus? status, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.StockLotExpiryReportAsync(warehouseId, status, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, LotExpiryStatus? status, string? q)
+    {
+        var report = await svc.StockLotExpiryReportAsync(warehouseId, status, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO THEO DÕI HẠN SỬ DỤNG HÀNG HÓA & TỒN KHO THEO LÔ");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName}");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Trạng thái lọc:;{(status.HasValue ? status.Value.ToString() : "Tất cả lô")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho lưu trữ;Số lô sản xuất;Ngày sản xuất;Hạn sử dụng;Ngày nhập kho;Số ngày lưu kho;Số ngày còn lại;Số lượng tồn;Trạng thái hạn dùng");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var nsx = r.ProductionDate.HasValue ? r.ProductionDate.Value.ToString("dd/MM/yyyy") : "—";
+            var hsd = r.ExpiredDate.ToString("dd/MM/yyyy");
+            var nnk = r.InDate.ToString("dd/MM/yyyy");
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";\"{r.LotNo}\";{nsx};{hsd};{nnk};{r.DaysInStock};{r.DaysToExpiry};{r.Quantity};\"{r.StatusLabel}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;;;;TỔNG CỘNG LƯỢNG TỒN:;{report.TotalQuantity};");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_HanSuDung_TheoLo_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
