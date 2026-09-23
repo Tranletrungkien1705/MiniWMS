@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MiniWMS.Data;
 using MiniWMS.Models;
 
@@ -46,6 +46,7 @@ public interface IWmsService
     Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
     Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
     Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null);
+    Task<StorageMonthReport> StorageMonthReportAsync(int? warehouseId, StorageMonthBracket? bracket, string? keyword, DateTime? asOfDate = null);
     Task<List<StockLot>> StockLotsAsync(int? warehouseId, int? productId);
     Task<StockSerialReport> StockSerialReportAsync(int? warehouseId, int? productId, StockSerialStatus? status, string? keyword);
     Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status);
@@ -109,6 +110,7 @@ public interface IWmsService
     Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
     Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
     Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
+    Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -383,23 +385,23 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> PostDocAsync(int id)
     {
         var doc = await db.Docs.Include(d => d.Lines).ThenInclude(l => l.Product).FirstOrDefaultAsync(d => d.Id == id);
-        if (doc == null) return (false, "Không tìm thấy phiếu.");
-        if (doc.Status != DocStatus.Draft) return (false, "Phiếu không ở trạng thái Nháp.");
-        if (doc.Lines.Count == 0) return (false, "Phiếu chưa có dòng hàng.");
+        if (doc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u.");
+        if (doc.Status != DocStatus.Draft) return (false, "Phiáº¿u khÃ´ng á»Ÿ tráº¡ng thÃ¡i NhÃ¡p.");
+        if (doc.Lines.Count == 0) return (false, "Phiáº¿u chÆ°a cÃ³ dÃ²ng hÃ ng.");
 
-        // Kiểm tra tồn đủ khi Xuất/Chuyển
+        // Kiá»ƒm tra tá»“n Ä‘á»§ khi Xuáº¥t/Chuyá»ƒn
         if (doc.Type is DocType.Out or DocType.Transfer && doc.FromWarehouseId is { } fromWh)
         {
             var bal = await BalancesAsync(fromWh);
             foreach (var l in doc.Lines)
             {
                 var have = bal.FirstOrDefault(x => x.ProductId == l.ProductId)?.Qty ?? 0;
-                if (l.Quantity > have) return (false, $"Không đủ tồn: {l.Product.Name} cần {l.Quantity}, còn {have}.");
+                if (l.Quantity > have) return (false, $"KhÃ´ng Ä‘á»§ tá»“n: {l.Product.Name} cáº§n {l.Quantity}, cÃ²n {have}.");
             }
         }
         doc.Status = DocStatus.Posted;
         await db.SaveChangesAsync();
-        return (true, $"Đã ghi sổ phiếu {doc.Code}.");
+        return (true, $"ÄÃ£ ghi sá»• phiáº¿u {doc.Code}.");
     }
 
     public async Task CancelDocAsync(int id)
@@ -439,9 +441,9 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> BalanceAuditAsync(int id)
     {
         var audit = await db.Audits.Include(a => a.Lines).ThenInclude(l => l.Product).FirstOrDefaultAsync(a => a.Id == id);
-        if (audit == null) return (false, "Không tìm thấy phiếu kiểm kê.");
-        if (audit.Status != StockAuditStatus.Draft) return (false, "Phiếu kiểm kê không ở trạng thái Đang kiểm kê.");
-        if (audit.Lines.Count == 0) return (false, "Phiếu kiểm kê chưa có mặt hàng.");
+        if (audit == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u kiá»ƒm kÃª.");
+        if (audit.Status != StockAuditStatus.Draft) return (false, "Phiáº¿u kiá»ƒm kÃª khÃ´ng á»Ÿ tráº¡ng thÃ¡i Äang kiá»ƒm kÃª.");
+        if (audit.Lines.Count == 0) return (false, "Phiáº¿u kiá»ƒm kÃª chÆ°a cÃ³ máº·t hÃ ng.");
 
         var excessLines = audit.Lines.Where(l => l.QtyActual > l.QtyInit).ToList();
         var shortageLines = audit.Lines.Where(l => l.QtyActual < l.QtyInit).ToList();
@@ -451,10 +453,10 @@ public class WmsService(AppDbContext db) : IWmsService
             audit.Status = StockAuditStatus.Finished;
             audit.FinishedAt = DateTime.Now;
             await db.SaveChangesAsync();
-            return (true, $"Phiếu {audit.Code} khớp tồn sổ sách. Đã đánh dấu hoàn tất kiểm kê.");
+            return (true, $"Phiáº¿u {audit.Code} khá»›p tá»“n sá»• sÃ¡ch. ÄÃ£ Ä‘Ã¡nh dáº¥u hoÃ n táº¥t kiá»ƒm kÃª.");
         }
 
-        // Tự động sinh phiếu nhập kho nếu có hàng thừa sau kiểm kê
+        // Tá»± Ä‘á»™ng sinh phiáº¿u nháº­p kho náº¿u cÃ³ hÃ ng thá»«a sau kiá»ƒm kÃª
         if (excessLines.Count > 0)
         {
             var inLines = excessLines.Select(l => (l.ProductId, l.QtyActual - l.QtyInit)).ToList();
@@ -463,16 +465,16 @@ public class WmsService(AppDbContext db) : IWmsService
                 Type = DocType.In,
                 ToWarehouseId = audit.WarehouseId,
                 RefNo = audit.Code,
-                Note = $"Tự động điều chỉnh thừa sau kiểm kê {audit.Code}",
+                Note = $"Tá»± Ä‘á»™ng Ä‘iá»u chá»‰nh thá»«a sau kiá»ƒm kÃª {audit.Code}",
                 CreatedBy = string.IsNullOrWhiteSpace(audit.CreatedBy) ? "audit-balance" : audit.CreatedBy
             };
             var inDocId = await CreateDocAsync(inDoc, inLines);
             var (postOk, postMsg) = await PostDocAsync(inDocId);
-            if (!postOk) return (false, $"Lỗi ghi sổ phiếu nhập thừa: {postMsg}");
+            if (!postOk) return (false, $"Lá»—i ghi sá»• phiáº¿u nháº­p thá»«a: {postMsg}");
             audit.InDocId = inDocId;
         }
 
-        // Tự động sinh phiếu xuất kho nếu có hàng thiếu sau kiểm kê
+        // Tá»± Ä‘á»™ng sinh phiáº¿u xuáº¥t kho náº¿u cÃ³ hÃ ng thiáº¿u sau kiá»ƒm kÃª
         if (shortageLines.Count > 0)
         {
             var outLines = shortageLines.Select(l => (l.ProductId, l.QtyInit - l.QtyActual)).ToList();
@@ -481,31 +483,31 @@ public class WmsService(AppDbContext db) : IWmsService
                 Type = DocType.Out,
                 FromWarehouseId = audit.WarehouseId,
                 RefNo = audit.Code,
-                Note = $"Tự động điều chỉnh thiếu sau kiểm kê {audit.Code}",
+                Note = $"Tá»± Ä‘á»™ng Ä‘iá»u chá»‰nh thiáº¿u sau kiá»ƒm kÃª {audit.Code}",
                 CreatedBy = string.IsNullOrWhiteSpace(audit.CreatedBy) ? "audit-balance" : audit.CreatedBy
             };
             var outDocId = await CreateDocAsync(outDoc, outLines);
             var (postOk, postMsg) = await PostDocAsync(outDocId);
-            if (!postOk) return (false, $"Lỗi ghi sổ phiếu xuất thiếu: {postMsg}");
+            if (!postOk) return (false, $"Lá»—i ghi sá»• phiáº¿u xuáº¥t thiáº¿u: {postMsg}");
             audit.OutDocId = outDocId;
         }
 
         audit.Status = StockAuditStatus.Finished;
         audit.FinishedAt = DateTime.Now;
         await db.SaveChangesAsync();
-        return (true, $"Đã cân bằng kho cho phiếu {audit.Code}. Tồn kho đã khớp số lượng thực tế kiểm kê.");
+        return (true, $"ÄÃ£ cÃ¢n báº±ng kho cho phiáº¿u {audit.Code}. Tá»“n kho Ä‘Ã£ khá»›p sá»‘ lÆ°á»£ng thá»±c táº¿ kiá»ƒm kÃª.");
     }
 
     public async Task CancelAuditAsync(int id)
     {
         var audit = await db.Audits.FirstOrDefaultAsync(a => a.Id == id) ?? throw new KeyNotFoundException();
         if (audit.Status == StockAuditStatus.Finished)
-            throw new InvalidOperationException("Không thể hủy phiếu kiểm kê đã cân bằng.");
+            throw new InvalidOperationException("KhÃ´ng thá»ƒ há»§y phiáº¿u kiá»ƒm kÃª Ä‘Ã£ cÃ¢n báº±ng.");
         audit.Status = StockAuditStatus.Cancelled;
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Tồn kho tính từ các phiếu ĐÃ GHI SỔ (In:+To, Out:-From, Transfer:-From+To).</summary>
+    /// <summary>Tá»“n kho tÃ­nh tá»« cÃ¡c phiáº¿u ÄÃƒ GHI Sá»” (In:+To, Out:-From, Transfer:-From+To).</summary>
     public async Task<List<BalanceRow>> BalancesAsync(int? warehouseId)
     {
         var docs = await db.Docs.Where(d => d.Status == DocStatus.Posted).Include(d => d.Lines).ThenInclude(l => l.Product).ToListAsync();
@@ -538,9 +540,9 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate)
     {
         var product = await db.Products.FirstOrDefaultAsync(p => p.Id == productId)
-            ?? throw new KeyNotFoundException($"Không tìm thấy mặt hàng với ID {productId}.");
+            ?? throw new KeyNotFoundException($"KhÃ´ng tÃ¬m tháº¥y máº·t hÃ ng vá»›i ID {productId}.");
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -556,7 +558,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenBy(d => d.Id)
             .ToListAsync();
 
-        // Tách các biến động phát sinh theo kho
+        // TÃ¡ch cÃ¡c biáº¿n Ä‘á»™ng phÃ¡t sinh theo kho
         var allTrans = new List<(DateTime Date, string DocCode, int DocId, DocType DocType, string ActionDesc, int WhId, string WhName, string? OffsetWhName, int QtyIn, int QtyOut, string? Note, string? RefNo)>();
 
         foreach (var d in docs)
@@ -565,24 +567,24 @@ public class WmsService(AppDbContext db) : IWmsService
             if (line == null || line.Quantity == 0) continue;
 
             bool isAudit = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("KK", StringComparison.OrdinalIgnoreCase)
-                           || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("kiểm kê", StringComparison.OrdinalIgnoreCase));
+                           || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("kiá»ƒm kÃª", StringComparison.OrdinalIgnoreCase));
 
             if (d.Type == DocType.In)
             {
                 if (warehouseId.HasValue && d.ToWarehouseId != warehouseId.Value) continue;
                 bool isCusReturn = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("THKH", StringComparison.OrdinalIgnoreCase)
-                                   || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("khách trả", StringComparison.OrdinalIgnoreCase));
+                                   || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("khÃ¡ch tráº£", StringComparison.OrdinalIgnoreCase));
                 bool isInFG = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("IFFG", StringComparison.OrdinalIgnoreCase)
-                              || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("thành phẩm", StringComparison.OrdinalIgnoreCase));
-                var action = isAudit ? "Kiểm kê - Điều chỉnh thừa (AuditIn)" : (isCusReturn ? "Khách trả lại (CusReturn)" : (isInFG ? "Nhập thành phẩm SX (InFG)" : "Nhập kho (In)"));
+                              || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("thÃ nh pháº©m", StringComparison.OrdinalIgnoreCase));
+                var action = isAudit ? "Kiá»ƒm kÃª - Äiá»u chá»‰nh thá»«a (AuditIn)" : (isCusReturn ? "KhÃ¡ch tráº£ láº¡i (CusReturn)" : (isInFG ? "Nháº­p thÃ nh pháº©m SX (InFG)" : "Nháº­p kho (In)"));
                 allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", null, line.Quantity, 0, d.Note, d.RefNo));
             }
             else if (d.Type == DocType.Out)
             {
                 if (warehouseId.HasValue && d.FromWarehouseId != warehouseId.Value) continue;
                 bool isReturnSup = !string.IsNullOrWhiteSpace(d.RefNo) && d.RefNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase)
-                                   || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("trả hàng NCC", StringComparison.OrdinalIgnoreCase));
-                var action = isAudit ? "Kiểm kê - Điều chỉnh thiếu (AuditOut)" : (isReturnSup ? "Xuất trả NCC (ReturnSup)" : "Xuất kho (Out)");
+                                   || (!string.IsNullOrWhiteSpace(d.Note) && d.Note.Contains("tráº£ hÃ ng NCC", StringComparison.OrdinalIgnoreCase));
+                var action = isAudit ? "Kiá»ƒm kÃª - Äiá»u chá»‰nh thiáº¿u (AuditOut)" : (isReturnSup ? "Xuáº¥t tráº£ NCC (ReturnSup)" : "Xuáº¥t kho (Out)");
                 allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", null, 0, line.Quantity, d.Note, d.RefNo));
             }
             else if (d.Type == DocType.Transfer)
@@ -591,25 +593,25 @@ public class WmsService(AppDbContext db) : IWmsService
                 {
                     if (d.FromWarehouseId == warehouseId.Value)
                     {
-                        var action = $"Chuyển kho đi (tới {d.ToWarehouse?.Name ?? "kho khác"})";
+                        var action = $"Chuyá»ƒn kho Ä‘i (tá»›i {d.ToWarehouse?.Name ?? "kho khÃ¡c"})";
                         allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.FromWarehouseId.Value, d.FromWarehouse?.Name ?? "", d.ToWarehouse?.Name, 0, line.Quantity, d.Note, d.RefNo));
                     }
                     else if (d.ToWarehouseId == warehouseId.Value)
                     {
-                        var action = $"Chuyển kho đến (từ {d.FromWarehouse?.Name ?? "kho khác"})";
+                        var action = $"Chuyá»ƒn kho Ä‘áº¿n (tá»« {d.FromWarehouse?.Name ?? "kho khÃ¡c"})";
                         allTrans.Add((d.Date, d.Code, d.Id, d.Type, action, d.ToWarehouseId.Value, d.ToWarehouse?.Name ?? "", d.FromWarehouse?.Name, line.Quantity, 0, d.Note, d.RefNo));
                     }
                 }
                 else
                 {
-                    // Trường hợp xem tất cả kho: ghi nhận 2 giao dịch chuyển đi và nhận đến
-                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Chuyển đi: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", d.ToWarehouse?.Name, 0, line.Quantity, d.Note, d.RefNo));
-                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Nhận chuyển: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", d.FromWarehouse?.Name, line.Quantity, 0, d.Note, d.RefNo));
+                    // TrÆ°á»ng há»£p xem táº¥t cáº£ kho: ghi nháº­n 2 giao dá»‹ch chuyá»ƒn Ä‘i vÃ  nháº­n Ä‘áº¿n
+                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Chuyá»ƒn Ä‘i: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.FromWarehouseId ?? 0, d.FromWarehouse?.Name ?? "", d.ToWarehouse?.Name, 0, line.Quantity, d.Note, d.RefNo));
+                    allTrans.Add((d.Date, d.Code, d.Id, d.Type, $"Nháº­n chuyá»ƒn: {d.FromWarehouse?.Name} -> {d.ToWarehouse?.Name}", d.ToWarehouseId ?? 0, d.ToWarehouse?.Name ?? "", d.FromWarehouse?.Name, line.Quantity, 0, d.Note, d.RefNo));
                 }
             }
         }
 
-        // Tách kỳ báo cáo và tính tồn đầu kỳ
+        // TÃ¡ch ká»³ bÃ¡o cÃ¡o vÃ  tÃ­nh tá»“n Ä‘áº§u ká»³
         int openingBalance = 0;
         var startFilterDate = fromDate?.Date;
         var endFilterDate = toDate?.Date.AddDays(1).AddTicks(-1);
@@ -676,7 +678,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var start = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var end = (toDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -696,7 +698,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var prodDict = products.ToDictionary(p => p.Id, p => p);
         var productIds = prodDict.Keys.ToHashSet();
 
-        // Lấy tất cả các phiếu đã ghi sổ có liên quan đến các sản phẩm cần báo cáo
+        // Láº¥y táº¥t cáº£ cÃ¡c phiáº¿u Ä‘Ã£ ghi sá»• cÃ³ liÃªn quan Ä‘áº¿n cÃ¡c sáº£n pháº©m cáº§n bÃ¡o cÃ¡o
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date <= end && d.Lines.Any(l => productIds.Contains(l.ProductId)))
             .Include(d => d.Lines)
@@ -704,7 +706,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenBy(d => d.Id)
             .ToListAsync();
 
-        // Bảng tổng hợp theo (WarehouseId, ProductId): (OpeningQty, InQty, OutQty)
+        // Báº£ng tá»•ng há»£p theo (WarehouseId, ProductId): (OpeningQty, InQty, OutQty)
         var statMap = new Dictionary<(int whId, int prodId), (int opening, int inQty, int outQty)>();
 
         void AddOpening(int wId, int pId, int delta)
@@ -784,7 +786,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 statMap.TryGetValue((w.Id, p.Id), out var stat);
                 int closing = stat.opening + stat.inQty - stat.outQty;
 
-                // Nếu có phát sinh hoặc tồn khác 0, hoặc có tìm kiếm theo từ khóa
+                // Náº¿u cÃ³ phÃ¡t sinh hoáº·c tá»“n khÃ¡c 0, hoáº·c cÃ³ tÃ¬m kiáº¿m theo tá»« khÃ³a
                 if (stat.opening != 0 || stat.inQty != 0 || stat.outQty != 0 || closing != 0 || !string.IsNullOrWhiteSpace(keyword))
                 {
                     rows.Add(new InventoryInOutRow(
@@ -847,7 +849,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateMoveOrderAsync(MoveOrder order, List<(int productId, int qty, string? note)> lines)
     {
         if (order.FromWarehouseId == order.ToWarehouseId)
-            throw new InvalidOperationException("Kho xuất chuyển và kho nhận chuyển phải khác nhau.");
+            throw new InvalidOperationException("Kho xuáº¥t chuyá»ƒn vÃ  kho nháº­n chuyá»ƒn pháº£i khÃ¡c nhau.");
 
         order.Code = $"MO{DateTime.Now:yyMMdd}-{await db.MoveOrders.CountAsync() + 1:D3}";
         order.Status = MoveOrderStatus.Pending;
@@ -875,11 +877,11 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(m => m.Lines).ThenInclude(l => l.Product)
             .FirstOrDefaultAsync(m => m.Id == id);
 
-        if (order == null) return (false, "Không tìm thấy lệnh điều chuyển.");
-        if (order.Status != MoveOrderStatus.Pending) return (false, "Lệnh không ở trạng thái Chờ duyệt.");
-        if (order.Lines.Count == 0) return (false, "Lệnh chưa có danh sách mặt hàng.");
+        if (order == null) return (false, "KhÃ´ng tÃ¬m tháº¥y lá»‡nh Ä‘iá»u chuyá»ƒn.");
+        if (order.Status != MoveOrderStatus.Pending) return (false, "Lá»‡nh khÃ´ng á»Ÿ tráº¡ng thÃ¡i Chá» duyá»‡t.");
+        if (order.Lines.Count == 0) return (false, "Lá»‡nh chÆ°a cÃ³ danh sÃ¡ch máº·t hÃ ng.");
 
-        // Kiểm tra tồn kho tại kho xuất
+        // Kiá»ƒm tra tá»“n kho táº¡i kho xuáº¥t
         var balances = await BalancesAsync(order.FromWarehouseId);
         var balDict = balances.ToDictionary(b => b.ProductId, b => b.Qty);
 
@@ -888,14 +890,14 @@ public class WmsService(AppDbContext db) : IWmsService
             balDict.TryGetValue(line.ProductId, out var available);
             if (line.Quantity > available)
             {
-                return (false, $"Kho xuất '{order.FromWarehouse.Name}' không đủ tồn cho '{line.Product.Name}': yêu cầu {line.Quantity}, hiện có {available}.");
+                return (false, $"Kho xuáº¥t '{order.FromWarehouse.Name}' khÃ´ng Ä‘á»§ tá»“n cho '{line.Product.Name}': yÃªu cáº§u {line.Quantity}, hiá»‡n cÃ³ {available}.");
             }
         }
 
         order.Status = MoveOrderStatus.Approved;
         order.ApprovedAt = DateTime.Now;
         await db.SaveChangesAsync();
-        return (true, $"Đã phê duyệt lệnh điều chuyển {order.Code}. Sẵn sàng thực hiện chuyển hàng.");
+        return (true, $"ÄÃ£ phÃª duyá»‡t lá»‡nh Ä‘iá»u chuyá»ƒn {order.Code}. Sáºµn sÃ ng thá»±c hiá»‡n chuyá»ƒn hÃ ng.");
     }
 
     public async Task<(bool ok, string msg)> ExecuteMoveOrderAsync(int id)
@@ -906,43 +908,43 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(m => m.Lines).ThenInclude(l => l.Product)
             .FirstOrDefaultAsync(m => m.Id == id);
 
-        if (order == null) return (false, "Không tìm thấy lệnh điều chuyển.");
-        if (order.Status == MoveOrderStatus.Finished) return (false, "Lệnh điều chuyển đã được thực hiện trước đó.");
-        if (order.Status == MoveOrderStatus.Cancelled) return (false, "Lệnh điều chuyển đã bị hủy.");
-        if (order.Lines.Count == 0) return (false, "Lệnh chưa có danh sách mặt hàng.");
+        if (order == null) return (false, "KhÃ´ng tÃ¬m tháº¥y lá»‡nh Ä‘iá»u chuyá»ƒn.");
+        if (order.Status == MoveOrderStatus.Finished) return (false, "Lá»‡nh Ä‘iá»u chuyá»ƒn Ä‘Ã£ Ä‘Æ°á»£c thá»±c hiá»‡n trÆ°á»›c Ä‘Ã³.");
+        if (order.Status == MoveOrderStatus.Cancelled) return (false, "Lá»‡nh Ä‘iá»u chuyá»ƒn Ä‘Ã£ bá»‹ há»§y.");
+        if (order.Lines.Count == 0) return (false, "Lá»‡nh chÆ°a cÃ³ danh sÃ¡ch máº·t hÃ ng.");
 
-        // Tự động sinh phiếu chuyển kho StockDoc (DocType.Transfer)
+        // Tá»± Ä‘á»™ng sinh phiáº¿u chuyá»ƒn kho StockDoc (DocType.Transfer)
         var transferDoc = new StockDoc
         {
             Type = DocType.Transfer,
             FromWarehouseId = order.FromWarehouseId,
             ToWarehouseId = order.ToWarehouseId,
             RefNo = order.Code,
-            Note = $"Thực hiện theo Lệnh điều chuyển {order.Code}" + (string.IsNullOrWhiteSpace(order.Note) ? "" : $": {order.Note}"),
+            Note = $"Thá»±c hiá»‡n theo Lá»‡nh Ä‘iá»u chuyá»ƒn {order.Code}" + (string.IsNullOrWhiteSpace(order.Note) ? "" : $": {order.Note}"),
             CreatedBy = string.IsNullOrWhiteSpace(order.CreatedBy) ? "move-order" : order.CreatedBy
         };
 
         var docLines = order.Lines.Select(l => (l.ProductId, l.Quantity)).ToList();
         var docId = await CreateDocAsync(transferDoc, docLines);
 
-        // Ghi sổ phiếu chuyển kho để trừ tồn kho xuất và tăng tồn kho nhập
+        // Ghi sá»• phiáº¿u chuyá»ƒn kho Ä‘á»ƒ trá»« tá»“n kho xuáº¥t vÃ  tÄƒng tá»“n kho nháº­p
         var (postOk, postMsg) = await PostDocAsync(docId);
-        if (!postOk) return (false, $"Lỗi ghi sổ phiếu chuyển kho: {postMsg}");
+        if (!postOk) return (false, $"Lá»—i ghi sá»• phiáº¿u chuyá»ƒn kho: {postMsg}");
 
         order.StockDocId = docId;
         order.Status = MoveOrderStatus.Finished;
         order.FinishedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        return (true, $"Đã thực hiện thành công Lệnh điều chuyển {order.Code}. Đã ghi sổ phiếu chuyển kho {transferDoc.Code}.");
+        return (true, $"ÄÃ£ thá»±c hiá»‡n thÃ nh cÃ´ng Lá»‡nh Ä‘iá»u chuyá»ƒn {order.Code}. ÄÃ£ ghi sá»• phiáº¿u chuyá»ƒn kho {transferDoc.Code}.");
     }
 
     public async Task CancelMoveOrderAsync(int id)
     {
         var order = await db.MoveOrders.FirstOrDefaultAsync(m => m.Id == id)
-            ?? throw new KeyNotFoundException("Không tìm thấy lệnh điều chuyển.");
+            ?? throw new KeyNotFoundException("KhÃ´ng tÃ¬m tháº¥y lá»‡nh Ä‘iá»u chuyá»ƒn.");
         if (order.Status == MoveOrderStatus.Finished)
-            throw new InvalidOperationException("Không thể hủy lệnh điều chuyển đã hoàn thành.");
+            throw new InvalidOperationException("KhÃ´ng thá»ƒ há»§y lá»‡nh Ä‘iá»u chuyá»ƒn Ä‘Ã£ hoÃ n thÃ nh.");
 
         order.Status = MoveOrderStatus.Cancelled;
         await db.SaveChangesAsync();
@@ -989,12 +991,12 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(r => r.Lines).ThenInclude(l => l.Product)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (returnDoc == null) return (false, "Không tìm thấy phiếu trả hàng nhà cung cấp.");
-        if (returnDoc.Status == ReturnSupStatus.Finished) return (false, "Phiếu trả hàng đã được duyệt và xuất kho trước đó.");
-        if (returnDoc.Status == ReturnSupStatus.Cancelled) return (false, "Phiếu trả hàng đã bị hủy.");
-        if (returnDoc.Lines.Count == 0) return (false, "Phiếu chưa có mặt hàng xuất trả.");
+        if (returnDoc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u tráº£ hÃ ng nhÃ  cung cáº¥p.");
+        if (returnDoc.Status == ReturnSupStatus.Finished) return (false, "Phiáº¿u tráº£ hÃ ng Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t vÃ  xuáº¥t kho trÆ°á»›c Ä‘Ã³.");
+        if (returnDoc.Status == ReturnSupStatus.Cancelled) return (false, "Phiáº¿u tráº£ hÃ ng Ä‘Ã£ bá»‹ há»§y.");
+        if (returnDoc.Lines.Count == 0) return (false, "Phiáº¿u chÆ°a cÃ³ máº·t hÃ ng xuáº¥t tráº£.");
 
-        // Kiểm tra tồn kho khả dụng tại kho xuất
+        // Kiá»ƒm tra tá»“n kho kháº£ dá»¥ng táº¡i kho xuáº¥t
         var balances = await BalancesAsync(returnDoc.WarehouseId);
         var balDict = balances.ToDictionary(b => b.ProductId, b => b.Qty);
 
@@ -1003,41 +1005,41 @@ public class WmsService(AppDbContext db) : IWmsService
             balDict.TryGetValue(line.ProductId, out var available);
             if (line.Quantity > available)
             {
-                return (false, $"Kho '{returnDoc.Warehouse.Name}' không đủ tồn cho '{line.Product.Name}': yêu cầu trả {line.Quantity}, hiện có {available}.");
+                return (false, $"Kho '{returnDoc.Warehouse.Name}' khÃ´ng Ä‘á»§ tá»“n cho '{line.Product.Name}': yÃªu cáº§u tráº£ {line.Quantity}, hiá»‡n cÃ³ {available}.");
             }
         }
 
-        // Tự động sinh phiếu xuất kho StockDoc (DocType.Out)
+        // Tá»± Ä‘á»™ng sinh phiáº¿u xuáº¥t kho StockDoc (DocType.Out)
         var stockDoc = new StockDoc
         {
             Type = DocType.Out,
             FromWarehouseId = returnDoc.WarehouseId,
             RefNo = returnDoc.Code,
-            Note = $"Xuất trả hàng NCC {returnDoc.SupplierName} theo phiếu {returnDoc.Code}" + (string.IsNullOrWhiteSpace(returnDoc.Reason) ? "" : $": {returnDoc.Reason}"),
+            Note = $"Xuáº¥t tráº£ hÃ ng NCC {returnDoc.SupplierName} theo phiáº¿u {returnDoc.Code}" + (string.IsNullOrWhiteSpace(returnDoc.Reason) ? "" : $": {returnDoc.Reason}"),
             CreatedBy = string.IsNullOrWhiteSpace(returnDoc.CreatedBy) ? "return-sup" : returnDoc.CreatedBy
         };
 
         var docLines = returnDoc.Lines.Select(l => (l.ProductId, l.Quantity)).ToList();
         var docId = await CreateDocAsync(stockDoc, docLines);
 
-        // Ghi sổ phiếu xuất để trừ tồn kho ngay
+        // Ghi sá»• phiáº¿u xuáº¥t Ä‘á»ƒ trá»« tá»“n kho ngay
         var (postOk, postMsg) = await PostDocAsync(docId);
-        if (!postOk) return (false, $"Lỗi ghi sổ phiếu xuất kho: {postMsg}");
+        if (!postOk) return (false, $"Lá»—i ghi sá»• phiáº¿u xuáº¥t kho: {postMsg}");
 
         returnDoc.StockDocId = docId;
         returnDoc.Status = ReturnSupStatus.Finished;
         returnDoc.FinishedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        return (true, $"Đã duyệt và thực hiện xuất kho trả hàng NCC {returnDoc.Code}. Đã ghi sổ phiếu xuất kho {stockDoc.Code}.");
+        return (true, $"ÄÃ£ duyá»‡t vÃ  thá»±c hiá»‡n xuáº¥t kho tráº£ hÃ ng NCC {returnDoc.Code}. ÄÃ£ ghi sá»• phiáº¿u xuáº¥t kho {stockDoc.Code}.");
     }
 
     public async Task CancelReturnToSupplierAsync(int id)
     {
         var returnDoc = await db.ReturnToSuppliers.FirstOrDefaultAsync(r => r.Id == id)
-            ?? throw new KeyNotFoundException("Không tìm thấy phiếu trả hàng nhà cung cấp.");
+            ?? throw new KeyNotFoundException("KhÃ´ng tÃ¬m tháº¥y phiáº¿u tráº£ hÃ ng nhÃ  cung cáº¥p.");
         if (returnDoc.Status == ReturnSupStatus.Finished)
-            throw new InvalidOperationException("Không thể hủy phiếu trả hàng đã duyệt xuất kho.");
+            throw new InvalidOperationException("KhÃ´ng thá»ƒ há»§y phiáº¿u tráº£ hÃ ng Ä‘Ã£ duyá»‡t xuáº¥t kho.");
 
         returnDoc.Status = ReturnSupStatus.Cancelled;
         await db.SaveChangesAsync();
@@ -1084,51 +1086,51 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(c => c.Lines).ThenInclude(l => l.Product)
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        if (returnDoc == null) return (false, "Không tìm thấy phiếu khách hàng trả lại.");
-        if (returnDoc.Status == CusReturnStatus.Finished) return (false, "Phiếu trả hàng đã được duyệt và nhập kho trước đó.");
-        if (returnDoc.Status == CusReturnStatus.Cancelled) return (false, "Phiếu trả hàng đã bị hủy.");
-        if (returnDoc.Lines.Count == 0) return (false, "Phiếu chưa có mặt hàng nhận lại.");
+        if (returnDoc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u khÃ¡ch hÃ ng tráº£ láº¡i.");
+        if (returnDoc.Status == CusReturnStatus.Finished) return (false, "Phiáº¿u tráº£ hÃ ng Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t vÃ  nháº­p kho trÆ°á»›c Ä‘Ã³.");
+        if (returnDoc.Status == CusReturnStatus.Cancelled) return (false, "Phiáº¿u tráº£ hÃ ng Ä‘Ã£ bá»‹ há»§y.");
+        if (returnDoc.Lines.Count == 0) return (false, "Phiáº¿u chÆ°a cÃ³ máº·t hÃ ng nháº­n láº¡i.");
 
-        // Tự động sinh phiếu nhập kho StockDoc (DocType.In)
+        // Tá»± Ä‘á»™ng sinh phiáº¿u nháº­p kho StockDoc (DocType.In)
         var stockDoc = new StockDoc
         {
             Type = DocType.In,
             ToWarehouseId = returnDoc.WarehouseId,
             RefNo = returnDoc.Code,
-            Note = $"Nhập hàng khách trả lại: {returnDoc.CustomerName} theo phiếu {returnDoc.Code}" + (string.IsNullOrWhiteSpace(returnDoc.Reason) ? "" : $": {returnDoc.Reason}"),
+            Note = $"Nháº­p hÃ ng khÃ¡ch tráº£ láº¡i: {returnDoc.CustomerName} theo phiáº¿u {returnDoc.Code}" + (string.IsNullOrWhiteSpace(returnDoc.Reason) ? "" : $": {returnDoc.Reason}"),
             CreatedBy = string.IsNullOrWhiteSpace(returnDoc.CreatedBy) ? "cus-return" : returnDoc.CreatedBy
         };
 
         var docLines = returnDoc.Lines.Select(l => (l.ProductId, l.Quantity)).ToList();
         var docId = await CreateDocAsync(stockDoc, docLines);
 
-        // Ghi sổ phiếu nhập để cộng tồn kho ngay
+        // Ghi sá»• phiáº¿u nháº­p Ä‘á»ƒ cá»™ng tá»“n kho ngay
         var (postOk, postMsg) = await PostDocAsync(docId);
-        if (!postOk) return (false, $"Lỗi ghi sổ phiếu nhập kho: {postMsg}");
+        if (!postOk) return (false, $"Lá»—i ghi sá»• phiáº¿u nháº­p kho: {postMsg}");
 
         returnDoc.StockDocId = docId;
         returnDoc.Status = CusReturnStatus.Finished;
         returnDoc.FinishedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        return (true, $"Đã nhận và nhập kho thành công hàng khách trả {returnDoc.Code}. Đã ghi sổ phiếu nhập kho {stockDoc.Code}.");
+        return (true, $"ÄÃ£ nháº­n vÃ  nháº­p kho thÃ nh cÃ´ng hÃ ng khÃ¡ch tráº£ {returnDoc.Code}. ÄÃ£ ghi sá»• phiáº¿u nháº­p kho {stockDoc.Code}.");
     }
 
     public async Task CancelCustomerReturnAsync(int id)
     {
         var returnDoc = await db.CustomerReturns.FirstOrDefaultAsync(c => c.Id == id)
-            ?? throw new KeyNotFoundException("Không tìm thấy phiếu khách trả lại.");
+            ?? throw new KeyNotFoundException("KhÃ´ng tÃ¬m tháº¥y phiáº¿u khÃ¡ch tráº£ láº¡i.");
         if (returnDoc.Status == CusReturnStatus.Finished)
-            throw new InvalidOperationException("Không thể hủy phiếu trả hàng đã duyệt nhập kho.");
+            throw new InvalidOperationException("KhÃ´ng thá»ƒ há»§y phiáº¿u tráº£ hÃ ng Ä‘Ã£ duyá»‡t nháº­p kho.");
 
         returnDoc.Status = CusReturnStatus.Cancelled;
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (port từ Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Cháº¡m tá»“n kho tá»‘i thiá»ƒu & Cáº£nh bÃ¡o an toÃ n kho (port tá»« Rpt_Inv_InventoryBalance_Minimum Skycic).</summary>
     public async Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -1148,7 +1150,7 @@ public class WmsService(AppDbContext db) : IWmsService
         }
         var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
 
-        // Lấy toàn bộ phiếu kho đã ghi sổ để tính tồn thực tế cho từng (kho, hàng)
+        // Láº¥y toÃ n bá»™ phiáº¿u kho Ä‘Ã£ ghi sá»• Ä‘á»ƒ tÃ­nh tá»“n thá»±c táº¿ cho tá»«ng (kho, hÃ ng)
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted)
             .Include(d => d.Lines)
@@ -1182,7 +1184,7 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var p in products)
             {
                 balMap.TryGetValue((w.Id, p.Id), out var curQty);
-                // Nếu sản phẩm không cấu hình định mức tối thiểu và tồn cũng = 0 thì không theo dõi
+                // Náº¿u sáº£n pháº©m khÃ´ng cáº¥u hÃ¬nh Ä‘á»‹nh má»©c tá»‘i thiá»ƒu vÃ  tá»“n cÅ©ng = 0 thÃ¬ khÃ´ng theo dÃµi
                 if (p.MinStock <= 0 && curQty == 0) continue;
 
                 int shortage = Math.Max(0, p.MinStock - curQty);
@@ -1195,25 +1197,25 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (curQty <= 0 && p.MinStock > 0)
                 {
                     level = StockAlertLevel.OutOfStock;
-                    label = "Hết hàng / Cháy kho";
+                    label = "Háº¿t hÃ ng / ChÃ¡y kho";
                     badge = "bg-danger";
                 }
                 else if (curQty < p.MinStock)
                 {
                     level = StockAlertLevel.Danger;
-                    label = "Dưới định mức";
+                    label = "DÆ°á»›i Ä‘á»‹nh má»©c";
                     badge = "bg-warning text-dark";
                 }
                 else if (curQty <= Math.Ceiling(p.MinStock * 1.25))
                 {
                     level = StockAlertLevel.Warning;
-                    label = "Cận định mức";
+                    label = "Cáº­n Ä‘á»‹nh má»©c";
                     badge = "bg-info text-dark";
                 }
                 else
                 {
                     level = StockAlertLevel.Safe;
-                    label = "Đạt an toàn";
+                    label = "Äáº¡t an toÃ n";
                     badge = "bg-success";
                 }
 
@@ -1238,7 +1240,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Sắp xếp: OutOfStock lên đầu, sau đó Danger theo shortage giảm dần, rồi Warning, Safe
+        // Sáº¯p xáº¿p: OutOfStock lÃªn Ä‘áº§u, sau Ä‘Ã³ Danger theo shortage giáº£m dáº§n, rá»“i Warning, Safe
         rows = rows
             .OrderBy(r => r.AlertLevel)
             .ThenByDescending(r => r.ShortageQty)
@@ -1276,10 +1278,10 @@ public class WmsService(AppDbContext db) : IWmsService
         return q.OrderBy(l => l.ExpiredDate).ToListAsync();
     }
 
-    /// <summary>Báo cáo Quản lý Lô & Hạn sử dụng hàng hóa (port từ Inv_InventoryBalanceLot & Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Quáº£n lÃ½ LÃ´ & Háº¡n sá»­ dá»¥ng hÃ ng hÃ³a (port tá»« Inv_InventoryBalanceLot & Rpt_InvBalLot_MaxExpiredDateByInv Skycic).</summary>
     public async Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -1313,25 +1315,25 @@ public class WmsService(AppDbContext db) : IWmsService
             if (daysToExpiry < 0)
             {
                 st = LotExpiryStatus.Expired;
-                label = $"Đã hết hạn ({Math.Abs(daysToExpiry)} ngày trước)";
+                label = $"ÄÃ£ háº¿t háº¡n ({Math.Abs(daysToExpiry)} ngÃ y trÆ°á»›c)";
                 badge = "bg-danger";
             }
             else if (daysToExpiry <= 30)
             {
                 st = LotExpiryStatus.Critical;
-                label = $"Cận hạn nguy cấp (còn {daysToExpiry} ngày)";
+                label = $"Cáº­n háº¡n nguy cáº¥p (cÃ²n {daysToExpiry} ngÃ y)";
                 badge = "bg-warning text-dark";
             }
             else if (daysToExpiry <= 90)
             {
                 st = LotExpiryStatus.Warning;
-                label = $"Cảnh báo cận hạn (còn {daysToExpiry} ngày)";
+                label = $"Cáº£nh bÃ¡o cáº­n háº¡n (cÃ²n {daysToExpiry} ngÃ y)";
                 badge = "bg-info text-dark";
             }
             else
             {
                 st = LotExpiryStatus.Good;
-                label = $"Đạt an toàn (còn {daysToExpiry} ngày)";
+                label = $"Äáº¡t an toÃ n (cÃ²n {daysToExpiry} ngÃ y)";
                 badge = "bg-success";
             }
 
@@ -1358,7 +1360,7 @@ public class WmsService(AppDbContext db) : IWmsService
             ));
         }
 
-        // Sắp xếp theo ưu tiên xuất hàng FEFO (First Expired First Out): hạn sớm nhất lên đầu
+        // Sáº¯p xáº¿p theo Æ°u tiÃªn xuáº¥t hÃ ng FEFO (First Expired First Out): háº¡n sá»›m nháº¥t lÃªn Ä‘áº§u
         rows = rows
             .OrderBy(r => r.Status)
             .ThenBy(r => r.ExpiredDate)
@@ -1387,12 +1389,12 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo Tuổi kho & Thời gian lưu kho hàng hoá (port từ Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Tuá»•i kho & Thá»i gian lÆ°u kho hÃ ng hoÃ¡ (port tá»« Rpt_Inv_InventoryBalance_StorageTime Skycic).</summary>
     public async Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null)
     {
         var asOf = (asOfDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -1412,7 +1414,7 @@ public class WmsService(AppDbContext db) : IWmsService
         }
         var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
 
-        // Lấy tất cả các phiếu kho đã ghi sổ tính đến ngày chốt báo cáo
+        // Láº¥y táº¥t cáº£ cÃ¡c phiáº¿u kho Ä‘Ã£ ghi sá»• tÃ­nh Ä‘áº¿n ngÃ y chá»‘t bÃ¡o cÃ¡o
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date <= asOf)
             .Include(d => d.Lines)
@@ -1469,12 +1471,12 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var p in products)
             {
                 balMap.TryGetValue((w.Id, p.Id), out var curQty);
-                if (curQty <= 0) continue; // Chỉ đưa vào báo cáo các mặt hàng đang có tồn thực tế > 0
+                if (curQty <= 0) continue; // Chá»‰ Ä‘Æ°a vÃ o bÃ¡o cÃ¡o cÃ¡c máº·t hÃ ng Ä‘ang cÃ³ tá»“n thá»±c táº¿ > 0
 
                 lastInMap.TryGetValue((w.Id, p.Id), out var lastInDate);
                 DateTime? validLastIn = lastInDate != default ? lastInDate : null;
 
-                // Tuổi kho tính theo số ngày kể từ ngày nhập kho gần nhất
+                // Tuá»•i kho tÃ­nh theo sá»‘ ngÃ y ká»ƒ tá»« ngÃ y nháº­p kho gáº§n nháº¥t
                 int storageDays = validLastIn.HasValue ? Math.Max(0, (today - validLastIn.Value.Date).Days) : 0;
 
                 StorageTimeAgingBracket b;
@@ -1485,30 +1487,30 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (storageDays <= 30)
                 {
                     b = StorageTimeAgingBracket.Tier1_Under30;
-                    bLabel = "≤ 30 ngày (Mới nhập)";
+                    bLabel = "â‰¤ 30 ngÃ y (Má»›i nháº­p)";
                     badge = "bg-success";
-                    rec = "Lưu kho an toàn, luân chuyển tốt";
+                    rec = "LÆ°u kho an toÃ n, luÃ¢n chuyá»ƒn tá»‘t";
                 }
                 else if (storageDays <= 60)
                 {
                     b = StorageTimeAgingBracket.Tier2_31To60;
-                    bLabel = "31 - 60 ngày (Bình thường)";
+                    bLabel = "31 - 60 ngÃ y (BÃ¬nh thÆ°á»ng)";
                     badge = "bg-info text-dark";
-                    rec = "Duy trì kế hoạch bán hàng thường lệ";
+                    rec = "Duy trÃ¬ káº¿ hoáº¡ch bÃ¡n hÃ ng thÆ°á»ng lá»‡";
                 }
                 else if (storageDays <= 90)
                 {
                     b = StorageTimeAgingBracket.Tier3_61To90;
-                    bLabel = "61 - 90 ngày (Chậm tiêu thụ)";
+                    bLabel = "61 - 90 ngÃ y (Cháº­m tiÃªu thá»¥)";
                     badge = "bg-warning text-dark";
-                    rec = "Theo dõi sức mua, tăng cường kích cầu";
+                    rec = "Theo dÃµi sá»©c mua, tÄƒng cÆ°á»ng kÃ­ch cáº§u";
                 }
                 else
                 {
                     b = StorageTimeAgingBracket.Tier4_Over90;
-                    bLabel = "> 90 ngày (Tồn đọng vốn)";
+                    bLabel = "> 90 ngÃ y (Tá»“n Ä‘á»ng vá»‘n)";
                     badge = "bg-danger";
-                    rec = "Ưu tiên xả hàng, khuyến mãi hoặc luân chuyển chi nhánh";
+                    rec = "Æ¯u tiÃªn xáº£ hÃ ng, khuyáº¿n mÃ£i hoáº·c luÃ¢n chuyá»ƒn chi nhÃ¡nh";
                 }
 
                 if (bracket.HasValue && b != bracket.Value) continue;
@@ -1536,7 +1538,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Sắp xếp: Ưu tiên tuổi kho lâu ngày nhất lên đầu, tiếp theo là giá trị tồn giảm dần
+        // Sáº¯p xáº¿p: Æ¯u tiÃªn tuá»•i kho lÃ¢u ngÃ y nháº¥t lÃªn Ä‘áº§u, tiáº¿p theo lÃ  giÃ¡ trá»‹ tá»“n giáº£m dáº§n
         rows = rows
             .OrderByDescending(r => r.StorageDays)
             .ThenByDescending(r => r.TotalValue)
@@ -1582,7 +1584,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var today = DateTime.Today;
         var expiringLots = await db.StockLots.CountAsync(l => l.ExpiredDate <= today.AddDays(30));
 
-        // Tính số mặt hàng đọng vốn > 90 ngày
+        // TÃ­nh sá»‘ máº·t hÃ ng Ä‘á»ng vá»‘n > 90 ngÃ y
         var storageReport = await StorageTimeReportAsync(null, StorageTimeAgingBracket.Tier4_Over90, null);
         var stagnantItems = storageReport.StagnantItemsCount;
         var damagedSerials = await db.StockSerials.CountAsync(s => s.Status == StockSerialStatus.DamagedNG);
@@ -1642,14 +1644,14 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateStockSerialAsync(StockSerial serial)
     {
         if (string.IsNullOrWhiteSpace(serial.SerialNo))
-            throw new ArgumentException("Số Serial/IMEI không được để trống.");
+            throw new ArgumentException("Sá»‘ Serial/IMEI khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         serial.SerialNo = serial.SerialNo.Trim().ToUpperInvariant();
         var exists = await db.StockSerials.AnyAsync(s => s.WarehouseId == serial.WarehouseId &&
                                                          s.ProductId == serial.ProductId &&
                                                          s.SerialNo == serial.SerialNo);
         if (exists)
-            throw new InvalidOperationException($"Số Serial/IMEI '{serial.SerialNo}' đã tồn tại trong kho cho mặt hàng này.");
+            throw new InvalidOperationException($"Sá»‘ Serial/IMEI '{serial.SerialNo}' Ä‘Ã£ tá»“n táº¡i trong kho cho máº·t hÃ ng nÃ y.");
 
         serial.CreatedAt = DateTime.Now;
         db.StockSerials.Add(serial);
@@ -1660,7 +1662,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> ChangeStockSerialStatusAsync(int id, StockSerialStatus newStatus, string? note)
     {
         var serial = await db.StockSerials.FirstOrDefaultAsync(s => s.Id == id);
-        if (serial == null) return (false, "Không tìm thấy Serial/IMEI.");
+        if (serial == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Serial/IMEI.");
 
         var oldStatus = serial.Status;
         serial.Status = newStatus;
@@ -1682,26 +1684,26 @@ public class WmsService(AppDbContext db) : IWmsService
         await db.SaveChangesAsync();
         var statusLabel = newStatus switch
         {
-            StockSerialStatus.Available => "Khả dụng / Sẵn sàng",
-            StockSerialStatus.Locked => "Tạm khóa / Giữ hàng",
-            StockSerialStatus.DamagedNG => "Báo hỏng / Thẩm định NG",
-            StockSerialStatus.Exported => "Đã xuất kho",
+            StockSerialStatus.Available => "Kháº£ dá»¥ng / Sáºµn sÃ ng",
+            StockSerialStatus.Locked => "Táº¡m khÃ³a / Giá»¯ hÃ ng",
+            StockSerialStatus.DamagedNG => "BÃ¡o há»ng / Tháº©m Ä‘á»‹nh NG",
+            StockSerialStatus.Exported => "ÄÃ£ xuáº¥t kho",
             _ => newStatus.ToString()
         };
-        return (true, $"Đã cập nhật trạng thái Serial '{serial.SerialNo}' thành: {statusLabel}.");
+        return (true, $"ÄÃ£ cáº­p nháº­t tráº¡ng thÃ¡i Serial '{serial.SerialNo}' thÃ nh: {statusLabel}.");
     }
 
-    /// <summary>Báo cáo Quản lý & Tra cứu Serial / IMEI hàng tồn kho (port từ Inv_InventoryBalanceSerial Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Quáº£n lÃ½ & Tra cá»©u Serial / IMEI hÃ ng tá»“n kho (port tá»« Inv_InventoryBalanceSerial Skycic).</summary>
     public async Task<StockSerialReport> StockSerialReportAsync(int? warehouseId, int? productId, StockSerialStatus? status, string? keyword)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
             if (wh != null) whName = wh.Name;
         }
 
-        string prodName = "Tất cả mặt hàng";
+        string prodName = "Táº¥t cáº£ máº·t hÃ ng";
         if (productId.HasValue)
         {
             var p = await db.Products.FirstOrDefaultAsync(x => x.Id == productId.Value);
@@ -1742,10 +1744,10 @@ public class WmsService(AppDbContext db) : IWmsService
             {
                 var (label, badge) = s.Status switch
                 {
-                    StockSerialStatus.Available => ("Khả dụng", "bg-success"),
-                    StockSerialStatus.Locked => ("Tạm khóa", "bg-warning text-dark"),
-                    StockSerialStatus.DamagedNG => ("Lỗi / NG", "bg-danger"),
-                    StockSerialStatus.Exported => ("Đã xuất", "bg-secondary"),
+                    StockSerialStatus.Available => ("Kháº£ dá»¥ng", "bg-success"),
+                    StockSerialStatus.Locked => ("Táº¡m khÃ³a", "bg-warning text-dark"),
+                    StockSerialStatus.DamagedNG => ("Lá»—i / NG", "bg-danger"),
+                    StockSerialStatus.Exported => ("ÄÃ£ xuáº¥t", "bg-secondary"),
                     _ => (s.Status.ToString(), "bg-secondary")
                 };
 
@@ -1799,9 +1801,9 @@ public class WmsService(AppDbContext db) : IWmsService
 
     public async Task<int> CreateInventoryBlockAsync(InventoryBlock block)
     {
-        if (block.WarehouseId <= 0) throw new ArgumentException("Cần chọn Kho lưu trữ.");
-        if (string.IsNullOrWhiteSpace(block.InvBlockCode)) throw new ArgumentException("Mã vị trí ô kho không được để trống.");
-        if (string.IsNullOrWhiteSpace(block.ShelfCode)) throw new ArgumentException("Mã dãy kệ không được để trống.");
+        if (block.WarehouseId <= 0) throw new ArgumentException("Cáº§n chá»n Kho lÆ°u trá»¯.");
+        if (string.IsNullOrWhiteSpace(block.InvBlockCode)) throw new ArgumentException("MÃ£ vá»‹ trÃ­ Ã´ kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
+        if (string.IsNullOrWhiteSpace(block.ShelfCode)) throw new ArgumentException("MÃ£ dÃ£y ká»‡ khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         block.InvBlockCode = block.InvBlockCode.Trim().ToUpperInvariant();
         block.ShelfCode = block.ShelfCode.Trim().ToUpperInvariant();
@@ -1814,7 +1816,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var exists = await db.InventoryBlocks.AnyAsync(b => b.WarehouseId == block.WarehouseId && b.InvBlockCode == block.InvBlockCode);
         if (exists)
-            throw new InvalidOperationException($"Mã vị trí '{block.InvBlockCode}' đã tồn tại trong kho này.");
+            throw new InvalidOperationException($"MÃ£ vá»‹ trÃ­ '{block.InvBlockCode}' Ä‘Ã£ tá»“n táº¡i trong kho nÃ y.");
 
         block.CreatedAt = DateTime.Now;
         db.InventoryBlocks.Add(block);
@@ -1825,7 +1827,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateInventoryBlockAsync(int id, InventoryBlock block)
     {
         var existing = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
-        if (existing == null) return (false, "Không tìm thấy vị trí ô kệ cần cập nhật.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vá»‹ trÃ­ Ã´ ká»‡ cáº§n cáº­p nháº­t.");
 
         if (!string.IsNullOrWhiteSpace(block.ShelfCode))
             existing.ShelfCode = block.ShelfCode.Trim().ToUpperInvariant();
@@ -1840,30 +1842,30 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật vị trí kho '{existing.InvBlockCode}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t vá»‹ trÃ­ kho '{existing.InvBlockCode}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryBlockStatusAsync(int id)
     {
         var block = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
-        if (block == null) return (false, "Không tìm thấy vị trí ô kệ.");
+        if (block == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vá»‹ trÃ­ Ã´ ká»‡.");
 
         block.FlagActive = !block.FlagActive;
         block.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        var st = block.FlagActive ? "Đang hoạt động" : "Tạm ngừng / Bảo trì";
-        return (true, $"Đã chuyển trạng thái vị trí '{block.InvBlockCode}' sang: {st}.");
+        var st = block.FlagActive ? "Äang hoáº¡t Ä‘á»™ng" : "Táº¡m ngá»«ng / Báº£o trÃ¬";
+        return (true, $"ÄÃ£ chuyá»ƒn tráº¡ng thÃ¡i vá»‹ trÃ­ '{block.InvBlockCode}' sang: {st}.");
     }
 
     public async Task<(bool ok, string msg)> DeleteInventoryBlockAsync(int id)
     {
         var block = await db.InventoryBlocks.FirstOrDefaultAsync(b => b.Id == id);
-        if (block == null) return (false, "Không tìm thấy vị trí ô kệ.");
+        if (block == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vá»‹ trÃ­ Ã´ ká»‡.");
 
         db.InventoryBlocks.Remove(block);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa vị trí '{block.InvBlockCode}'.");
+        return (true, $"ÄÃ£ xÃ³a vá»‹ trÃ­ '{block.InvBlockCode}'.");
     }
 
     public async Task<List<string>> GetShelvesAsync(int? warehouseId)
@@ -1873,10 +1875,10 @@ public class WmsService(AppDbContext db) : IWmsService
         return await q.Select(b => b.ShelfCode).Distinct().OrderBy(s => s).ToListAsync();
     }
 
-    /// <summary>Báo cáo & Danh sách Quản lý Vị trí kho tổng hợp (port từ Mst_InventoryBlock Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o & Danh sÃ¡ch Quáº£n lÃ½ Vá»‹ trÃ­ kho tá»•ng há»£p (port tá»« Mst_InventoryBlock Skycic).</summary>
     public async Task<InventoryBlockReport> InventoryBlockReportAsync(int? warehouseId, string? shelfCode, bool? activeFilter, string? keyword)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -1932,7 +1934,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 b.VolumeM3,
                 b.MaxCapacity,
                 b.FlagActive,
-                b.FlagActive ? "Hoạt động" : "Bảo trì / Khóa",
+                b.FlagActive ? "Hoáº¡t Ä‘á»™ng" : "Báº£o trÃ¬ / KhÃ³a",
                 b.FlagActive ? "bg-success" : "bg-warning text-dark",
                 b.Remark,
                 b.CreatedAt
@@ -1955,17 +1957,17 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo & Danh sách Lịch sử giá vốn kho tổng hợp (port từ Inv_CostPriceHist Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o & Danh sÃ¡ch Lá»‹ch sá»­ giÃ¡ vá»‘n kho tá»•ng há»£p (port tá»« Inv_CostPriceHist Skycic).</summary>
     public async Task<CostPriceHistReport> CostPriceHistReportAsync(int? warehouseId, int? productId, bool? currentOnly, DateTime? fromDate, DateTime? toDate, string? keyword)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
             if (wh != null) whName = wh.Name;
         }
 
-        string prodName = "Tất cả mặt hàng";
+        string prodName = "Táº¥t cáº£ máº·t hÃ ng";
         if (productId.HasValue)
         {
             var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId.Value);
@@ -2002,15 +2004,15 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             var (sourceLabel, badge) = c.SourceType switch
             {
-                CostPriceSourceType.AutoCalc => ("Kỳ tính tự động", "bg-primary"),
-                CostPriceSourceType.Manual => ("Điều chỉnh tay", "bg-warning text-dark"),
-                _ => ("Khác", "bg-secondary")
+                CostPriceSourceType.AutoCalc => ("Ká»³ tÃ­nh tá»± Ä‘á»™ng", "bg-primary"),
+                CostPriceSourceType.Manual => ("Äiá»u chá»‰nh tay", "bg-warning text-dark"),
+                _ => ("KhÃ¡c", "bg-secondary")
             };
 
             return new CostPriceHistRow(
                 c.Id,
                 c.WarehouseId,
-                c.Warehouse != null ? c.Warehouse.Name : "Toàn hệ thống",
+                c.Warehouse != null ? c.Warehouse.Name : "ToÃ n há»‡ thá»‘ng",
                 c.ProductId,
                 c.Product.Code,
                 c.Product.Name,
@@ -2054,12 +2056,12 @@ public class WmsService(AppDbContext db) : IWmsService
 
     public async Task<int> CreateCostPriceHistAsync(CostPriceHist item)
     {
-        if (item.ProductId <= 0) throw new InvalidOperationException("Vui lòng chọn mặt hàng.");
-        if (item.CostPrice < 0) throw new InvalidOperationException("Giá vốn không thể âm.");
+        if (item.ProductId <= 0) throw new InvalidOperationException("Vui lÃ²ng chá»n máº·t hÃ ng.");
+        if (item.CostPrice < 0) throw new InvalidOperationException("GiÃ¡ vá»‘n khÃ´ng thá»ƒ Ã¢m.");
 
         if (item.IsCurrent)
         {
-            // Cập nhật các bản ghi cũ của sản phẩm này tại kho này thành không hiện hành
+            // Cáº­p nháº­t cÃ¡c báº£n ghi cÅ© cá»§a sáº£n pháº©m nÃ y táº¡i kho nÃ y thÃ nh khÃ´ng hiá»‡n hÃ nh
             var oldRecords = await db.CostPriceHists
                 .Where(c => c.ProductId == item.ProductId && c.WarehouseId == item.WarehouseId && c.IsCurrent)
                 .ToListAsync();
@@ -2069,7 +2071,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 old.UpdatedAt = DateTime.Now;
             }
 
-            // Cập nhật giá vốn trên bảng Product
+            // Cáº­p nháº­t giÃ¡ vá»‘n trÃªn báº£ng Product
             var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
             if (prod != null)
             {
@@ -2086,8 +2088,8 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateCostPriceHistAsync(int id, decimal costPrice, string? remark)
     {
         var item = await db.CostPriceHists.Include(c => c.Product).FirstOrDefaultAsync(c => c.Id == id);
-        if (item == null) return (false, "Không tìm thấy bản ghi giá vốn.");
-        if (costPrice < 0) return (false, "Giá vốn không thể âm.");
+        if (item == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£n ghi giÃ¡ vá»‘n.");
+        if (costPrice < 0) return (false, "GiÃ¡ vá»‘n khÃ´ng thá»ƒ Ã¢m.");
 
         item.CostPrice = costPrice;
         item.Remark = remark?.Trim();
@@ -2100,12 +2102,12 @@ public class WmsService(AppDbContext db) : IWmsService
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật giá vốn của '{item.Product?.Name}' thành {costPrice:N0} đ.");
+        return (true, $"ÄÃ£ cáº­p nháº­t giÃ¡ vá»‘n cá»§a '{item.Product?.Name}' thÃ nh {costPrice:N0} Ä‘.");
     }
 
     public async Task<CostPriceCalcPreviewReport> PreviewCalculateCostPriceAsync(int? warehouseId, DateTime fromDate, DateTime toDate, string calcPeriodName, int[]? productIds)
     {
-        string whName = "Toàn bộ kho";
+        string whName = "ToÃ n bá»™ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -2119,7 +2121,7 @@ public class WmsService(AppDbContext db) : IWmsService
         }
         var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
 
-        // Lấy các phiếu nhập kho đã ghi sổ trong kỳ
+        // Láº¥y cÃ¡c phiáº¿u nháº­p kho Ä‘Ã£ ghi sá»• trong ká»³
         var inDocsQuery = db.Docs
             .Include(d => d.Lines)
             .Where(d => d.Type == DocType.In && d.Status == DocStatus.Posted && d.Date >= fromDate.Date && d.Date <= toDate.Date.AddDays(1).AddTicks(-1));
@@ -2148,23 +2150,23 @@ public class WmsService(AppDbContext db) : IWmsService
                 calculatedCount++;
                 inAmount = inQty * (oldCost > 0 ? oldCost : 100000m);
 
-                // Công thức tính giá vốn bình quân nhập kho kỳ này
+                // CÃ´ng thá»©c tÃ­nh giÃ¡ vá»‘n bÃ¬nh quÃ¢n nháº­p kho ká»³ nÃ y
                 newCost = Math.Round(oldCost > 0 ? (oldCost * 0.98m + (inAmount / inQty) * 0.02m) : (inAmount / inQty), 0);
                 if (newCost <= 0) newCost = oldCost;
 
                 if (newCost != oldCost)
                 {
                     changedCount++;
-                    note = $"Phát sinh {inQty} {p.Uom} nhập kho trong kỳ. Giá vốn được tính lại bình quân.";
+                    note = $"PhÃ¡t sinh {inQty} {p.Uom} nháº­p kho trong ká»³. GiÃ¡ vá»‘n Ä‘Æ°á»£c tÃ­nh láº¡i bÃ¬nh quÃ¢n.";
                 }
                 else
                 {
-                    note = $"Phát sinh {inQty} {p.Uom} nhập kho. Đơn giá không biến động.";
+                    note = $"PhÃ¡t sinh {inQty} {p.Uom} nháº­p kho. ÄÆ¡n giÃ¡ khÃ´ng biáº¿n Ä‘á»™ng.";
                 }
             }
             else
             {
-                note = "Không phát sinh nhập kho trong kỳ. Giữ nguyên giá vốn.";
+                note = "KhÃ´ng phÃ¡t sinh nháº­p kho trong ká»³. Giá»¯ nguyÃªn giÃ¡ vá»‘n.";
             }
 
             decimal diffAmount = newCost - oldCost;
@@ -2202,7 +2204,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
     public async Task<(bool ok, string msg, int count)> ApplyCalculateCostPriceAsync(int? warehouseId, DateTime effectDate, string calcPeriodName, List<(int ProductId, decimal NewCostPrice, string Note)> items)
     {
-        if (items == null || items.Count == 0) return (false, "Không có mặt hàng nào để áp dụng giá vốn.", 0);
+        if (items == null || items.Count == 0) return (false, "KhÃ´ng cÃ³ máº·t hÃ ng nÃ o Ä‘á»ƒ Ã¡p dá»¥ng giÃ¡ vá»‘n.", 0);
 
         int appliedCount = 0;
         foreach (var it in items)
@@ -2210,7 +2212,7 @@ public class WmsService(AppDbContext db) : IWmsService
             var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == it.ProductId);
             if (prod == null) continue;
 
-            // Đặt các bản ghi cũ của sản phẩm này tại kho này thành không hiện hành
+            // Äáº·t cÃ¡c báº£n ghi cÅ© cá»§a sáº£n pháº©m nÃ y táº¡i kho nÃ y thÃ nh khÃ´ng hiá»‡n hÃ nh
             var oldRecords = await db.CostPriceHists
                 .Where(c => c.ProductId == it.ProductId && c.WarehouseId == warehouseId && c.IsCurrent)
                 .ToListAsync();
@@ -2220,7 +2222,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 old.UpdatedAt = DateTime.Now;
             }
 
-            // Thêm bản ghi lịch sử mới
+            // ThÃªm báº£n ghi lá»‹ch sá»­ má»›i
             var hist = new CostPriceHist
             {
                 WarehouseId = warehouseId,
@@ -2231,22 +2233,22 @@ public class WmsService(AppDbContext db) : IWmsService
                 CalcPeriodName = calcPeriodName,
                 IsCurrent = true,
                 SourceType = CostPriceSourceType.AutoCalc,
-                Remark = string.IsNullOrWhiteSpace(it.Note) ? $"Chốt tính giá vốn {calcPeriodName}" : it.Note,
+                Remark = string.IsNullOrWhiteSpace(it.Note) ? $"Chá»‘t tÃ­nh giÃ¡ vá»‘n {calcPeriodName}" : it.Note,
                 CreatedBy = "hethong",
                 CreatedAt = DateTime.Now
             };
             db.CostPriceHists.Add(hist);
 
-            // Cập nhật giá vốn trên bảng Product
+            // Cáº­p nháº­t giÃ¡ vá»‘n trÃªn báº£ng Product
             prod.CostPrice = it.NewCostPrice;
             appliedCount++;
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã áp dụng và cập nhật giá vốn mới cho {appliedCount} mặt hàng thành công.", appliedCount);
+        return (true, $"ÄÃ£ Ã¡p dá»¥ng vÃ  cáº­p nháº­t giÃ¡ vá»‘n má»›i cho {appliedCount} máº·t hÃ ng thÃ nh cÃ´ng.", appliedCount);
     }
 
-    /// <summary>Danh sách các kỳ chốt tồn kho (port từ Rpt_In_Out_Inv Skycic).</summary>
+    /// <summary>Danh sÃ¡ch cÃ¡c ká»³ chá»‘t tá»“n kho (port tá»« Rpt_In_Out_Inv Skycic).</summary>
     public async Task<List<PeriodClosing>> PeriodClosingsAsync(int? warehouseId, PeriodClosingStatus? status, int? year)
     {
         var q = db.PeriodClosings
@@ -2262,7 +2264,7 @@ public class WmsService(AppDbContext db) : IWmsService
         return await q.OrderByDescending(p => p.PeriodMonth).ThenByDescending(p => p.CreatedAt).ToListAsync();
     }
 
-    /// <summary>Chi tiết kỳ chốt tồn kho (port từ Rpt_In_Out_Inv Skycic).</summary>
+    /// <summary>Chi tiáº¿t ká»³ chá»‘t tá»“n kho (port tá»« Rpt_In_Out_Inv Skycic).</summary>
     public Task<PeriodClosing?> GetPeriodClosingAsync(int id) =>
         db.PeriodClosings
             .Include(p => p.Warehouse)
@@ -2270,10 +2272,10 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(p => p.Lines).ThenInclude(l => l.Warehouse)
             .FirstOrDefaultAsync(p => p.Id == id);
 
-    /// <summary>Tính toán và xem trước số liệu chốt kỳ tồn kho (port từ 20200407.ChotTonKho.sql Skycic).</summary>
+    /// <summary>TÃ­nh toÃ¡n vÃ  xem trÆ°á»›c sá»‘ liá»‡u chá»‘t ká»³ tá»“n kho (port tá»« 20200407.ChotTonKho.sql Skycic).</summary>
     public async Task<PeriodClosingPreviewReport> PreviewPeriodClosingAsync(int? warehouseId, int year, int month)
     {
-        string whName = "Toàn bộ kho";
+        string whName = "ToÃ n bá»™ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -2283,7 +2285,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var periodMonth = new DateTime(year, month, 1);
         var fromDate = periodMonth;
         var toDate = fromDate.AddMonths(1).AddTicks(-1);
-        string periodName = $"Kỳ chốt kho Tháng {month:D2}/{year}" + (warehouseId.HasValue ? $" ({whName})" : " (Toàn hệ thống)");
+        string periodName = $"Ká»³ chá»‘t kho ThÃ¡ng {month:D2}/{year}" + (warehouseId.HasValue ? $" ({whName})" : " (ToÃ n há»‡ thá»‘ng)");
 
         var whList = warehouseId.HasValue
             ? await db.Warehouses.Where(w => w.Id == warehouseId.Value).ToListAsync()
@@ -2291,7 +2293,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var products = await db.Products.OrderBy(p => p.Code).ToListAsync();
 
-        // Lấy tất cả các phiếu kho đã Post phát sinh đến hết kỳ này
+        // Láº¥y táº¥t cáº£ cÃ¡c phiáº¿u kho Ä‘Ã£ Post phÃ¡t sinh Ä‘áº¿n háº¿t ká»³ nÃ y
         var allDocs = await db.Docs
             .Include(d => d.Lines)
             .Where(d => d.Status == DocStatus.Posted && d.Date <= toDate)
@@ -2303,7 +2305,7 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             foreach (var prod in products)
             {
-                // Tồn đầu kỳ: biến động trước ngày fromDate
+                // Tá»“n Ä‘áº§u ká»³: biáº¿n Ä‘á»™ng trÆ°á»›c ngÃ y fromDate
                 int inBefore = allDocs
                     .Where(d => d.Date < fromDate && (d.ToWarehouseId == wh.Id))
                     .SelectMany(d => d.Lines)
@@ -2318,7 +2320,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
                 int openingQty = inBefore - outBefore;
 
-                // Phát sinh trong kỳ
+                // PhÃ¡t sinh trong ká»³
                 int inQty = allDocs
                     .Where(d => d.Date >= fromDate && d.Date <= toDate && (d.ToWarehouseId == wh.Id))
                     .SelectMany(d => d.Lines)
@@ -2333,7 +2335,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
                 int closingQty = openingQty + inQty - outQty;
 
-                // Chỉ đưa vào danh sách nếu có phát sinh hoặc có tồn kho
+                // Chá»‰ Ä‘Æ°a vÃ o danh sÃ¡ch náº¿u cÃ³ phÃ¡t sinh hoáº·c cÃ³ tá»“n kho
                 if (openingQty != 0 || inQty != 0 || outQty != 0 || closingQty != 0)
                 {
                     decimal costPrice = prod.CostPrice > 0 ? prod.CostPrice : 100000m;
@@ -2386,12 +2388,12 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Thực hiện chốt sổ kỳ tồn kho & Lưu vết snapshot (port từ 20200407.ChotTonKho.sql Skycic).</summary>
+    /// <summary>Thá»±c hiá»‡n chá»‘t sá»• ká»³ tá»“n kho & LÆ°u váº¿t snapshot (port tá»« 20200407.ChotTonKho.sql Skycic).</summary>
     public async Task<(bool ok, string msg, int id)> CreateAndClosePeriodAsync(int? warehouseId, int year, int month, string? note, string closedBy)
     {
         var periodMonth = new DateTime(year, month, 1);
 
-        // Kiểm tra xem kỳ này đã được chốt trước đó chưa
+        // Kiá»ƒm tra xem ká»³ nÃ y Ä‘Ã£ Ä‘Æ°á»£c chá»‘t trÆ°á»›c Ä‘Ã³ chÆ°a
         var exists = await db.PeriodClosings.AnyAsync(p =>
             p.PeriodMonth.Year == year &&
             p.PeriodMonth.Month == month &&
@@ -2400,7 +2402,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         if (exists)
         {
-            return (false, $"Kỳ tồn kho Tháng {month:D2}/{year} cho kho này đã được chốt sổ trước đó. Vui lòng mở lại kỳ nếu muốn chốt lại.", 0);
+            return (false, $"Ká»³ tá»“n kho ThÃ¡ng {month:D2}/{year} cho kho nÃ y Ä‘Ã£ Ä‘Æ°á»£c chá»‘t sá»• trÆ°á»›c Ä‘Ã³. Vui lÃ²ng má»Ÿ láº¡i ká»³ náº¿u muá»‘n chá»‘t láº¡i.", 0);
         }
 
         var preview = await PreviewPeriodClosingAsync(warehouseId, year, month);
@@ -2434,49 +2436,49 @@ public class WmsService(AppDbContext db) : IWmsService
                 ClosingQty = item.ClosingQty,
                 CostPrice = item.CostPrice,
                 ClosingValue = item.ClosingValue,
-                Note = $"Chốt kỳ {month:D2}/{year}"
+                Note = $"Chá»‘t ká»³ {month:D2}/{year}"
             });
         }
 
         db.PeriodClosings.Add(closing);
         await db.SaveChangesAsync();
 
-        return (true, $"Đã chốt sổ thành công '{closing.PeriodName}' (Mã: {closing.Code}) với {closing.Lines.Count} mặt hàng.", closing.Id);
+        return (true, $"ÄÃ£ chá»‘t sá»• thÃ nh cÃ´ng '{closing.PeriodName}' (MÃ£: {closing.Code}) vá»›i {closing.Lines.Count} máº·t hÃ ng.", closing.Id);
     }
 
-    /// <summary>Mở lại kỳ chốt tồn kho để điều chỉnh số liệu (port từ Rpt_In_Out_Inv Skycic).</summary>
+    /// <summary>Má»Ÿ láº¡i ká»³ chá»‘t tá»“n kho Ä‘á»ƒ Ä‘iá»u chá»‰nh sá»‘ liá»‡u (port tá»« Rpt_In_Out_Inv Skycic).</summary>
     public async Task<(bool ok, string msg)> ReopenPeriodClosingAsync(int id, string reason)
     {
         var closing = await db.PeriodClosings.FirstOrDefaultAsync(p => p.Id == id);
-        if (closing == null) return (false, "Không tìm thấy kỳ chốt kho.");
-        if (closing.Status == PeriodClosingStatus.Cancelled) return (false, "Kỳ chốt kho này đã bị hủy bỏ.");
+        if (closing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y ká»³ chá»‘t kho.");
+        if (closing.Status == PeriodClosingStatus.Cancelled) return (false, "Ká»³ chá»‘t kho nÃ y Ä‘Ã£ bá»‹ há»§y bá».");
 
         closing.Status = PeriodClosingStatus.Reopened;
         closing.ReopenedAt = DateTime.Now;
-        closing.ReopenReason = string.IsNullOrWhiteSpace(reason) ? "Mở lại để kiểm tra và đối soát bổ sung" : reason.Trim();
+        closing.ReopenReason = string.IsNullOrWhiteSpace(reason) ? "Má»Ÿ láº¡i Ä‘á»ƒ kiá»ƒm tra vÃ  Ä‘á»‘i soÃ¡t bá»• sung" : reason.Trim();
         closing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã mở lại '{closing.PeriodName}'. Trạng thái hiện tại: Đã mở lại.");
+        return (true, $"ÄÃ£ má»Ÿ láº¡i '{closing.PeriodName}'. Tráº¡ng thÃ¡i hiá»‡n táº¡i: ÄÃ£ má»Ÿ láº¡i.");
     }
 
-    /// <summary>Hủy kỳ chốt kho.</summary>
+    /// <summary>Há»§y ká»³ chá»‘t kho.</summary>
     public async Task<(bool ok, string msg)> CancelPeriodClosingAsync(int id)
     {
         var closing = await db.PeriodClosings.FirstOrDefaultAsync(p => p.Id == id);
-        if (closing == null) return (false, "Không tìm thấy kỳ chốt kho.");
+        if (closing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y ká»³ chá»‘t kho.");
 
         closing.Status = PeriodClosingStatus.Cancelled;
         closing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã hủy bỏ kỳ chốt kho '{closing.PeriodName}'.");
+        return (true, $"ÄÃ£ há»§y bá» ká»³ chá»‘t kho '{closing.PeriodName}'.");
     }
 
-    /// <summary>Báo cáo & Danh sách Quản lý Thùng Carton (port từ Inv_InventoryCarton Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o & Danh sÃ¡ch Quáº£n lÃ½ ThÃ¹ng Carton (port tá»« Inv_InventoryCarton Skycic).</summary>
     public async Task<CartonReport> CartonsAsync(int? warehouseId, int? productId, CartonStatus? status, string? q)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -2523,12 +2525,12 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             var (statusLabel, badgeClass) = c.Status switch
             {
-                CartonStatus.Empty => ("Thùng rỗng", "bg-secondary"),
-                CartonStatus.Packing => ("Đang đóng kiện", "bg-warning text-dark"),
-                CartonStatus.Sealed => ("Đã niêm phong", "bg-success"),
-                CartonStatus.Shipped => ("Đã xuất kho", "bg-primary"),
-                CartonStatus.Unpacked => ("Đã tháo dỡ", "bg-dark"),
-                _ => ("Khác", "bg-secondary")
+                CartonStatus.Empty => ("ThÃ¹ng rá»—ng", "bg-secondary"),
+                CartonStatus.Packing => ("Äang Ä‘Ã³ng kiá»‡n", "bg-warning text-dark"),
+                CartonStatus.Sealed => ("ÄÃ£ niÃªm phong", "bg-success"),
+                CartonStatus.Shipped => ("ÄÃ£ xuáº¥t kho", "bg-primary"),
+                CartonStatus.Unpacked => ("ÄÃ£ thÃ¡o dá»¡", "bg-dark"),
+                _ => ("KhÃ¡c", "bg-secondary")
             };
 
             return new CartonRow(
@@ -2615,14 +2617,14 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg, List<int> ids)> GenerateCartonsBatchAsync(
         int warehouseId, string cartonType, int count, double length, double width, double height, int capacity, string? shelfLocation, string? prefix)
     {
-        if (count <= 0 || count > 500) return (false, "Số lượng sinh mã thùng phải từ 1 đến 500.", []);
+        if (count <= 0 || count > 500) return (false, "Sá»‘ lÆ°á»£ng sinh mÃ£ thÃ¹ng pháº£i tá»« 1 Ä‘áº¿n 500.", []);
 
         var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
-        if (wh == null) return (false, "Không tìm thấy kho lưu trữ.", []);
+        if (wh == null) return (false, "KhÃ´ng tÃ¬m tháº¥y kho lÆ°u trá»¯.", []);
 
         var currentTotal = await db.InventoryCartons.CountAsync();
         var pre = string.IsNullOrWhiteSpace(prefix) ? $"CTN{DateTime.Now:yyMMdd}-" : prefix.Trim();
-        var type = string.IsNullOrWhiteSpace(cartonType) ? "Thùng carton tiêu chuẩn" : cartonType.Trim();
+        var type = string.IsNullOrWhiteSpace(cartonType) ? "ThÃ¹ng carton tiÃªu chuáº©n" : cartonType.Trim();
 
         var list = new List<InventoryCarton>();
         for (int i = 1; i <= count; i++)
@@ -2647,19 +2649,19 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryCartons.AddRange(list);
         await db.SaveChangesAsync();
 
-        return (true, $"Đã sinh thành công {count} mã thùng carton mới ({list.First().CartonCode} &rarr; {list.Last().CartonCode}).", list.Select(c => c.Id).ToList());
+        return (true, $"ÄÃ£ sinh thÃ nh cÃ´ng {count} mÃ£ thÃ¹ng carton má»›i ({list.First().CartonCode} &rarr; {list.Last().CartonCode}).", list.Select(c => c.Id).ToList());
     }
 
     public async Task<(bool ok, string msg)> PackCartonAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? note)
     {
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
-        if (carton.Status == CartonStatus.Sealed) return (false, "Thùng đã được niêm phong, không thể đóng thêm hàng. Vui lòng mở kiện trước.");
-        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng hàng đã xuất kho, không thể thao tác đóng gói.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
+        if (carton.Status == CartonStatus.Sealed) return (false, "ThÃ¹ng Ä‘Ã£ Ä‘Æ°á»£c niÃªm phong, khÃ´ng thá»ƒ Ä‘Ã³ng thÃªm hÃ ng. Vui lÃ²ng má»Ÿ kiá»‡n trÆ°á»›c.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "ThÃ¹ng hÃ ng Ä‘Ã£ xuáº¥t kho, khÃ´ng thá»ƒ thao tÃ¡c Ä‘Ã³ng gÃ³i.");
 
         var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId);
-        if (prod == null) return (false, "Không tìm thấy mặt hàng.");
-        if (quantity <= 0) return (false, "Số lượng đóng thùng phải lớn hơn 0.");
+        if (prod == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº·t hÃ ng.");
+        if (quantity <= 0) return (false, "Sá»‘ lÆ°á»£ng Ä‘Ã³ng thÃ¹ng pháº£i lá»›n hÆ¡n 0.");
 
         carton.ProductId = productId;
         carton.Quantity = quantity;
@@ -2672,29 +2674,29 @@ public class WmsService(AppDbContext db) : IWmsService
         carton.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã đóng {quantity} {prod.Uom} '{prod.Name}' vào thùng {carton.CartonCode}.");
+        return (true, $"ÄÃ£ Ä‘Ã³ng {quantity} {prod.Uom} '{prod.Name}' vÃ o thÃ¹ng {carton.CartonCode}.");
     }
 
     public async Task<(bool ok, string msg)> SealCartonAsync(int id)
     {
         var carton = await db.InventoryCartons.Include(c => c.Product).FirstOrDefaultAsync(c => c.Id == id);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
-        if (carton.Status == CartonStatus.Sealed) return (false, "Thùng carton đã được niêm phong trước đó.");
-        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng hàng đã xuất kho.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
+        if (carton.Status == CartonStatus.Sealed) return (false, "ThÃ¹ng carton Ä‘Ã£ Ä‘Æ°á»£c niÃªm phong trÆ°á»›c Ä‘Ã³.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "ThÃ¹ng hÃ ng Ä‘Ã£ xuáº¥t kho.");
 
         carton.Status = CartonStatus.Sealed;
         carton.SealedAt = DateTime.Now;
         carton.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã niêm phong thành công thùng carton {carton.CartonCode}. Sẵn sàng xuất kho / vận chuyển.");
+        return (true, $"ÄÃ£ niÃªm phong thÃ nh cÃ´ng thÃ¹ng carton {carton.CartonCode}. Sáºµn sÃ ng xuáº¥t kho / váº­n chuyá»ƒn.");
     }
 
     public async Task<(bool ok, string msg)> UnpackCartonAsync(int id, string? reason)
     {
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
-        if (carton.Status == CartonStatus.Shipped) return (false, "Không thể tháo dỡ thùng hàng đã xuất kho giao cho khách.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "KhÃ´ng thá»ƒ thÃ¡o dá»¡ thÃ¹ng hÃ ng Ä‘Ã£ xuáº¥t kho giao cho khÃ¡ch.");
 
         carton.ProductId = null;
         carton.Quantity = 0;
@@ -2703,19 +2705,19 @@ public class WmsService(AppDbContext db) : IWmsService
         carton.Status = CartonStatus.Empty;
         carton.SealedAt = null;
         carton.PackedAt = null;
-        var r = string.IsNullOrWhiteSpace(reason) ? "Đã dỡ hàng về thùng trống" : reason.Trim();
+        var r = string.IsNullOrWhiteSpace(reason) ? "ÄÃ£ dá»¡ hÃ ng vá» thÃ¹ng trá»‘ng" : reason.Trim();
         carton.Remark = string.IsNullOrWhiteSpace(carton.Remark) ? r : $"{carton.Remark} | {r}";
         carton.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã tháo dỡ hàng khỏi thùng {carton.CartonCode}. Thùng đã đưa về trạng thái trống.");
+        return (true, $"ÄÃ£ thÃ¡o dá»¡ hÃ ng khá»i thÃ¹ng {carton.CartonCode}. ThÃ¹ng Ä‘Ã£ Ä‘Æ°a vá» tráº¡ng thÃ¡i trá»‘ng.");
     }
 
     public async Task<(bool ok, string msg)> ShipCartonAsync(int id, string refDocNo)
     {
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
-        if (carton.Status == CartonStatus.Empty) return (false, "Thùng rỗng không thể thực hiện xuất kho giao hàng.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
+        if (carton.Status == CartonStatus.Empty) return (false, "ThÃ¹ng rá»—ng khÃ´ng thá»ƒ thá»±c hiá»‡n xuáº¥t kho giao hÃ ng.");
 
         carton.Status = CartonStatus.Shipped;
         carton.ShippedAt = DateTime.Now;
@@ -2723,25 +2725,25 @@ public class WmsService(AppDbContext db) : IWmsService
         carton.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã ghi nhận xuất kho cho thùng {carton.CartonCode} theo chứng từ {carton.RefDocNo}.");
+        return (true, $"ÄÃ£ ghi nháº­n xuáº¥t kho cho thÃ¹ng {carton.CartonCode} theo chá»©ng tá»« {carton.RefDocNo}.");
     }
 
     public async Task<(bool ok, string msg)> DeleteCartonAsync(int id)
     {
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == id);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
         if (carton.Status == CartonStatus.Sealed || carton.Status == CartonStatus.Shipped)
-            return (false, "Không thể xóa thùng carton đã niêm phong hoặc đã xuất kho. Hãy dỡ thùng trước khi xóa.");
+            return (false, "KhÃ´ng thá»ƒ xÃ³a thÃ¹ng carton Ä‘Ã£ niÃªm phong hoáº·c Ä‘Ã£ xuáº¥t kho. HÃ£y dá»¡ thÃ¹ng trÆ°á»›c khi xÃ³a.");
 
         db.InventoryCartons.Remove(carton);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa thùng carton {carton.CartonCode}.");
+        return (true, $"ÄÃ£ xÃ³a thÃ¹ng carton {carton.CartonCode}.");
     }
 
-    /// <summary>Báo cáo & Danh sách Quản lý Hộp đóng gói (Warehouse Box Packaging - port từ Inv_InventoryBox Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o & Danh sÃ¡ch Quáº£n lÃ½ Há»™p Ä‘Ã³ng gÃ³i (Warehouse Box Packaging - port tá»« Inv_InventoryBox Skycic).</summary>
     public async Task<BoxReport> BoxesAsync(int? warehouseId, int? productId, int? cartonId, BoxStatus? status, bool? flagMap, string? q)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -2801,18 +2803,18 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             var (statusLabel, badgeClass) = b.Status switch
             {
-                BoxStatus.Empty => ("Hộp rỗng", "bg-secondary"),
-                BoxStatus.Packing => ("Đang đóng hàng", "bg-warning text-dark"),
-                BoxStatus.Sealed => ("Đã niêm phong", "bg-info text-dark"),
-                BoxStatus.InCarton => ("Đã đóng vào thùng", "bg-success"),
-                BoxStatus.Shipped => ("Đã xuất kho", "bg-primary"),
-                BoxStatus.Unpacked => ("Đã tháo dỡ", "bg-dark"),
-                _ => ("Khác", "bg-secondary")
+                BoxStatus.Empty => ("Há»™p rá»—ng", "bg-secondary"),
+                BoxStatus.Packing => ("Äang Ä‘Ã³ng hÃ ng", "bg-warning text-dark"),
+                BoxStatus.Sealed => ("ÄÃ£ niÃªm phong", "bg-info text-dark"),
+                BoxStatus.InCarton => ("ÄÃ£ Ä‘Ã³ng vÃ o thÃ¹ng", "bg-success"),
+                BoxStatus.Shipped => ("ÄÃ£ xuáº¥t kho", "bg-primary"),
+                BoxStatus.Unpacked => ("ÄÃ£ thÃ¡o dá»¡", "bg-dark"),
+                _ => ("KhÃ¡c", "bg-secondary")
             };
 
             var (mapLabel, mapBadgeClass) = b.FlagMap
-                ? ("Đã gán thùng", "bg-success")
-                : ("Chưa gán thùng", "bg-light text-muted border");
+                ? ("ÄÃ£ gÃ¡n thÃ¹ng", "bg-success")
+                : ("ChÆ°a gÃ¡n thÃ¹ng", "bg-light text-muted border");
 
             return new BoxRow(
                 b.Id,
@@ -2908,7 +2910,7 @@ public class WmsService(AppDbContext db) : IWmsService
         return box.Id;
     }
 
-    /// <summary>Sinh dải mã hộp hàng loạt (port từ Inv_GenTimesBox Skycic).</summary>
+    /// <summary>Sinh dáº£i mÃ£ há»™p hÃ ng loáº¡t (port tá»« Inv_GenTimesBox Skycic).</summary>
     public async Task<(bool ok, string msg, List<int> ids)> GenerateBoxesBatchAsync(
         int warehouseId,
         string boxType,
@@ -2922,13 +2924,13 @@ public class WmsService(AppDbContext db) : IWmsService
         string? prefix)
     {
         var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
-        if (wh == null) return (false, "Không tìm thấy kho lưu trữ.", []);
+        if (wh == null) return (false, "KhÃ´ng tÃ¬m tháº¥y kho lÆ°u trá»¯.", []);
 
         InventoryCarton? carton = null;
         if (cartonId.HasValue && cartonId.Value > 0)
         {
             carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == cartonId.Value);
-            if (carton == null) return (false, "Không tìm thấy thùng carton chỉ định.", []);
+            if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton chá»‰ Ä‘á»‹nh.", []);
         }
 
         var pref = string.IsNullOrWhiteSpace(prefix) ? "BOX" : prefix.Trim().ToUpper();
@@ -2945,7 +2947,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 BoxCode = code,
                 QrCode = code,
                 GenTimesBoxNo = genTimesNo,
-                BoxType = string.IsNullOrWhiteSpace(boxType) ? "Hộp duplex tiêu chuẩn" : boxType.Trim(),
+                BoxType = string.IsNullOrWhiteSpace(boxType) ? "Há»™p duplex tiÃªu chuáº©n" : boxType.Trim(),
                 CartonId = carton?.Id,
                 FlagMap = carton != null,
                 LengthCm = length > 0 ? length : 20,
@@ -2961,19 +2963,19 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryBoxes.AddRange(list);
         await db.SaveChangesAsync();
 
-        return (true, $"Đã sinh thành công {count} mã hộp mới theo đợt '{genTimesNo}' ({list.First().BoxCode} &rarr; {list.Last().BoxCode}).", list.Select(b => b.Id).ToList());
+        return (true, $"ÄÃ£ sinh thÃ nh cÃ´ng {count} mÃ£ há»™p má»›i theo Ä‘á»£t '{genTimesNo}' ({list.First().BoxCode} &rarr; {list.Last().BoxCode}).", list.Select(b => b.Id).ToList());
     }
 
     public async Task<(bool ok, string msg)> PackBoxAsync(int id, int productId, int quantity, string? lotNo, double grossWeightKg, string? packerName, string? secretNo, string? note)
     {
         var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
-        if (box == null) return (false, "Không tìm thấy hộp đóng gói.");
-        if (box.Status == BoxStatus.Sealed) return (false, "Hộp đã được niêm phong, vui lòng mở hộp trước khi đóng thêm hàng.");
-        if (box.Status == BoxStatus.Shipped) return (false, "Hộp hàng đã xuất kho, không thể thao tác đóng hàng.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p Ä‘Ã³ng gÃ³i.");
+        if (box.Status == BoxStatus.Sealed) return (false, "Há»™p Ä‘Ã£ Ä‘Æ°á»£c niÃªm phong, vui lÃ²ng má»Ÿ há»™p trÆ°á»›c khi Ä‘Ã³ng thÃªm hÃ ng.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Há»™p hÃ ng Ä‘Ã£ xuáº¥t kho, khÃ´ng thá»ƒ thao tÃ¡c Ä‘Ã³ng hÃ ng.");
 
         var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == productId);
-        if (prod == null) return (false, "Không tìm thấy mặt hàng.");
-        if (quantity <= 0) return (false, "Số lượng đóng hộp phải lớn hơn 0.");
+        if (prod == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº·t hÃ ng.");
+        if (quantity <= 0) return (false, "Sá»‘ lÆ°á»£ng Ä‘Ã³ng há»™p pháº£i lá»›n hÆ¡n 0.");
 
         box.ProductId = productId;
         box.Quantity = quantity;
@@ -2988,15 +2990,15 @@ public class WmsService(AppDbContext db) : IWmsService
         box.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã đóng {quantity} {prod.Uom} '{prod.Name}' vào hộp {box.BoxCode}.");
+        return (true, $"ÄÃ£ Ä‘Ã³ng {quantity} {prod.Uom} '{prod.Name}' vÃ o há»™p {box.BoxCode}.");
     }
 
     public async Task<(bool ok, string msg)> SealBoxAsync(int id, string? secretNo)
     {
         var box = await db.InventoryBoxes.Include(b => b.Product).FirstOrDefaultAsync(b => b.Id == id);
-        if (box == null) return (false, "Không tìm thấy hộp đóng gói.");
-        if (box.Status == BoxStatus.Sealed) return (false, "Hộp đã được niêm phong trước đó.");
-        if (box.Status == BoxStatus.Shipped) return (false, "Hộp hàng đã xuất kho.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p Ä‘Ã³ng gÃ³i.");
+        if (box.Status == BoxStatus.Sealed) return (false, "Há»™p Ä‘Ã£ Ä‘Æ°á»£c niÃªm phong trÆ°á»›c Ä‘Ã³.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Há»™p hÃ ng Ä‘Ã£ xuáº¥t kho.");
 
         box.Status = BoxStatus.Sealed;
         box.SealedAt = DateTime.Now;
@@ -3004,28 +3006,28 @@ public class WmsService(AppDbContext db) : IWmsService
         box.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã niêm phong thành công hộp {box.BoxCode}. Sẵn sàng gán vào thùng carton hoặc xuất kho.");
+        return (true, $"ÄÃ£ niÃªm phong thÃ nh cÃ´ng há»™p {box.BoxCode}. Sáºµn sÃ ng gÃ¡n vÃ o thÃ¹ng carton hoáº·c xuáº¥t kho.");
     }
 
-    /// <summary>Gán hộp vào thùng carton (port từ Inv_InventoryBalanceSerial_UpdCanFromBox Skycic).</summary>
+    /// <summary>GÃ¡n há»™p vÃ o thÃ¹ng carton (port tá»« Inv_InventoryBalanceSerial_UpdCanFromBox Skycic).</summary>
     public async Task<(bool ok, string msg)> MapBoxToCartonAsync(int boxId, int cartonId)
     {
         var box = await db.InventoryBoxes.Include(b => b.Product).FirstOrDefaultAsync(b => b.Id == boxId);
-        if (box == null) return (false, "Không tìm thấy hộp.");
-        if (box.Status == BoxStatus.Shipped) return (false, "Hộp đã xuất kho, không thể gán vào thùng.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Há»™p Ä‘Ã£ xuáº¥t kho, khÃ´ng thá»ƒ gÃ¡n vÃ o thÃ¹ng.");
 
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == cartonId);
-        if (carton == null) return (false, "Không tìm thấy thùng carton.");
-        if (carton.Status == CartonStatus.Shipped) return (false, "Thùng carton đã xuất kho, không thể gán thêm hộp.");
-        if (carton.WarehouseId != box.WarehouseId) return (false, "Hộp và Thùng carton phải ở cùng một kho lưu trữ.");
+        if (carton == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÃ¹ng carton.");
+        if (carton.Status == CartonStatus.Shipped) return (false, "ThÃ¹ng carton Ä‘Ã£ xuáº¥t kho, khÃ´ng thá»ƒ gÃ¡n thÃªm há»™p.");
+        if (carton.WarehouseId != box.WarehouseId) return (false, "Há»™p vÃ  ThÃ¹ng carton pháº£i á»Ÿ cÃ¹ng má»™t kho lÆ°u trá»¯.");
 
-        // Gán hộp vào thùng
+        // GÃ¡n há»™p vÃ o thÃ¹ng
         box.CartonId = carton.Id;
         box.FlagMap = true;
         box.Status = BoxStatus.InCarton;
         box.UpdatedAt = DateTime.Now;
 
-        // Đồng bộ thông tin mặt hàng và cập nhật số lượng thùng carton
+        // Äá»“ng bá»™ thÃ´ng tin máº·t hÃ ng vÃ  cáº­p nháº­t sá»‘ lÆ°á»£ng thÃ¹ng carton
         if (!carton.ProductId.HasValue && box.ProductId.HasValue)
         {
             carton.ProductId = box.ProductId;
@@ -3047,16 +3049,16 @@ public class WmsService(AppDbContext db) : IWmsService
         carton.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã gán thành công hộp '{box.BoxCode}' vào thùng carton '{carton.CartonCode}'.");
+        return (true, $"ÄÃ£ gÃ¡n thÃ nh cÃ´ng há»™p '{box.BoxCode}' vÃ o thÃ¹ng carton '{carton.CartonCode}'.");
     }
 
-    /// <summary>Gỡ hộp khỏi thùng carton.</summary>
+    /// <summary>Gá»¡ há»™p khá»i thÃ¹ng carton.</summary>
     public async Task<(bool ok, string msg)> UnmapBoxFromCartonAsync(int boxId)
     {
         var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == boxId);
-        if (box == null) return (false, "Không tìm thấy hộp.");
-        if (box.Status == BoxStatus.Shipped) return (false, "Hộp đã xuất kho, không thể gỡ.");
-        if (!box.CartonId.HasValue) return (false, "Hộp này chưa được gán vào thùng nào.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p.");
+        if (box.Status == BoxStatus.Shipped) return (false, "Há»™p Ä‘Ã£ xuáº¥t kho, khÃ´ng thá»ƒ gá»¡.");
+        if (!box.CartonId.HasValue) return (false, "Há»™p nÃ y chÆ°a Ä‘Æ°á»£c gÃ¡n vÃ o thÃ¹ng nÃ o.");
 
         var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == box.CartonId.Value);
         if (carton != null)
@@ -3076,23 +3078,23 @@ public class WmsService(AppDbContext db) : IWmsService
             carton.UpdatedAt = DateTime.Now;
         }
 
-        var oldCartonCode = carton?.CartonCode ?? "thùng carton";
+        var oldCartonCode = carton?.CartonCode ?? "thÃ¹ng carton";
         box.CartonId = null;
         box.FlagMap = false;
         box.Status = box.Quantity > 0 ? BoxStatus.Sealed : BoxStatus.Empty;
         box.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã tách hộp '{box.BoxCode}' ra khỏi {oldCartonCode}.");
+        return (true, $"ÄÃ£ tÃ¡ch há»™p '{box.BoxCode}' ra khá»i {oldCartonCode}.");
     }
 
     public async Task<(bool ok, string msg)> UnpackBoxAsync(int id, string? reason)
     {
         var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
-        if (box == null) return (false, "Không tìm thấy hộp.");
-        if (box.Status == BoxStatus.Shipped) return (false, "Không thể tháo dỡ hộp hàng đã xuất kho.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p.");
+        if (box.Status == BoxStatus.Shipped) return (false, "KhÃ´ng thá»ƒ thÃ¡o dá»¡ há»™p hÃ ng Ä‘Ã£ xuáº¥t kho.");
 
-        // Nếu hộp đang nằm trong thùng carton thì cần gỡ khỏi thùng trước
+        // Náº¿u há»™p Ä‘ang náº±m trong thÃ¹ng carton thÃ¬ cáº§n gá»¡ khá»i thÃ¹ng trÆ°á»›c
         if (box.CartonId.HasValue)
         {
             var carton = await db.InventoryCartons.FirstOrDefaultAsync(c => c.Id == box.CartonId.Value);
@@ -3114,19 +3116,19 @@ public class WmsService(AppDbContext db) : IWmsService
         box.FlagUsed = false;
         box.SealedAt = null;
         box.PackedAt = null;
-        var r = string.IsNullOrWhiteSpace(reason) ? "Đã dỡ hàng về hộp trống" : reason.Trim();
+        var r = string.IsNullOrWhiteSpace(reason) ? "ÄÃ£ dá»¡ hÃ ng vá» há»™p trá»‘ng" : reason.Trim();
         box.Remark = string.IsNullOrWhiteSpace(box.Remark) ? r : $"{box.Remark} | {r}";
         box.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã tháo dỡ hàng khỏi hộp {box.BoxCode}. Hộp đã đưa về trạng thái trống.");
+        return (true, $"ÄÃ£ thÃ¡o dá»¡ hÃ ng khá»i há»™p {box.BoxCode}. Há»™p Ä‘Ã£ Ä‘Æ°a vá» tráº¡ng thÃ¡i trá»‘ng.");
     }
 
     public async Task<(bool ok, string msg)> ShipBoxAsync(int id, string refDocNo)
     {
         var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
-        if (box == null) return (false, "Không tìm thấy hộp.");
-        if (box.Status == BoxStatus.Empty) return (false, "Hộp rỗng không thể thực hiện xuất kho giao hàng.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p.");
+        if (box.Status == BoxStatus.Empty) return (false, "Há»™p rá»—ng khÃ´ng thá»ƒ thá»±c hiá»‡n xuáº¥t kho giao hÃ ng.");
 
         box.Status = BoxStatus.Shipped;
         box.ShippedAt = DateTime.Now;
@@ -3134,19 +3136,19 @@ public class WmsService(AppDbContext db) : IWmsService
         box.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã ghi nhận xuất kho cho hộp {box.BoxCode} theo chứng từ {box.RefDocNo}.");
+        return (true, $"ÄÃ£ ghi nháº­n xuáº¥t kho cho há»™p {box.BoxCode} theo chá»©ng tá»« {box.RefDocNo}.");
     }
 
     public async Task<(bool ok, string msg)> DeleteBoxAsync(int id)
     {
         var box = await db.InventoryBoxes.FirstOrDefaultAsync(b => b.Id == id);
-        if (box == null) return (false, "Không tìm thấy hộp.");
+        if (box == null) return (false, "KhÃ´ng tÃ¬m tháº¥y há»™p.");
         if (box.Status != BoxStatus.Empty)
-            return (false, "Chỉ có thể xóa hộp rỗng. Vui lòng tháo dỡ hoặc gỡ hộp khỏi thùng trước khi xóa.");
+            return (false, "Chá»‰ cÃ³ thá»ƒ xÃ³a há»™p rá»—ng. Vui lÃ²ng thÃ¡o dá»¡ hoáº·c gá»¡ há»™p khá»i thÃ¹ng trÆ°á»›c khi xÃ³a.");
 
         db.InventoryBoxes.Remove(box);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa hộp {box.BoxCode}.");
+        return (true, $"ÄÃ£ xÃ³a há»™p {box.BoxCode}.");
     }
 
     public Task<List<InventoryCarton>> AvailableCartonsAsync(int warehouseId) =>
@@ -3164,7 +3166,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(f => f.Serials).ThenInclude(s => s.Product)
             .AsQueryable();
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             query = query.Where(f => f.WarehouseId == warehouseId.Value);
@@ -3212,19 +3214,19 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             var (formLabel, _) = f.FormType switch
             {
-                InvInFGFormType.InternalProduction => ("Sản xuất nội bộ", "bg-primary"),
-                InvInFGFormType.Outsourced => ("Gia công ngoài", "bg-info text-dark"),
-                InvInFGFormType.AssemblyPack => ("Lắp ráp đóng gói", "bg-secondary"),
-                InvInFGFormType.WarrantyRefurbish => ("Tân trang bảo hành", "bg-warning text-dark"),
-                _ => ("Khác", "bg-light text-dark")
+                InvInFGFormType.InternalProduction => ("Sáº£n xuáº¥t ná»™i bá»™", "bg-primary"),
+                InvInFGFormType.Outsourced => ("Gia cÃ´ng ngoÃ i", "bg-info text-dark"),
+                InvInFGFormType.AssemblyPack => ("Láº¯p rÃ¡p Ä‘Ã³ng gÃ³i", "bg-secondary"),
+                InvInFGFormType.WarrantyRefurbish => ("TÃ¢n trang báº£o hÃ nh", "bg-warning text-dark"),
+                _ => ("KhÃ¡c", "bg-light text-dark")
             };
 
             var (statusLabel, badgeClass) = f.Status switch
             {
-                InvInFGStatus.Pending => ("Chờ duyệt KCS", "bg-warning text-dark"),
-                InvInFGStatus.Approved => ("Đã nhập kho", "bg-success"),
-                InvInFGStatus.Cancelled => ("Đã hủy", "bg-secondary"),
-                _ => ("Khác", "bg-light text-dark")
+                InvInFGStatus.Pending => ("Chá» duyá»‡t KCS", "bg-warning text-dark"),
+                InvInFGStatus.Approved => ("ÄÃ£ nháº­p kho", "bg-success"),
+                InvInFGStatus.Cancelled => ("ÄÃ£ há»§y", "bg-secondary"),
+                _ => ("KhÃ¡c", "bg-light text-dark")
             };
 
             return new InventoryInFGRow(
@@ -3290,10 +3292,10 @@ public class WmsService(AppDbContext db) : IWmsService
         List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)> lines,
         List<(int productId, string serialNo, string? note)> serials)
     {
-        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lòng chọn kho thành phẩm.");
-        if (string.IsNullOrWhiteSpace(doc.WorkshopName)) throw new InvalidOperationException("Vui lòng nhập phân xưởng / nhà máy sản xuất.");
+        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lÃ²ng chá»n kho thÃ nh pháº©m.");
+        if (string.IsNullOrWhiteSpace(doc.WorkshopName)) throw new InvalidOperationException("Vui lÃ²ng nháº­p phÃ¢n xÆ°á»Ÿng / nhÃ  mÃ¡y sáº£n xuáº¥t.");
         if (lines.Count == 0 || !lines.Any(l => l.productId > 0 && l.actualQty > 0))
-            throw new InvalidOperationException("Cần ít nhất 1 dòng thành phẩm có số lượng nhập > 0.");
+            throw new InvalidOperationException("Cáº§n Ã­t nháº¥t 1 dÃ²ng thÃ nh pháº©m cÃ³ sá»‘ lÆ°á»£ng nháº­p > 0.");
 
         if (string.IsNullOrWhiteSpace(doc.Code))
         {
@@ -3347,19 +3349,19 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(f => f.Serials).ThenInclude(s => s.Product)
             .FirstOrDefaultAsync(f => f.Id == id);
 
-        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho thành phẩm.");
-        if (doc.Status != InvInFGStatus.Pending) return (false, "Phiếu không ở trạng thái Chờ duyệt.");
+        if (doc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u nháº­p kho thÃ nh pháº©m.");
+        if (doc.Status != InvInFGStatus.Pending) return (false, "Phiáº¿u khÃ´ng á»Ÿ tráº¡ng thÃ¡i Chá» duyá»‡t.");
         if (doc.Lines.Count == 0 || !doc.Lines.Any(l => l.ActualQty > 0))
-            return (false, "Phiếu không có mặt hàng thành phẩm nào hợp lệ.");
+            return (false, "Phiáº¿u khÃ´ng cÃ³ máº·t hÃ ng thÃ nh pháº©m nÃ o há»£p lá»‡.");
 
-        // Tạo StockDoc (Phiếu nhập kho) để tăng tồn kho và ghi sổ
+        // Táº¡o StockDoc (Phiáº¿u nháº­p kho) Ä‘á»ƒ tÄƒng tá»“n kho vÃ  ghi sá»•
         var stockDoc = new StockDoc
         {
             Type = DocType.In,
             ToWarehouseId = doc.WarehouseId,
             Date = doc.Date,
             RefNo = doc.Code,
-            Note = $"Nhập kho thành phẩm theo phiếu {doc.Code} - Lệnh SX: {doc.WorkOrderNo ?? "—"} từ {doc.WorkshopName}",
+            Note = $"Nháº­p kho thÃ nh pháº©m theo phiáº¿u {doc.Code} - Lá»‡nh SX: {doc.WorkOrderNo ?? "â€”"} tá»« {doc.WorkshopName}",
             CreatedBy = doc.CreatedBy ?? "system",
             Status = DocStatus.Draft,
             CreatedAt = DateTime.Now
@@ -3377,11 +3379,11 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Docs.Add(stockDoc);
         await db.SaveChangesAsync();
 
-        // Ghi sổ phiếu kho
+        // Ghi sá»• phiáº¿u kho
         var (postOk, postMsg) = await PostDocAsync(stockDoc.Id);
         if (!postOk)
         {
-            return (false, $"Lỗi ghi sổ phiếu nhập kho: {postMsg}");
+            return (false, $"Lá»—i ghi sá»• phiáº¿u nháº­p kho: {postMsg}");
         }
 
         doc.StockDocId = stockDoc.Id;
@@ -3389,7 +3391,7 @@ public class WmsService(AppDbContext db) : IWmsService
         doc.ApprovedAt = DateTime.Now;
         doc.ApprovedBy = "admin";
 
-        // Tự động đăng ký serial vào danh sách tồn kho khả dụng
+        // Tá»± Ä‘á»™ng Ä‘Äƒng kÃ½ serial vÃ o danh sÃ¡ch tá»“n kho kháº£ dá»¥ng
         foreach (var s in doc.Serials)
         {
             var exists = await db.StockSerials.AnyAsync(ss =>
@@ -3407,28 +3409,28 @@ public class WmsService(AppDbContext db) : IWmsService
                     Status = StockSerialStatus.Available,
                     InDate = doc.Date,
                     RefNo = doc.Code,
-                    Note = $"Nhập thành phẩm từ {doc.WorkshopName} (Phiếu {doc.Code})",
+                    Note = $"Nháº­p thÃ nh pháº©m tá»« {doc.WorkshopName} (Phiáº¿u {doc.Code})",
                     CreatedAt = DateTime.Now
                 });
             }
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã phê duyệt và nhập kho thành công phiếu {doc.Code}. Tổng {doc.TotalActualQty} thành phẩm đã vào kho {doc.Warehouse.Name}.");
+        return (true, $"ÄÃ£ phÃª duyá»‡t vÃ  nháº­p kho thÃ nh cÃ´ng phiáº¿u {doc.Code}. Tá»•ng {doc.TotalActualQty} thÃ nh pháº©m Ä‘Ã£ vÃ o kho {doc.Warehouse.Name}.");
     }
 
     public async Task<(bool ok, string msg)> CancelInventoryInFGAsync(int id)
     {
         var doc = await db.InventoryInFGs.FirstOrDefaultAsync(f => f.Id == id);
-        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho thành phẩm.");
+        if (doc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u nháº­p kho thÃ nh pháº©m.");
         if (doc.Status == InvInFGStatus.Approved)
-            return (false, "Phiếu nhập kho thành phẩm đã được phê duyệt ghi sổ kho, không thể hủy bỏ.");
+            return (false, "Phiáº¿u nháº­p kho thÃ nh pháº©m Ä‘Ã£ Ä‘Æ°á»£c phÃª duyá»‡t ghi sá»• kho, khÃ´ng thá»ƒ há»§y bá».");
         if (doc.Status == InvInFGStatus.Cancelled)
-            return (false, "Phiếu này đã được hủy trước đó.");
+            return (false, "Phiáº¿u nÃ y Ä‘Ã£ Ä‘Æ°á»£c há»§y trÆ°á»›c Ä‘Ã³.");
 
         doc.Status = InvInFGStatus.Cancelled;
         await db.SaveChangesAsync();
-        return (true, $"Đã hủy phiếu nhập kho thành phẩm {doc.Code}.");
+        return (true, $"ÄÃ£ há»§y phiáº¿u nháº­p kho thÃ nh pháº©m {doc.Code}.");
     }
 
     public async Task<InventoryOutFGReport> InventoryOutFGsAsync(int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
@@ -3440,7 +3442,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(f => f.Serials).ThenInclude(s => s.Product)
             .AsQueryable();
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             query = query.Where(f => f.WarehouseId == warehouseId.Value);
@@ -3491,26 +3493,26 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             var (outLabel, _) = f.OutType switch
             {
-                InvOutFGType.Commercial => ("Xuất thương mại (Đại lý)", "bg-primary"),
-                InvOutFGType.EndCustomer => ("Xuất khách lẻ / Dự án", "bg-info text-dark"),
-                InvOutFGType.BranchTransfer => ("Điều chuyển chi nhánh", "bg-secondary"),
-                InvOutFGType.WarrantyScrap => ("Bảo hành / Thanh lý", "bg-warning text-dark"),
-                _ => ("Khác", "bg-light text-dark")
+                InvOutFGType.Commercial => ("Xuáº¥t thÆ°Æ¡ng máº¡i (Äáº¡i lÃ½)", "bg-primary"),
+                InvOutFGType.EndCustomer => ("Xuáº¥t khÃ¡ch láº» / Dá»± Ã¡n", "bg-info text-dark"),
+                InvOutFGType.BranchTransfer => ("Äiá»u chuyá»ƒn chi nhÃ¡nh", "bg-secondary"),
+                InvOutFGType.WarrantyScrap => ("Báº£o hÃ nh / Thanh lÃ½", "bg-warning text-dark"),
+                _ => ("KhÃ¡c", "bg-light text-dark")
             };
 
             var (formLabel, _) = f.FormType switch
             {
-                InvOutFGFormType.QuantityOnly => ("Theo số lượng", "bg-light text-dark border"),
-                InvOutFGFormType.BarcodeSerial => ("Quét Barcode/Serial", "bg-primary-subtle text-primary border border-primary-subtle"),
-                _ => ("Khác", "bg-light text-dark")
+                InvOutFGFormType.QuantityOnly => ("Theo sá»‘ lÆ°á»£ng", "bg-light text-dark border"),
+                InvOutFGFormType.BarcodeSerial => ("QuÃ©t Barcode/Serial", "bg-primary-subtle text-primary border border-primary-subtle"),
+                _ => ("KhÃ¡c", "bg-light text-dark")
             };
 
             var (statusLabel, badgeClass) = f.Status switch
             {
-                InvOutFGStatus.Pending => ("Chờ duyệt xuất", "bg-warning text-dark"),
-                InvOutFGStatus.Approved => ("Đã xuất kho", "bg-success"),
-                InvOutFGStatus.Cancelled => ("Đã hủy", "bg-secondary"),
-                _ => ("Khác", "bg-light text-dark")
+                InvOutFGStatus.Pending => ("Chá» duyá»‡t xuáº¥t", "bg-warning text-dark"),
+                InvOutFGStatus.Approved => ("ÄÃ£ xuáº¥t kho", "bg-success"),
+                InvOutFGStatus.Cancelled => ("ÄÃ£ há»§y", "bg-secondary"),
+                _ => ("KhÃ¡c", "bg-light text-dark")
             };
 
             return new InventoryOutFGRow(
@@ -3580,10 +3582,10 @@ public class WmsService(AppDbContext db) : IWmsService
         List<(int productId, int qty, decimal unitPrice, decimal unitCost, string? note)> lines,
         List<(int productId, string serialNo, string? note)> serials)
     {
-        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lòng chọn kho xuất thành phẩm.");
-        if (string.IsNullOrWhiteSpace(doc.CustomerName)) throw new InvalidOperationException("Vui lòng nhập tên khách hàng / đại lý nhận hàng.");
+        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lÃ²ng chá»n kho xuáº¥t thÃ nh pháº©m.");
+        if (string.IsNullOrWhiteSpace(doc.CustomerName)) throw new InvalidOperationException("Vui lÃ²ng nháº­p tÃªn khÃ¡ch hÃ ng / Ä‘áº¡i lÃ½ nháº­n hÃ ng.");
         if (lines.Count == 0 || !lines.Any(l => l.productId > 0 && l.qty > 0))
-            throw new InvalidOperationException("Cần ít nhất 1 dòng thành phẩm có số lượng xuất > 0.");
+            throw new InvalidOperationException("Cáº§n Ã­t nháº¥t 1 dÃ²ng thÃ nh pháº©m cÃ³ sá»‘ lÆ°á»£ng xuáº¥t > 0.");
 
         if (string.IsNullOrWhiteSpace(doc.Code))
         {
@@ -3635,30 +3637,30 @@ public class WmsService(AppDbContext db) : IWmsService
             .Include(f => f.Serials).ThenInclude(s => s.Product)
             .FirstOrDefaultAsync(f => f.Id == id);
 
-        if (doc == null) return (false, "Không tìm thấy phiếu xuất kho thành phẩm.");
-        if (doc.Status != InvOutFGStatus.Pending) return (false, "Phiếu không ở trạng thái Chờ duyệt.");
+        if (doc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u xuáº¥t kho thÃ nh pháº©m.");
+        if (doc.Status != InvOutFGStatus.Pending) return (false, "Phiáº¿u khÃ´ng á»Ÿ tráº¡ng thÃ¡i Chá» duyá»‡t.");
         if (doc.Lines.Count == 0 || !doc.Lines.Any(l => l.Qty > 0))
-            return (false, "Phiếu không có mặt hàng thành phẩm nào hợp lệ.");
+            return (false, "Phiáº¿u khÃ´ng cÃ³ máº·t hÃ ng thÃ nh pháº©m nÃ o há»£p lá»‡.");
 
-        // Kiểm tra tồn khả dụng tại kho xuất trước khi trừ
+        // Kiá»ƒm tra tá»“n kháº£ dá»¥ng táº¡i kho xuáº¥t trÆ°á»›c khi trá»«
         var bal = await BalancesAsync(doc.WarehouseId);
         foreach (var line in doc.Lines.Where(l => l.Qty > 0))
         {
             var have = bal.FirstOrDefault(x => x.ProductId == line.ProductId)?.Qty ?? 0;
             if (line.Qty > have)
             {
-                return (false, $"Kho {doc.Warehouse.Name} không đủ tồn cho sản phẩm '{line.Product.Name}' (Cần {line.Qty}, tồn thực tế {have}).");
+                return (false, $"Kho {doc.Warehouse.Name} khÃ´ng Ä‘á»§ tá»“n cho sáº£n pháº©m '{line.Product.Name}' (Cáº§n {line.Qty}, tá»“n thá»±c táº¿ {have}).");
             }
         }
 
-        // Tạo StockDoc (Phiếu xuất kho) để ghi sổ và giảm tồn kho
+        // Táº¡o StockDoc (Phiáº¿u xuáº¥t kho) Ä‘á»ƒ ghi sá»• vÃ  giáº£m tá»“n kho
         var stockDoc = new StockDoc
         {
             Type = DocType.Out,
             FromWarehouseId = doc.WarehouseId,
             Date = doc.Date,
             RefNo = doc.Code,
-            Note = $"Xuất kho thành phẩm theo phiếu {doc.Code} cho {doc.CustomerName} - Xe: {doc.PlateNo ?? "—"}",
+            Note = $"Xuáº¥t kho thÃ nh pháº©m theo phiáº¿u {doc.Code} cho {doc.CustomerName} - Xe: {doc.PlateNo ?? "â€”"}",
             CreatedBy = doc.CreatedBy ?? "system",
             Status = DocStatus.Draft,
             CreatedAt = DateTime.Now
@@ -3676,11 +3678,11 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Docs.Add(stockDoc);
         await db.SaveChangesAsync();
 
-        // Ghi sổ phiếu xuất kho
+        // Ghi sá»• phiáº¿u xuáº¥t kho
         var (postOk, postMsg) = await PostDocAsync(stockDoc.Id);
         if (!postOk)
         {
-            return (false, $"Lỗi ghi sổ phiếu xuất kho: {postMsg}");
+            return (false, $"Lá»—i ghi sá»• phiáº¿u xuáº¥t kho: {postMsg}");
         }
 
         doc.StockDocId = stockDoc.Id;
@@ -3688,7 +3690,7 @@ public class WmsService(AppDbContext db) : IWmsService
         doc.ApprovedAt = DateTime.Now;
         doc.ApprovedBy = "admin";
 
-        // Cập nhật trạng thái Serial thành Exported (Đã xuất kho)
+        // Cáº­p nháº­t tráº¡ng thÃ¡i Serial thÃ nh Exported (ÄÃ£ xuáº¥t kho)
         foreach (var s in doc.Serials)
         {
             var existingSerial = await db.StockSerials.FirstOrDefaultAsync(ss =>
@@ -3701,7 +3703,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 existingSerial.Status = StockSerialStatus.Exported;
                 existingSerial.OutDate = doc.Date;
                 existingSerial.RefNo = doc.Code;
-                existingSerial.Note = $"Đã xuất cho {doc.CustomerName} (Xe {doc.PlateNo ?? "—"})";
+                existingSerial.Note = $"ÄÃ£ xuáº¥t cho {doc.CustomerName} (Xe {doc.PlateNo ?? "â€”"})";
                 existingSerial.UpdatedAt = DateTime.Now;
             }
             else
@@ -3715,31 +3717,31 @@ public class WmsService(AppDbContext db) : IWmsService
                     InDate = doc.Date,
                     OutDate = doc.Date,
                     RefNo = doc.Code,
-                    Note = $"Đã xuất cho {doc.CustomerName} (Xe {doc.PlateNo ?? "—"})",
+                    Note = $"ÄÃ£ xuáº¥t cho {doc.CustomerName} (Xe {doc.PlateNo ?? "â€”"})",
                     CreatedAt = DateTime.Now
                 });
             }
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã duyệt và xuất kho thành công phiếu {doc.Code}. Tổng {doc.TotalQty} thành phẩm đã được xuất giao cho {doc.CustomerName}.");
+        return (true, $"ÄÃ£ duyá»‡t vÃ  xuáº¥t kho thÃ nh cÃ´ng phiáº¿u {doc.Code}. Tá»•ng {doc.TotalQty} thÃ nh pháº©m Ä‘Ã£ Ä‘Æ°á»£c xuáº¥t giao cho {doc.CustomerName}.");
     }
 
     public async Task<(bool ok, string msg)> CancelInventoryOutFGAsync(int id)
     {
         var doc = await db.InventoryOutFGs.FirstOrDefaultAsync(f => f.Id == id);
-        if (doc == null) return (false, "Không tìm thấy phiếu xuất kho thành phẩm.");
+        if (doc == null) return (false, "KhÃ´ng tÃ¬m tháº¥y phiáº¿u xuáº¥t kho thÃ nh pháº©m.");
         if (doc.Status == InvOutFGStatus.Approved)
-            return (false, "Phiếu xuất kho thành phẩm đã được phê duyệt ghi sổ kho, không thể hủy bỏ.");
+            return (false, "Phiáº¿u xuáº¥t kho thÃ nh pháº©m Ä‘Ã£ Ä‘Æ°á»£c phÃª duyá»‡t ghi sá»• kho, khÃ´ng thá»ƒ há»§y bá».");
         if (doc.Status == InvOutFGStatus.Cancelled)
-            return (false, "Phiếu này đã được hủy trước đó.");
+            return (false, "Phiáº¿u nÃ y Ä‘Ã£ Ä‘Æ°á»£c há»§y trÆ°á»›c Ä‘Ã³.");
 
         doc.Status = InvOutFGStatus.Cancelled;
         await db.SaveChangesAsync();
-        return (true, $"Đã hủy phiếu xuất kho thành phẩm {doc.Code}.");
+        return (true, $"ÄÃ£ há»§y phiáº¿u xuáº¥t kho thÃ nh pháº©m {doc.Code}.");
     }
 
-    /// <summary>Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Tá»•ng há»£p Nháº­p mua & Tráº£ hÃ ng nhÃ  cung cáº¥p (port tá»« Rpt_Summary_InAndReturnSup Skycic).</summary>
     public async Task<SummaryInReturnSupReport> SummaryInReturnSupReportAsync(
         int? warehouseId,
         string? supplierCode,
@@ -3751,14 +3753,14 @@ public class WmsService(AppDbContext db) : IWmsService
         var tDate = toDate ?? DateTime.Today;
         var toDateEnd = tDate.Date.AddDays(1).AddTicks(-1);
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue && warehouseId.Value > 0)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
             if (wh != null) whName = wh.Name;
         }
 
-        // 1. Lấy tất cả phiếu nhập kho (DocType.In) đã ghi sổ trong khoảng thời gian
+        // 1. Láº¥y táº¥t cáº£ phiáº¿u nháº­p kho (DocType.In) Ä‘Ã£ ghi sá»• trong khoáº£ng thá»i gian
         var inDocQuery = db.Docs
             .Include(d => d.Lines)
             .Where(d => d.Type == DocType.In && d.Status == DocStatus.Posted && d.Date >= fDate && d.Date <= toDateEnd);
@@ -3771,7 +3773,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var inDocs = await inDocQuery.ToListAsync();
 
-        // 2. Lấy tất cả phiếu xuất trả hàng NCC (ReturnToSupplier) đã xuất trả trong khoảng thời gian
+        // 2. Láº¥y táº¥t cáº£ phiáº¿u xuáº¥t tráº£ hÃ ng NCC (ReturnToSupplier) Ä‘Ã£ xuáº¥t tráº£ trong khoáº£ng thá»i gian
         var retDocQuery = db.ReturnToSuppliers
             .Include(r => r.Lines)
             .Where(r => r.Status == ReturnSupStatus.Finished && r.Date >= fDate && r.Date <= toDateEnd);
@@ -3784,7 +3786,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var retDocs = await retDocQuery.ToListAsync();
 
-        // Lấy thông tin Products và Suppliers
+        // Láº¥y thÃ´ng tin Products vÃ  Suppliers
         var prods = await db.Products.ToDictionaryAsync(p => p.Id);
         var knownSuppliers = await db.Suppliers.ToListAsync();
         var supDict = knownSuppliers.ToDictionary(s => s.Code, s => s.Name, StringComparer.OrdinalIgnoreCase);
@@ -3796,7 +3798,7 @@ public class WmsService(AppDbContext db) : IWmsService
             var sCode = !string.IsNullOrWhiteSpace(d.SupplierCode) ? d.SupplierCode.Trim() : "NCC-GEN";
             var sName = !string.IsNullOrWhiteSpace(d.SupplierName)
                 ? d.SupplierName.Trim()
-                : (supDict.TryGetValue(sCode, out var name) ? name : "Nhà cung cấp chung");
+                : (supDict.TryGetValue(sCode, out var name) ? name : "NhÃ  cung cáº¥p chung");
 
             foreach (var l in d.Lines)
             {
@@ -3821,7 +3823,7 @@ public class WmsService(AppDbContext db) : IWmsService
             string sCode = !string.IsNullOrWhiteSpace(r.SupplierCode) ? r.SupplierCode.Trim() : "NCC-GEN";
             string sName = !string.IsNullOrWhiteSpace(r.SupplierName)
                 ? r.SupplierName.Trim()
-                : (supDict.TryGetValue(sCode, out var name) ? name : "Nhà cung cấp chung");
+                : (supDict.TryGetValue(sCode, out var name) ? name : "NhÃ  cung cáº¥p chung");
 
             foreach (var l in r.Lines)
             {
@@ -3838,7 +3840,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Hợp nhất các cặp (SupCode, ProdId)
+        // Há»£p nháº¥t cÃ¡c cáº·p (SupCode, ProdId)
         var allKeys = inMap.Keys.Union(retMap.Keys).ToList();
         var rawRows = new List<SummaryInReturnSupRow>();
 
@@ -3850,8 +3852,8 @@ public class WmsService(AppDbContext db) : IWmsService
             var sName = !string.IsNullOrWhiteSpace(inVal.SupName) ? inVal.SupName : (!string.IsNullOrWhiteSpace(retVal.SupName) ? retVal.SupName : key.SupCode);
             var p = prods.GetValueOrDefault(key.ProdId);
             var pCode = p?.Code ?? $"SP-{key.ProdId}";
-            var pName = p?.Name ?? "Sản phẩm";
-            var uom = p?.Uom ?? "cái";
+            var pName = p?.Name ?? "Sáº£n pháº©m";
+            var uom = p?.Uom ?? "cÃ¡i";
 
             var inQty = inVal.Qty;
             var inAmt = inVal.Amount;
@@ -3866,17 +3868,17 @@ public class WmsService(AppDbContext db) : IWmsService
             string badge;
             if (returnRate <= 2.0)
             {
-                grade = "Tốt (Tỷ lệ trả ≤ 2%)";
+                grade = "Tá»‘t (Tá»· lá»‡ tráº£ â‰¤ 2%)";
                 badge = "bg-success";
             }
             else if (returnRate <= 5.0)
             {
-                grade = "Cảnh báo (2% - 5%)";
+                grade = "Cáº£nh bÃ¡o (2% - 5%)";
                 badge = "bg-warning text-dark";
             }
             else
             {
-                grade = "Kém (Tỷ lệ trả > 5%)";
+                grade = "KÃ©m (Tá»· lá»‡ tráº£ > 5%)";
                 badge = "bg-danger";
             }
 
@@ -3900,7 +3902,7 @@ public class WmsService(AppDbContext db) : IWmsService
             ));
         }
 
-        // Lọc theo từ khóa tìm kiếm (Mã/Tên NCC hoặc Mã/Tên sản phẩm)
+        // Lá»c theo tá»« khÃ³a tÃ¬m kiáº¿m (MÃ£/TÃªn NCC hoáº·c MÃ£/TÃªn sáº£n pháº©m)
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var kw = keyword.Trim().ToLowerInvariant();
@@ -3952,7 +3954,7 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Danh sách Danh mục Nhà cung cấp (port từ Mst_Supplier Skycic).</summary>
+    /// <summary>Danh sÃ¡ch Danh má»¥c NhÃ  cung cáº¥p (port tá»« Mst_Supplier Skycic).</summary>
     public async Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.Suppliers.AsQueryable();
@@ -3980,7 +3982,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier)
     {
         var existing = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhà cung cấp.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ  cung cáº¥p.");
         existing.Name = supplier.Name.Trim();
         existing.ContactName = supplier.ContactName?.Trim();
         existing.Phone = supplier.Phone?.Trim();
@@ -3990,19 +3992,19 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.Note = supplier.Note?.Trim();
         existing.IsActive = supplier.IsActive;
         await db.SaveChangesAsync();
-        return (true, "Đã cập nhật nhà cung cấp.");
+        return (true, "ÄÃ£ cáº­p nháº­t nhÃ  cung cáº¥p.");
     }
 
     public async Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id)
     {
         var existing = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhà cung cấp.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ  cung cáº¥p.");
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? "Đã kích hoạt nhà cung cấp." : "Đã tạm dừng nhà cung cấp.");
+        return (true, existing.IsActive ? "ÄÃ£ kÃ­ch hoáº¡t nhÃ  cung cáº¥p." : "ÄÃ£ táº¡m dá»«ng nhÃ  cung cáº¥p.");
     }
 
-    /// <summary>Danh sách Danh mục Khách hàng, Đại lý phân phối (port từ Mst_Customer Skycic).</summary>
+    /// <summary>Danh sÃ¡ch Danh má»¥c KhÃ¡ch hÃ ng, Äáº¡i lÃ½ phÃ¢n phá»‘i (port tá»« Mst_Customer Skycic).</summary>
     public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null, string? customerSourceCode = null)
     {
         var query = db.Customers.AsQueryable();
@@ -4043,9 +4045,9 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateCustomerAsync(int id, Customer customer)
     {
         var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch hÃ ng.");
         existing.Name = customer.Name.Trim();
-        existing.CustomerType = string.IsNullOrWhiteSpace(customer.CustomerType) ? "Đại lý phân phối" : customer.CustomerType.Trim();
+        existing.CustomerType = string.IsNullOrWhiteSpace(customer.CustomerType) ? "Äáº¡i lÃ½ phÃ¢n phá»‘i" : customer.CustomerType.Trim();
         existing.ContactName = customer.ContactName?.Trim();
         existing.ContactPhone = customer.ContactPhone?.Trim();
         existing.Phone = customer.Phone?.Trim();
@@ -4059,22 +4061,22 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.Note = customer.Note?.Trim();
         existing.IsActive = customer.IsActive;
         await db.SaveChangesAsync();
-        return (true, "Đã cập nhật thông tin khách hàng.");
+        return (true, "ÄÃ£ cáº­p nháº­t thÃ´ng tin khÃ¡ch hÃ ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleCustomerStatusAsync(int id)
     {
         var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch hÃ ng.");
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? "Đã kích hoạt khách hàng." : "Đã tạm dừng giao dịch với khách hàng.");
+        return (true, existing.IsActive ? "ÄÃ£ kÃ­ch hoáº¡t khÃ¡ch hÃ ng." : "ÄÃ£ táº¡m dá»«ng giao dá»‹ch vá»›i khÃ¡ch hÃ ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteCustomerAsync(int id)
     {
         var existing = await db.Customers.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch hÃ ng.");
 
         bool hasStockDoc = await db.Docs.AnyAsync(d => d.CustomerCode == existing.Code);
         bool hasOutFG = await db.InventoryOutFGs.AnyAsync(f => f.AgentCode == existing.Code || f.CustomerName == existing.Name);
@@ -4084,12 +4086,12 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, "Khách hàng đã có lịch sử giao dịch kho nên được chuyển sang trạng thái Tạm dừng thay vì xóa hẳn.");
+            return (true, "KhÃ¡ch hÃ ng Ä‘Ã£ cÃ³ lá»‹ch sá»­ giao dá»‹ch kho nÃªn Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Táº¡m dá»«ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.Customers.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, "Đã xóa khách hàng.");
+        return (true, "ÄÃ£ xÃ³a khÃ¡ch hÃ ng.");
     }
 
     public async Task<CustomerDetailDto?> GetCustomerDetailAsync(int id)
@@ -4124,13 +4126,13 @@ public class WmsService(AppDbContext db) : IWmsService
         return new CustomerDetailDto(customer, outDocs, outFGDocs, returns, totalOutQty, totalReturnQty);
     }
 
-    /// <summary>Báo cáo tổng hợp xuất kho chi tiết (port từ Rpt_InvF_InventoryOutDtl Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o tá»•ng há»£p xuáº¥t kho chi tiáº¿t (port tá»« Rpt_InvF_InventoryOutDtl Skycic).</summary>
     public async Task<InventoryOutDtlReport> InventoryOutDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? outType, string? keyword)
     {
         var start = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var end = (toDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -4140,7 +4142,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var allProducts = await db.Products.ToListAsync();
         var prodDict = allProducts.ToDictionary(p => p.Id, p => p);
 
-        // Giá vốn hiện hành để làm fallback cho đơn giá xuất
+        // GiÃ¡ vá»‘n hiá»‡n hÃ nh Ä‘á»ƒ lÃ m fallback cho Ä‘Æ¡n giÃ¡ xuáº¥t
         var costHists = await db.CostPriceHists
             .Where(c => c.IsCurrent)
             .OrderByDescending(c => c.WarehouseId.HasValue)
@@ -4158,7 +4160,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var rawItems = new List<InventoryOutDtlItem>();
         int seq = 1;
 
-        // 1. Nguồn StockDoc (Posted Out & Transfer)
+        // 1. Nguá»“n StockDoc (Posted Out & Transfer)
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date >= start && d.Date <= end &&
                         (d.Type == DocType.Out || d.Type == DocType.Transfer))
@@ -4169,7 +4171,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenByDescending(d => d.Id)
             .ToListAsync();
 
-        // Nạp bảng tham chiếu để đối chiếu RefNo và StockDocId
+        // Náº¡p báº£ng tham chiáº¿u Ä‘á»ƒ Ä‘á»‘i chiáº¿u RefNo vÃ  StockDocId
         var retSups = await db.ReturnToSuppliers.Include(r => r.Lines).ToListAsync();
         var retDictByDocId = retSups.Where(r => r.StockDocId.HasValue).ToDictionary(r => r.StockDocId!.Value, r => r);
         var retDictByCode = retSups.ToDictionary(r => r.Code, r => r);
@@ -4187,11 +4189,11 @@ public class WmsService(AppDbContext db) : IWmsService
             int whId = doc.FromWarehouseId ?? 0;
             if (warehouseId.HasValue && whId != warehouseId.Value) continue;
 
-            string whDocName = doc.FromWarehouse?.Name ?? "Kho xuất";
+            string whDocName = doc.FromWarehouse?.Name ?? "Kho xuáº¥t";
 
             if (doc.Type == DocType.Out)
             {
-                // Kiểm tra loại nghiệp vụ cụ thể
+                // Kiá»ƒm tra loáº¡i nghiá»‡p vá»¥ cá»¥ thá»ƒ
                 ReturnToSupplier? ret = null;
                 if (retDictByDocId.TryGetValue(doc.Id, out var r1)) ret = r1;
                 else if (!string.IsNullOrEmpty(doc.RefNo) && retDictByCode.TryGetValue(doc.RefNo, out var r2)) ret = r2;
@@ -4215,38 +4217,38 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (ret != null)
                 {
                     oType = "RETURNSUP";
-                    oTypeName = "Xuất trả hàng NCC";
+                    oTypeName = "Xuáº¥t tráº£ hÃ ng NCC";
                     cusName = ret.SupplierName;
                     cusCode = ret.SupplierCode;
                     refNo = ret.Code;
-                    refType = "Phiếu trả NCC";
+                    refType = "Phiáº¿u tráº£ NCC";
                     docUrl = $"/ReturnSup/Detail/{ret.Id}";
                 }
                 else if (fg != null)
                 {
                     oType = "OUT_FG";
-                    oTypeName = "Xuất thành phẩm";
+                    oTypeName = "Xuáº¥t thÃ nh pháº©m";
                     cusName = fg.CustomerName;
                     cusCode = fg.AgentCode;
                     refNo = fg.Code;
-                    refType = !string.IsNullOrWhiteSpace(fg.OrderNo) ? $"Đơn hàng {fg.OrderNo}" : "Lệnh xuất TP";
+                    refType = !string.IsNullOrWhiteSpace(fg.OrderNo) ? $"ÄÆ¡n hÃ ng {fg.OrderNo}" : "Lá»‡nh xuáº¥t TP";
                     docUrl = $"/InventoryOutFG/Detail/{fg.Id}";
                 }
                 else if (audit != null)
                 {
                     oType = "AUDIT_DIFF";
-                    oTypeName = "Xuất cân bằng kiểm kê";
-                    cusName = "Hao hụt kiểm kê kho";
+                    oTypeName = "Xuáº¥t cÃ¢n báº±ng kiá»ƒm kÃª";
+                    cusName = "Hao há»¥t kiá»ƒm kÃª kho";
                     refNo = audit.Code;
-                    refType = "Biên bản kiểm kê";
+                    refType = "BiÃªn báº£n kiá»ƒm kÃª";
                     docUrl = $"/Audit/Detail/{audit.Id}";
                 }
                 else
                 {
                     oType = "COMMERCIAL";
-                    oTypeName = "Xuất bán buôn / Thương mại";
-                    cusName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName : "Khách hàng mua buôn";
-                    refType = "Hóa đơn / Đơn hàng";
+                    oTypeName = "Xuáº¥t bÃ¡n buÃ´n / ThÆ°Æ¡ng máº¡i";
+                    cusName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName : "KhÃ¡ch hÃ ng mua buÃ´n";
+                    refType = "HÃ³a Ä‘Æ¡n / ÄÆ¡n hÃ ng";
                     docUrl = $"/Doc/Detail/{doc.Id}";
                 }
 
@@ -4294,9 +4296,9 @@ public class WmsService(AppDbContext db) : IWmsService
             else if (doc.Type == DocType.Transfer)
             {
                 string oType = "TRANSFER";
-                string oTypeName = "Xuất điều chuyển kho";
-                string cusName = doc.ToWarehouse != null ? $"Kho đích: {doc.ToWarehouse.Name}" : "Chuyển nội bộ";
-                string? refType = "Lệnh chuyển kho";
+                string oTypeName = "Xuáº¥t Ä‘iá»u chuyá»ƒn kho";
+                string cusName = doc.ToWarehouse != null ? $"Kho Ä‘Ã­ch: {doc.ToWarehouse.Name}" : "Chuyá»ƒn ná»™i bá»™";
+                string? refType = "Lá»‡nh chuyá»ƒn kho";
                 string docUrl = $"/Doc/Detail/{doc.Id}";
 
                 foreach (var line in doc.Lines)
@@ -4331,7 +4333,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Bổ sung các phiếu InventoryOutFG đã Approved nếu chưa link StockDoc
+        // Bá»• sung cÃ¡c phiáº¿u InventoryOutFG Ä‘Ã£ Approved náº¿u chÆ°a link StockDoc
         var unlinkedOutFGs = outFGs
             .Where(f => f.Status == InvOutFGStatus.Approved && !f.StockDocId.HasValue &&
                         f.Date >= start && f.Date <= end &&
@@ -4340,7 +4342,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         foreach (var fg in unlinkedOutFGs)
         {
-            var whTitle = fg.Warehouse?.Name ?? "Kho xuất";
+            var whTitle = fg.Warehouse?.Name ?? "Kho xuáº¥t";
             foreach (var line in fg.Lines)
             {
                 if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
@@ -4351,9 +4353,9 @@ public class WmsService(AppDbContext db) : IWmsService
                     fg.Code,
                     fg.Date,
                     "OUT_FG",
-                    "Xuất thành phẩm",
+                    "Xuáº¥t thÃ nh pháº©m",
                     fg.OrderNo,
-                    "Lệnh xuất TP",
+                    "Lá»‡nh xuáº¥t TP",
                     fg.WarehouseId,
                     whTitle,
                     fg.AgentCode,
@@ -4372,7 +4374,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Bổ sung các phiếu ReturnToSupplier đã Finished nếu chưa link StockDoc
+        // Bá»• sung cÃ¡c phiáº¿u ReturnToSupplier Ä‘Ã£ Finished náº¿u chÆ°a link StockDoc
         var unlinkedRetSups = retSups
             .Where(r => r.Status == ReturnSupStatus.Finished && !r.StockDocId.HasValue &&
                         r.Date >= start && r.Date <= end &&
@@ -4381,7 +4383,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         foreach (var ret in unlinkedRetSups)
         {
-            var whTitle = ret.Warehouse?.Name ?? "Kho xuất";
+            var whTitle = ret.Warehouse?.Name ?? "Kho xuáº¥t";
             foreach (var line in ret.Lines)
             {
                 if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
@@ -4392,9 +4394,9 @@ public class WmsService(AppDbContext db) : IWmsService
                     ret.Code,
                     ret.Date,
                     "RETURNSUP",
-                    "Xuất trả hàng NCC",
+                    "Xuáº¥t tráº£ hÃ ng NCC",
                     ret.RefDocNo,
-                    "Phiếu trả NCC",
+                    "Phiáº¿u tráº£ NCC",
                     ret.WarehouseId,
                     whTitle,
                     ret.SupplierCode,
@@ -4413,14 +4415,14 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Lọc theo loại xuất (outType)
+        // Lá»c theo loáº¡i xuáº¥t (outType)
         var filtered = rawItems.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(outType))
         {
             filtered = filtered.Where(i => i.OutType.Equals(outType.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
-        // Lọc theo từ khóa (keyword)
+        // Lá»c theo tá»« khÃ³a (keyword)
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var kw = keyword.Trim().ToLower();
@@ -4458,13 +4460,13 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo tổng hợp nhập kho chi tiết (port từ Rpt_InventoryInDtl Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o tá»•ng há»£p nháº­p kho chi tiáº¿t (port tá»« Rpt_InventoryInDtl Skycic).</summary>
     public async Task<InventoryInDtlReport> InventoryInDtlReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? inType, string? keyword)
     {
         var start = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var end = (toDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
 
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -4480,7 +4482,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var allBlocks = await db.InventoryBlocks.Include(b => b.Warehouse).ToListAsync();
         var blockDictByWh = allBlocks.GroupBy(b => b.WarehouseId).ToDictionary(g => g.Key, g => g.FirstOrDefault()?.InvBlockCode ?? "A-01-01");
 
-        // Giá vốn hiện hành để làm fallback cho đơn giá nhập
+        // GiÃ¡ vá»‘n hiá»‡n hÃ nh Ä‘á»ƒ lÃ m fallback cho Ä‘Æ¡n giÃ¡ nháº­p
         var costHists = await db.CostPriceHists
             .Where(c => c.IsCurrent)
             .OrderByDescending(c => c.WarehouseId.HasValue)
@@ -4498,7 +4500,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var rawItems = new List<InventoryInDtlItem>();
         int seq = 1;
 
-        // 1. Nguồn StockDoc (Posted In & Transfer)
+        // 1. Nguá»“n StockDoc (Posted In & Transfer)
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date >= start && d.Date <= end &&
                         (d.Type == DocType.In || d.Type == DocType.Transfer))
@@ -4509,7 +4511,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenByDescending(d => d.Id)
             .ToListAsync();
 
-        // Nạp các bảng liên quan để đối soát loại hình nhập
+        // Náº¡p cÃ¡c báº£ng liÃªn quan Ä‘á»ƒ Ä‘á»‘i soÃ¡t loáº¡i hÃ¬nh nháº­p
         var cusReturns = await db.CustomerReturns.Include(c => c.Lines).ToListAsync();
         var cusDictByDocId = cusReturns.Where(c => c.StockDocId.HasValue).ToDictionary(c => c.StockDocId!.Value, c => c);
         var cusDictByCode = cusReturns.ToDictionary(c => c.Code, c => c);
@@ -4527,7 +4529,7 @@ public class WmsService(AppDbContext db) : IWmsService
             int whId = doc.ToWarehouseId ?? 0;
             if (warehouseId.HasValue && whId != warehouseId.Value) continue;
 
-            string whDocName = doc.ToWarehouse?.Name ?? "Kho nhận";
+            string whDocName = doc.ToWarehouse?.Name ?? "Kho nháº­n";
             string? locCode = blockDictByWh.TryGetValue(whId, out var bCode) ? bCode : null;
 
             if (doc.Type == DocType.In)
@@ -4557,11 +4559,11 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (cus != null)
                 {
                     iType = "CUS_RETURN";
-                    iTypeName = "Nhập khách trả hàng";
+                    iTypeName = "Nháº­p khÃ¡ch tráº£ hÃ ng";
                     supName = cus.CustomerName;
                     supCode = cus.CustomerCode;
                     refNo = cus.Code;
-                    refType = !string.IsNullOrEmpty(cus.RefOrderNo) ? $"ĐH: {cus.RefOrderNo}" : "Phiếu khách trả";
+                    refType = !string.IsNullOrEmpty(cus.RefOrderNo) ? $"ÄH: {cus.RefOrderNo}" : "Phiáº¿u khÃ¡ch tráº£";
                     invNo = cus.InvoiceNo;
                     invDate = cus.Date;
                     docUrl = $"/CustomerReturn/Detail/{cus.Id}";
@@ -4569,11 +4571,11 @@ public class WmsService(AppDbContext db) : IWmsService
                 else if (fg != null)
                 {
                     iType = "IN_FG";
-                    iTypeName = "Nhập thành phẩm SX";
-                    supName = !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "Xưởng sản xuất";
+                    iTypeName = "Nháº­p thÃ nh pháº©m SX";
+                    supName = !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "XÆ°á»Ÿng sáº£n xuáº¥t";
                     supCode = "WORKSHOP-01";
                     refNo = fg.Code;
-                    refType = !string.IsNullOrEmpty(fg.WorkOrderNo) ? $"Lệnh: {fg.WorkOrderNo}" : "Lệnh SX nội bộ";
+                    refType = !string.IsNullOrEmpty(fg.WorkOrderNo) ? $"Lá»‡nh: {fg.WorkOrderNo}" : "Lá»‡nh SX ná»™i bá»™";
                     invNo = fg.WorkOrderNo;
                     invDate = fg.Date;
                     docUrl = $"/InventoryInFG/Detail/{fg.Id}";
@@ -4581,22 +4583,22 @@ public class WmsService(AppDbContext db) : IWmsService
                 else if (audit != null)
                 {
                     iType = "AUDIT_DIFF";
-                    iTypeName = "Nhập cân bằng kiểm kê";
-                    supName = "Kiểm kê định kỳ (thừa)";
+                    iTypeName = "Nháº­p cÃ¢n báº±ng kiá»ƒm kÃª";
+                    supName = "Kiá»ƒm kÃª Ä‘á»‹nh ká»³ (thá»«a)";
                     refNo = audit.Code;
-                    refType = "Biên bản kiểm kê";
+                    refType = "BiÃªn báº£n kiá»ƒm kÃª";
                     docUrl = $"/Audit/Detail/{audit.Id}";
                 }
                 else
                 {
                     iType = "COMMERCIAL";
-                    iTypeName = "Nhập mua NCC / Thương mại";
-                    supName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName : "Nhà cung cấp thương mại";
+                    iTypeName = "Nháº­p mua NCC / ThÆ°Æ¡ng máº¡i";
+                    supName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName : "NhÃ  cung cáº¥p thÆ°Æ¡ng máº¡i";
                     if (!string.IsNullOrEmpty(supCode) && supDictByCode.TryGetValue(supCode, out var sObj))
                     {
                         supName = sObj.Name;
                     }
-                    refType = "Đơn mua hàng";
+                    refType = "ÄÆ¡n mua hÃ ng";
                     invNo = !string.IsNullOrEmpty(doc.RefNo) ? doc.RefNo : $"HD-{doc.Code}";
                     invDate = doc.Date;
                     docUrl = $"/Doc/Detail/{doc.Id}";
@@ -4656,11 +4658,11 @@ public class WmsService(AppDbContext db) : IWmsService
             }
             else if (doc.Type == DocType.Transfer)
             {
-                // Đối với phiếu chuyển kho, kho nhận hàng là ToWarehouse
+                // Äá»‘i vá»›i phiáº¿u chuyá»ƒn kho, kho nháº­n hÃ ng lÃ  ToWarehouse
                 string iType = "TRANSFER";
-                string iTypeName = "Nhập điều chuyển kho đến";
-                string supName = doc.FromWarehouse != null ? $"Kho chuyển: {doc.FromWarehouse.Name}" : "Chuyển nội bộ";
-                string? refType = "Lệnh điều chuyển";
+                string iTypeName = "Nháº­p Ä‘iá»u chuyá»ƒn kho Ä‘áº¿n";
+                string supName = doc.FromWarehouse != null ? $"Kho chuyá»ƒn: {doc.FromWarehouse.Name}" : "Chuyá»ƒn ná»™i bá»™";
+                string? refType = "Lá»‡nh Ä‘iá»u chuyá»ƒn";
                 string docUrl = $"/Doc/Detail/{doc.Id}";
 
                 foreach (var line in doc.Lines)
@@ -4668,7 +4670,7 @@ public class WmsService(AppDbContext db) : IWmsService
                     if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
                     decimal up = ResolveCost(line.ProductId, whId);
                     decimal valBeforeTax = line.Quantity * up;
-                    decimal valTax = 0m; // Điều chuyển kho không tính VAT
+                    decimal valTax = 0m; // Äiá»u chuyá»ƒn kho khÃ´ng tÃ­nh VAT
                     decimal lineTotal = valBeforeTax;
 
                     rawItems.Add(new InventoryInDtlItem(
@@ -4704,7 +4706,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Bổ sung các phiếu InventoryInFG đã Approved nếu chưa link StockDoc
+        // Bá»• sung cÃ¡c phiáº¿u InventoryInFG Ä‘Ã£ Approved náº¿u chÆ°a link StockDoc
         var unlinkedInFGs = inFGs
             .Where(f => f.Status == InvInFGStatus.Approved && !f.StockDocId.HasValue &&
                         f.Date >= start && f.Date <= end &&
@@ -4713,7 +4715,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         foreach (var fg in unlinkedInFGs)
         {
-            var whTitle = fg.Warehouse?.Name ?? "Kho nhận";
+            var whTitle = fg.Warehouse?.Name ?? "Kho nháº­n";
             string? locCode = blockDictByWh.TryGetValue(fg.WarehouseId, out var bCode) ? bCode : null;
             foreach (var line in fg.Lines)
             {
@@ -4728,14 +4730,14 @@ public class WmsService(AppDbContext db) : IWmsService
                     fg.Code,
                     fg.Date,
                     "IN_FG",
-                    "Nhập thành phẩm SX",
+                    "Nháº­p thÃ nh pháº©m SX",
                     fg.WorkOrderNo,
-                    "Lệnh SX nội bộ",
+                    "Lá»‡nh SX ná»™i bá»™",
                     fg.WarehouseId,
                     whTitle,
                     locCode,
                     "WORKSHOP-01",
-                    !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "Xưởng sản xuất",
+                    !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "XÆ°á»Ÿng sáº£n xuáº¥t",
                     prod.Id,
                     prod.Code,
                     prod.Name,
@@ -4755,7 +4757,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Bổ sung các phiếu CustomerReturn đã Finished nếu chưa link StockDoc
+        // Bá»• sung cÃ¡c phiáº¿u CustomerReturn Ä‘Ã£ Finished náº¿u chÆ°a link StockDoc
         var unlinkedCusRets = cusReturns
             .Where(c => c.Status == CusReturnStatus.Finished &&
                         !c.StockDocId.HasValue && c.Date >= start && c.Date <= end &&
@@ -4764,7 +4766,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         foreach (var ret in unlinkedCusRets)
         {
-            var whTitle = ret.Warehouse?.Name ?? "Kho nhận";
+            var whTitle = ret.Warehouse?.Name ?? "Kho nháº­n";
             string? locCode = blockDictByWh.TryGetValue(ret.WarehouseId, out var bCode) ? bCode : null;
             foreach (var line in ret.Lines)
             {
@@ -4779,9 +4781,9 @@ public class WmsService(AppDbContext db) : IWmsService
                     ret.Code,
                     ret.Date,
                     "CUS_RETURN",
-                    "Nhập khách trả hàng",
+                    "Nháº­p khÃ¡ch tráº£ hÃ ng",
                     ret.RefOrderNo,
-                    "Đơn hàng bán gốc",
+                    "ÄÆ¡n hÃ ng bÃ¡n gá»‘c",
                     ret.WarehouseId,
                     whTitle,
                     locCode,
@@ -4806,14 +4808,14 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Lọc theo loại nhập (inType)
+        // Lá»c theo loáº¡i nháº­p (inType)
         var filtered = rawItems.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(inType))
         {
             filtered = filtered.Where(i => i.InType.Equals(inType.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
-        // Lọc theo từ khóa (keyword)
+        // Lá»c theo tá»« khÃ³a (keyword)
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var kw = keyword.Trim().ToLower();
@@ -4858,13 +4860,13 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo Ma trận Tổng hợp Nhập - Xuất & Tồn kho 12 Tháng (port từ Rpt_Summary_In_Out & Rpt_Summary_QtyInvByPeriod Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Ma tráº­n Tá»•ng há»£p Nháº­p - Xuáº¥t & Tá»“n kho 12 ThÃ¡ng (port tá»« Rpt_Summary_In_Out & Rpt_Summary_QtyInvByPeriod Skycic).</summary>
     public async Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword)
     {
         if (year < 2000 || year > 2100) year = DateTime.Today.Year;
         viewMode = string.IsNullOrWhiteSpace(viewMode) ? "ALL" : viewMode.ToUpperInvariant();
 
-        string whName = "Toàn bộ hệ thống kho";
+        string whName = "ToÃ n bá»™ há»‡ thá»‘ng kho";
         if (warehouseId.HasValue && warehouseId.Value > 0)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -4884,7 +4886,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var startOfYear = new DateTime(year, 1, 1, 0, 0, 0);
         var endOfYear = new DateTime(year, 12, 31, 23, 59, 59);
 
-        // Lấy tất cả các phiếu đã Posted (kèm Lines) liên quan đến năm này và quá khứ
+        // Láº¥y táº¥t cáº£ cÃ¡c phiáº¿u Ä‘Ã£ Posted (kÃ¨m Lines) liÃªn quan Ä‘áº¿n nÄƒm nÃ y vÃ  quÃ¡ khá»©
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date <= endOfYear)
             .Include(d => d.Lines)
@@ -4900,7 +4902,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         foreach (var p in prodsList)
         {
-            // 1. Tính tồn đầu năm (Opening Balance)
+            // 1. TÃ­nh tá»“n Ä‘áº§u nÄƒm (Opening Balance)
             int openingYear = 0;
             var pastDocs = docs.Where(d => d.Date < startOfYear);
             foreach (var doc in pastDocs)
@@ -4929,7 +4931,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 }
             }
 
-            // 2. Tính số lượng Nhập và Xuất theo 12 tháng của năm được chọn
+            // 2. TÃ­nh sá»‘ lÆ°á»£ng Nháº­p vÃ  Xuáº¥t theo 12 thÃ¡ng cá»§a nÄƒm Ä‘Æ°á»£c chá»n
             int[] inM = new int[12];
             int[] outM = new int[12];
             int[] netM = new int[12];
@@ -4965,7 +4967,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 }
             }
 
-            // 3. Tính tồn lũy kế cuối mỗi tháng và biến động ròng
+            // 3. TÃ­nh tá»“n lÅ©y káº¿ cuá»‘i má»—i thÃ¡ng vÃ  biáº¿n Ä‘á»™ng rÃ²ng
             int runningBal = openingYear;
             int maxBal = openingYear;
             int minBal = openingYear;
@@ -4987,7 +4989,7 @@ public class WmsService(AppDbContext db) : IWmsService
                     if (runningBal < minBal) minBal = runningBal;
                 }
 
-                // Cộng dồn vào tổng toàn kho
+                // Cá»™ng dá»“n vÃ o tá»•ng toÃ n kho
                 monthlyTotalIn[m] += inM[m];
                 monthlyTotalOut[m] += outM[m];
                 monthlyTotalNet[m] += netM[m];
@@ -4998,7 +5000,7 @@ public class WmsService(AppDbContext db) : IWmsService
             int totalOutProd = outM.Sum();
             int totalNetProd = totalInProd - totalOutProd;
 
-            // Tìm tháng cao điểm hoạt động của mặt hàng
+            // TÃ¬m thÃ¡ng cao Ä‘iá»ƒm hoáº¡t Ä‘á»™ng cá»§a máº·t hÃ ng
             int peakMonthProd = 1;
             int peakVolProd = 0;
             for (int m = 0; m < 12; m++)
@@ -5013,28 +5015,28 @@ public class WmsService(AppDbContext db) : IWmsService
 
             var inRow = new MonthlyMatrixRow(
                 p.Id, p.Code, p.Name, p.Uom,
-                "IN", "Nhập kho", "bg-success text-white",
+                "IN", "Nháº­p kho", "bg-success text-white",
                 inM[0], inM[1], inM[2], inM[3], inM[4], inM[5], inM[6], inM[7], inM[8], inM[9], inM[10], inM[11],
                 totalInProd, Math.Round(totalInProd / 12.0, 1), peakMonthProd
             );
 
             var outRow = new MonthlyMatrixRow(
                 p.Id, p.Code, p.Name, p.Uom,
-                "OUT", "Xuất kho", "bg-danger text-white",
+                "OUT", "Xuáº¥t kho", "bg-danger text-white",
                 outM[0], outM[1], outM[2], outM[3], outM[4], outM[5], outM[6], outM[7], outM[8], outM[9], outM[10], outM[11],
                 totalOutProd, Math.Round(totalOutProd / 12.0, 1), peakMonthProd
             );
 
             var netRow = new MonthlyMatrixRow(
                 p.Id, p.Code, p.Name, p.Uom,
-                "NET", "Biến động ròng", "bg-info text-dark",
+                "NET", "Biáº¿n Ä‘á»™ng rÃ²ng", "bg-info text-dark",
                 netM[0], netM[1], netM[2], netM[3], netM[4], netM[5], netM[6], netM[7], netM[8], netM[9], netM[10], netM[11],
                 totalNetProd, Math.Round(totalNetProd / 12.0, 1), peakMonthProd
             );
 
             var balRow = new MonthlyMatrixRow(
                 p.Id, p.Code, p.Name, p.Uom,
-                "BALANCE", "Tồn cuối kỳ", "bg-primary text-white",
+                "BALANCE", "Tá»“n cuá»‘i ká»³", "bg-primary text-white",
                 balM[0], balM[1], balM[2], balM[3], balM[4], balM[5], balM[6], balM[7], balM[8], balM[9], balM[10], balM[11],
                 balM[11], Math.Round(balM.Average(), 1), peakMonthProd
             );
@@ -5064,7 +5066,7 @@ public class WmsService(AppDbContext db) : IWmsService
         int totalOutYear = monthlyTotalOut.Sum();
         int netMovementYear = totalInYear - totalOutYear;
 
-        // Tìm tháng cao điểm hoạt động toàn kho
+        // TÃ¬m thÃ¡ng cao Ä‘iá»ƒm hoáº¡t Ä‘á»™ng toÃ n kho
         int peakMonth = 1;
         int peakVolume = 0;
         for (int m = 0; m < 12; m++)
@@ -5076,7 +5078,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 peakMonth = m + 1;
             }
         }
-        string peakMonthName = $"Tháng {peakMonth:D2}/{year}";
+        string peakMonthName = $"ThÃ¡ng {peakMonth:D2}/{year}";
 
         return new MonthlyMatrixReport(
             year,
@@ -5101,7 +5103,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
     public async Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword)
     {
-        string whName = "Toàn hệ thống";
+        string whName = "ToÃ n há»‡ thá»‘ng";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -5115,7 +5117,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
 
-        // 1. Tồn vật lý thực tế từ các phiếu ĐÃ GHI SỔ (Posted Docs)
+        // 1. Tá»“n váº­t lÃ½ thá»±c táº¿ tá»« cÃ¡c phiáº¿u ÄÃƒ GHI Sá»” (Posted Docs)
         var postedDocs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted)
             .Include(d => d.Lines)
@@ -5142,7 +5144,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 2. Số lượng hàng bị khóa / giữ chỗ (QtyBlockOK):
+        // 2. Sá»‘ lÆ°á»£ng hÃ ng bá»‹ khÃ³a / giá»¯ chá»— (QtyBlockOK):
         var mapBlock = new Dictionary<(int whId, int prodId), int>();
         void AddBlock(int wh, int pid, int q)
         {
@@ -5151,7 +5153,7 @@ public class WmsService(AppDbContext db) : IWmsService
             mapBlock[(wh, pid)] = cur + q;
         }
 
-        // Serial bị khóa / lỗi hỏng
+        // Serial bá»‹ khÃ³a / lá»—i há»ng
         var serials = await db.StockSerials
             .Where(s => s.Status == StockSerialStatus.Locked || s.Status == StockSerialStatus.DamagedNG)
             .ToListAsync();
@@ -5173,7 +5175,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // MoveOrder Pending hoặc Approved (kho xuất)
+        // MoveOrder Pending hoáº·c Approved (kho xuáº¥t)
         var pendingMoveOrders = await db.MoveOrders
             .Where(m => m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved)
             .Include(m => m.Lines)
@@ -5183,7 +5185,7 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var l in m.Lines) AddBlock(m.FromWarehouseId, l.ProductId, l.Quantity);
         }
 
-        // ReturnToSupplier Draft (kho xuất)
+        // ReturnToSupplier Draft (kho xuáº¥t)
         var draftRetSups = await db.ReturnToSuppliers
             .Where(r => r.Status == ReturnSupStatus.Draft)
             .Include(r => r.Lines)
@@ -5193,7 +5195,7 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var l in r.Lines) AddBlock(r.WarehouseId, l.ProductId, l.Quantity);
         }
 
-        // InventoryOutFG Pending (kho xuất)
+        // InventoryOutFG Pending (kho xuáº¥t)
         var pendingOutFGs = await db.InventoryOutFGs
             .Where(f => f.Status == InvOutFGStatus.Pending)
             .Include(f => f.Lines)
@@ -5203,7 +5205,7 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var l in f.Lines) AddBlock(f.WarehouseId, l.ProductId, l.Qty);
         }
 
-        // 3. Số lượng hàng sắp về / đang chờ nhập (QtyBackOrder):
+        // 3. Sá»‘ lÆ°á»£ng hÃ ng sáº¯p vá» / Ä‘ang chá» nháº­p (QtyBackOrder):
         var mapBackOrder = new Dictionary<(int whId, int prodId), int>();
         void AddBackOrder(int wh, int pid, int q)
         {
@@ -5251,11 +5253,11 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var l in f.Lines) AddBackOrder(f.WarehouseId, l.ProductId, l.ActualQty > 0 ? l.ActualQty : l.PlanQty);
         }
 
-        // Check mặt hàng có Lô và Serial
+        // Check máº·t hÃ ng cÃ³ LÃ´ vÃ  Serial
         var allLotProdIds = (await db.StockLots.Select(l => l.ProductId).Distinct().ToListAsync()).ToHashSet();
         var allSerialProdIds = (await db.StockSerials.Select(s => s.ProductId).Distinct().ToListAsync()).ToHashSet();
 
-        // 4. Tổng hợp danh sách dòng báo cáo StockExtendRow
+        // 4. Tá»•ng há»£p danh sÃ¡ch dÃ²ng bÃ¡o cÃ¡o StockExtendRow
         var rows = new List<StockExtendRow>();
 
         foreach (var wh in targetWarehouses)
@@ -5277,7 +5279,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 decimal cost = prod.CostPrice;
                 decimal totalVal = totalOk * cost;
 
-                // Xác định trạng thái
+                // XÃ¡c Ä‘á»‹nh tráº¡ng thÃ¡i
                 StockExtendStatus st;
                 string stLabel;
                 string badgeClass;
@@ -5285,25 +5287,25 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (availOk <= 0)
                 {
                     st = StockExtendStatus.OutOfStock;
-                    stLabel = "Cháy hàng / Hết";
+                    stLabel = "ChÃ¡y hÃ ng / Háº¿t";
                     badgeClass = "bg-danger text-white";
                 }
                 else if (minStock > 0 && availOk < minStock)
                 {
                     st = StockExtendStatus.UnderMin;
-                    stLabel = "Dưới định mức";
+                    stLabel = "DÆ°á»›i Ä‘á»‹nh má»©c";
                     badgeClass = "bg-warning text-dark";
                 }
                 else if (maxStock > 0 && availOk > maxStock)
                 {
                     st = StockExtendStatus.OverMax;
-                    stLabel = "Vượt định mức";
+                    stLabel = "VÆ°á»£t Ä‘á»‹nh má»©c";
                     badgeClass = "bg-info text-dark";
                 }
                 else
                 {
                     st = StockExtendStatus.Optimal;
-                    stLabel = "Đạt chuẩn an toàn";
+                    stLabel = "Äáº¡t chuáº©n an toÃ n";
                     badgeClass = "bg-success text-white";
                 }
 
@@ -5336,13 +5338,13 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Lọc theo StatusFilter
+        // Lá»c theo StatusFilter
         if (statusFilter.HasValue && statusFilter.Value != StockExtendStatus.All)
         {
             rows = rows.Where(r => r.Status == statusFilter.Value).ToList();
         }
 
-        // Lọc theo Từ khóa
+        // Lá»c theo Tá»« khÃ³a
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var k = keyword.Trim().ToLowerInvariant();
@@ -5351,10 +5353,10 @@ public class WmsService(AppDbContext db) : IWmsService
                                    r.WarehouseName.ToLowerInvariant().Contains(k)).ToList();
         }
 
-        // Sắp xếp
+        // Sáº¯p xáº¿p
         rows = rows.OrderBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
 
-        // Tính toán KPI
+        // TÃ­nh toÃ¡n KPI
         int totalItems = rows.Count;
         int totalQtyTotal = rows.Sum(r => r.QtyTotalOK);
         int totalQtyBlock = rows.Sum(r => r.QtyBlockOK);
@@ -5392,7 +5394,7 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo Đánh giá giá trị tồn kho & Cơ cấu tài sản kho (port từ Rpt_Inv_InventoryBalance_ByValue & Rpt_Inv_InventoryBalance Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o ÄÃ¡nh giÃ¡ giÃ¡ trá»‹ tá»“n kho & CÆ¡ cáº¥u tÃ i sáº£n kho (port tá»« Rpt_Inv_InventoryBalance_ByValue & Rpt_Inv_InventoryBalance Skycic).</summary>
     public async Task<InventoryValuationReport> InventoryValuationReportAsync(
         int? warehouseId,
         InventoryValuationAbcClass? abcClass,
@@ -5400,7 +5402,7 @@ public class WmsService(AppDbContext db) : IWmsService
         string? keyword = null,
         DateTime? asOfDate = null)
     {
-        string whName = "Toàn hệ thống";
+        string whName = "ToÃ n há»‡ thá»‘ng";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -5415,7 +5417,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
 
-        // 1. Tồn vật lý thực tế từ các phiếu ĐÃ GHI SỔ tính đến mốc thời gian targetDate
+        // 1. Tá»“n váº­t lÃ½ thá»±c táº¿ tá»« cÃ¡c phiáº¿u ÄÃƒ GHI Sá»” tÃ­nh Ä‘áº¿n má»‘c thá»i gian targetDate
         var postedDocs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date <= targetDate)
             .Include(d => d.Lines)
@@ -5442,7 +5444,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 2. Số lượng hàng bị tạm khóa / phong tỏa vốn (QtyBlockOK)
+        // 2. Sá»‘ lÆ°á»£ng hÃ ng bá»‹ táº¡m khÃ³a / phong tá»a vá»‘n (QtyBlockOK)
         var mapBlock = new Dictionary<(int whId, int prodId), int>();
         void AddBlock(int wh, int pid, int q)
         {
@@ -5495,7 +5497,7 @@ public class WmsService(AppDbContext db) : IWmsService
             foreach (var l in f.Lines) AddBlock(f.WarehouseId, l.ProductId, l.Qty);
         }
 
-        // Lấy giá vốn kho hiện hành hoặc tại thời điểm targetDate từ CostPriceHist
+        // Láº¥y giÃ¡ vá»‘n kho hiá»‡n hÃ nh hoáº·c táº¡i thá»i Ä‘iá»ƒm targetDate tá»« CostPriceHist
         var currentCostPrices = await db.CostPriceHists
             .Where(c => c.EffectDate <= targetDate)
             .OrderByDescending(c => c.EffectDate)
@@ -5512,7 +5514,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var allLotProdIds = (await db.StockLots.Select(l => l.ProductId).Distinct().ToListAsync()).ToHashSet();
         var allSerialProdIds = (await db.StockSerials.Select(s => s.ProductId).Distinct().ToListAsync()).ToHashSet();
 
-        // 3. Xây dựng danh sách sơ bộ các mặt hàng
+        // 3. XÃ¢y dá»±ng danh sÃ¡ch sÆ¡ bá»™ cÃ¡c máº·t hÃ ng
         var candidateList = new List<(
             Product Prod,
             Warehouse Wh,
@@ -5536,14 +5538,14 @@ public class WmsService(AppDbContext db) : IWmsService
                 int availOk = Math.Max(0, totalOk - blockOk);
                 double availRate = totalOk > 0 ? Math.Round(availOk * 100.0 / totalOk, 1) : 100.0;
 
-                // Giá vốn ưu tiên: CostPriceHist của kho -> CostPriceHist toàn hệ thống -> Product.CostPrice
+                // GiÃ¡ vá»‘n Æ°u tiÃªn: CostPriceHist cá»§a kho -> CostPriceHist toÃ n há»‡ thá»‘ng -> Product.CostPrice
                 decimal cost = prod.CostPrice;
                 if (costPriceLookup.TryGetValue((wh.Id, prod.Id), out var whCost) && whCost > 0)
                     cost = whCost;
                 else if (costPriceLookup.TryGetValue((null, prod.Id), out var sysCost) && sysCost > 0)
                     cost = sysCost;
 
-                if (cost <= 0) cost = 100000m; // Fallback giá danh nghĩa
+                if (cost <= 0) cost = 100000m; // Fallback giÃ¡ danh nghÄ©a
 
                 decimal totalValMixBase = totalOk * cost;
                 decimal totalValAvail = availOk * cost;
@@ -5556,7 +5558,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 4. Sắp xếp giảm dần theo Tổng giá trị để phân bổ tỷ trọng và phân hạng ABC
+        // 4. Sáº¯p xáº¿p giáº£m dáº§n theo Tá»•ng giÃ¡ trá»‹ Ä‘á»ƒ phÃ¢n bá»• tá»· trá»ng vÃ  phÃ¢n háº¡ng ABC
         var sortedCandidates = candidateList.OrderByDescending(c => c.TotalValMixBase).ToList();
         decimal grandTotalValMixBase = sortedCandidates.Sum(c => c.TotalValMixBase);
 
@@ -5577,36 +5579,36 @@ public class WmsService(AppDbContext db) : IWmsService
             if (cumulativeShare <= 70.0 || (rows.Count == 0 && share > 0))
             {
                 itemAbc = InventoryValuationAbcClass.ClassA;
-                abcLabel = "Hạng A (Giá trị cao)";
+                abcLabel = "Háº¡ng A (GiÃ¡ trá»‹ cao)";
                 abcBadge = "bg-danger text-white";
             }
             else if (cumulativeShare <= 90.0)
             {
                 itemAbc = InventoryValuationAbcClass.ClassB;
-                abcLabel = "Hạng B (Trung bình)";
+                abcLabel = "Háº¡ng B (Trung bÃ¬nh)";
                 abcBadge = "bg-warning text-dark";
             }
             else
             {
                 itemAbc = InventoryValuationAbcClass.ClassC;
-                abcLabel = "Hạng C (Giá trị thấp)";
+                abcLabel = "Háº¡ng C (GiÃ¡ trá»‹ tháº¥p)";
                 abcBadge = "bg-secondary text-white";
             }
 
             string riskStatus, riskBadge;
             if (item.TotalValBlock > 0)
             {
-                riskStatus = "Chôn vốn tạm khóa";
+                riskStatus = "ChÃ´n vá»‘n táº¡m khÃ³a";
                 riskBadge = "bg-danger text-white";
             }
             else if (itemAbc == InventoryValuationAbcClass.ClassA && item.TotalOk > 50)
             {
-                riskStatus = "Tồn vốn trọng điểm";
+                riskStatus = "Tá»“n vá»‘n trá»ng Ä‘iá»ƒm";
                 riskBadge = "bg-primary text-white";
             }
             else
             {
-                riskStatus = "An toàn luân chuyển";
+                riskStatus = "An toÃ n luÃ¢n chuyá»ƒn";
                 riskBadge = "bg-success text-white";
             }
 
@@ -5636,13 +5638,13 @@ public class WmsService(AppDbContext db) : IWmsService
             ));
         }
 
-        // Lọc theo AbcFilter
+        // Lá»c theo AbcFilter
         if (abcClass.HasValue && abcClass.Value != InventoryValuationAbcClass.All)
         {
             rows = rows.Where(r => r.AbcClass == abcClass.Value).ToList();
         }
 
-        // Lọc theo từ khóa
+        // Lá»c theo tá»« khÃ³a
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var k = keyword.Trim().ToLowerInvariant();
@@ -5651,7 +5653,7 @@ public class WmsService(AppDbContext db) : IWmsService
                                    r.WarehouseName.ToLowerInvariant().Contains(k)).ToList();
         }
 
-        // KPI thống kê
+        // KPI thá»‘ng kÃª
         int totalItems = rows.Count;
         int totalPhysicalQty = rows.Sum(r => r.QtyTotalOK);
         int totalBlockedQty = rows.Sum(r => r.QtyBlockOK);
@@ -5693,7 +5695,169 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    /// <summary>Báo cáo danh mục Loại mặt hàng tổng hợp kèm KPI (port từ Mst_PartType Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o Tá»“n kho táº¡i thá»i Ä‘iá»ƒm (Point-in-time Inventory Balance - port tá»« Rpt_Inv_InventoryBalance_ByPeriod Skycic).
+    /// Tá»“n táº¡i má»‘c = Tá»•ng nháº­p Ä‘Ã£ duyá»‡t - Tá»•ng xuáº¥t Ä‘Ã£ duyá»‡t tÃ­nh Ä‘áº¿n má»‘c thá»i gian, Ä‘á»‘i chiáº¿u vá»›i tá»“n hiá»‡n táº¡i.</summary>
+    public async Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null)
+    {
+        // Má»‘c chá»‘t: láº¥y háº¿t ngÃ y asOfDate (Ä‘áº¿n 23:59:59.999)
+        var asOf = asOfDate.Date.AddDays(1).AddTicks(-1);
+
+        string whName = "ToÃ n há»‡ thá»‘ng";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+        var whDict = allWarehouses.ToDictionary(w => w.Id, w => w.Name);
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLowerInvariant();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+        var productIds = products.Select(p => p.Id).ToHashSet();
+
+        // Láº¥y táº¥t cáº£ phiáº¿u Ä‘Ã£ ghi sá»• (Ä‘áº¿n má»‘c) liÃªn quan Ä‘áº¿n cÃ¡c máº·t hÃ ng cáº§n bÃ¡o cÃ¡o
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= asOf && d.Lines.Any(l => productIds.Contains(l.ProductId)))
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        // Tá»“n táº¡i má»‘c theo (WarehouseId, ProductId): (QtyIn, QtyOut)
+        var atDateMap = new Dictionary<(int whId, int prodId), (int qtyIn, int qtyOut)>();
+        // Tá»“n hiá»‡n táº¡i (táº¥t cáº£ phiáº¿u Ä‘Ã£ ghi sá»•, khÃ´ng giá»›i háº¡n má»‘c)
+        var currentMap = new Dictionary<(int whId, int prodId), int>();
+
+        void AddAtDate(int wId, int pId, int inDelta, int outDelta)
+        {
+            if (!whDict.ContainsKey(wId) || !productIds.Contains(pId)) return;
+            atDateMap.TryGetValue((wId, pId), out var cur);
+            atDateMap[(wId, pId)] = (cur.qtyIn + inDelta, cur.qtyOut + outDelta);
+        }
+
+        void AddCurrent(int wId, int pId, int delta)
+        {
+            if (!whDict.ContainsKey(wId) || !productIds.Contains(pId)) return;
+            currentMap.TryGetValue((wId, pId), out var cur);
+            currentMap[(wId, pId)] = cur + delta;
+        }
+
+        foreach (var d in docs)
+        {
+            bool withinAsOf = d.Date <= asOf;
+            foreach (var line in d.Lines)
+            {
+                if (!productIds.Contains(line.ProductId) || line.Quantity == 0) continue;
+
+                if (d.Type == DocType.In && d.ToWarehouseId is { } toWh)
+                {
+                    if (warehouseId.HasValue && toWh != warehouseId.Value) continue;
+                    AddCurrent(toWh, line.ProductId, line.Quantity);
+                    if (withinAsOf) AddAtDate(toWh, line.ProductId, line.Quantity, 0);
+                }
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fromWh)
+                {
+                    if (warehouseId.HasValue && fromWh != warehouseId.Value) continue;
+                    AddCurrent(fromWh, line.ProductId, -line.Quantity);
+                    if (withinAsOf) AddAtDate(fromWh, line.ProductId, 0, line.Quantity);
+                }
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } fr)
+                    {
+                        if (!warehouseId.HasValue || fr == warehouseId.Value)
+                        {
+                            AddCurrent(fr, line.ProductId, -line.Quantity);
+                            if (withinAsOf) AddAtDate(fr, line.ProductId, 0, line.Quantity);
+                        }
+                    }
+                    if (d.ToWarehouseId is { } to)
+                    {
+                        if (!warehouseId.HasValue || to == warehouseId.Value)
+                        {
+                            AddCurrent(to, line.ProductId, line.Quantity);
+                            if (withinAsOf) AddAtDate(to, line.ProductId, line.Quantity, 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // GiÃ¡ vá»‘n kho hiá»‡n hÃ nh (Æ°u tiÃªn theo kho -> toÃ n há»‡ thá»‘ng -> Product.CostPrice)
+        var costPrices = await db.CostPriceHists
+            .OrderByDescending(c => c.EffectDate)
+            .ThenByDescending(c => c.Id)
+            .ToListAsync();
+        var costLookup = new Dictionary<(int? whId, int prodId), decimal>();
+        foreach (var c in costPrices)
+        {
+            if (!costLookup.ContainsKey((c.WarehouseId, c.ProductId)))
+                costLookup[(c.WarehouseId, c.ProductId)] = c.CostPrice;
+        }
+
+        var rows = new List<PointInTimeBalanceRow>();
+        foreach (var w in targetWarehouses)
+        {
+            foreach (var p in products)
+            {
+                atDateMap.TryGetValue((w.Id, p.Id), out var atDate);
+                int qtyAtDate = atDate.qtyIn - atDate.qtyOut;
+                int qtyCurrent = currentMap.GetValueOrDefault((w.Id, p.Id), 0);
+
+                // Chá»‰ hiá»ƒn thá»‹ máº·t hÃ ng cÃ³ phÃ¡t sinh tá»“n táº¡i má»‘c hoáº·c tá»“n hiá»‡n táº¡i, hoáº·c khi tÃ¬m kiáº¿m
+                if (qtyAtDate == 0 && qtyCurrent == 0 && atDate.qtyIn == 0 && atDate.qtyOut == 0 && string.IsNullOrWhiteSpace(keyword))
+                    continue;
+
+                decimal cost = p.CostPrice;
+                if (costLookup.TryGetValue((w.Id, p.Id), out var whCost) && whCost > 0) cost = whCost;
+                else if (costLookup.TryGetValue((null, p.Id), out var sysCost) && sysCost > 0) cost = sysCost;
+
+                int delta = qtyCurrent - qtyAtDate;
+                string status, badge;
+                if (delta > 0) { status = "TÄƒng tá»“n"; badge = "bg-success text-white"; }
+                else if (delta < 0) { status = "Giáº£m tá»“n"; badge = "bg-danger text-white"; }
+                else { status = "KhÃ´ng Ä‘á»•i"; badge = "bg-secondary text-white"; }
+
+                rows.Add(new PointInTimeBalanceRow(
+                    p.Id, p.Code, p.Name, p.Uom,
+                    w.Id, w.Name,
+                    atDate.qtyIn, atDate.qtyOut, qtyAtDate,
+                    qtyCurrent, delta,
+                    cost, qtyAtDate * cost,
+                    status, badge
+                ));
+            }
+        }
+
+        rows = rows.OrderBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
+
+        return new PointInTimeBalanceReport(
+            warehouseId,
+            whName,
+            asOfDate.Date,
+            keyword,
+            rows.Count,
+            rows.Sum(r => r.QtyAtDate),
+            rows.Sum(r => r.QtyCurrent),
+            rows.Sum(r => r.QtyDelta),
+            rows.Sum(r => r.ValueAtDate),
+            rows.Count(r => r.QtyDelta > 0),
+            rows.Count(r => r.QtyDelta < 0),
+            rows.Count(r => r.QtyDelta == 0),
+            rows
+        );
+    }
+
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Loáº¡i máº·t hÃ ng tá»•ng há»£p kÃ¨m KPI (port tá»« Mst_PartType Skycic).</summary>
     public async Task<PartTypeReport> PartTypesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.PartTypes.AsQueryable();
@@ -5769,7 +5933,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreatePartTypeAsync(PartType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên loại mặt hàng không được để trống.");
+            throw new ArgumentException("TÃªn loáº¡i máº·t hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -5782,7 +5946,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.PartTypes.AnyAsync(p => p.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã loại mặt hàng '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i máº·t hÃ ng '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.PartTypes.Add(item);
@@ -5793,48 +5957,48 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdatePartTypeAsync(int id, PartType item)
     {
         var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i máº·t hÃ ng.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên loại mặt hàng không được để trống.");
+            return (false, "TÃªn loáº¡i máº·t hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin loại mặt hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin loáº¡i máº·t hÃ ng '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> TogglePartTypeStatusAsync(int id)
     {
         var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i máº·t hÃ ng.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại mặt hàng '{existing.Code}'." : $"Đã chuyển loại mặt hàng '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng loáº¡i máº·t hÃ ng '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn loáº¡i máº·t hÃ ng '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeletePartTypeAsync(int id)
     {
         var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i máº·t hÃ ng.");
 
         bool isUsed = await db.Products.AnyAsync(p => p.PartTypeCode != null && p.PartTypeCode.ToLower() == existing.Code.ToLower());
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Loại mặt hàng '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Loáº¡i máº·t hÃ ng '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho sáº£n pháº©m trong kho nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.PartTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại mặt hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i máº·t hÃ ng '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Thương hiệu hàng hóa tổng hợp kèm KPI (port từ Mst_Brand Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c ThÆ°Æ¡ng hiá»‡u hÃ ng hÃ³a tá»•ng há»£p kÃ¨m KPI (port tá»« Mst_Brand Skycic).</summary>
     public async Task<BrandReport> BrandsReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.Brands.AsQueryable();
@@ -5911,7 +6075,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateBrandAsync(Brand item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên thương hiệu không được để trống.");
+            throw new ArgumentException("TÃªn thÆ°Æ¡ng hiá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -5924,7 +6088,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.Brands.AnyAsync(b => b.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã thương hiệu '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ thÆ°Æ¡ng hiá»‡u '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.Brands.Add(item);
@@ -5935,10 +6099,10 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item)
     {
         var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
-        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÆ°Æ¡ng hiá»‡u.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên thương hiệu không được để trống.");
+            return (false, "TÃªn thÆ°Æ¡ng hiá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Origin = item.Origin?.Trim();
@@ -5946,38 +6110,38 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin thương hiệu '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin thÆ°Æ¡ng hiá»‡u '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id)
     {
         var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
-        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÆ°Æ¡ng hiá»‡u.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng thương hiệu '{existing.Code}'." : $"Đã chuyển thương hiệu '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng thÆ°Æ¡ng hiá»‡u '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn thÆ°Æ¡ng hiá»‡u '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteBrandAsync(int id)
     {
         var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
-        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y thÆ°Æ¡ng hiá»‡u.");
 
         bool isUsed = await db.Products.AnyAsync(p => p.BrandCode != null && p.BrandCode.ToLower() == existing.Code.ToLower());
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Thương hiệu '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"ThÆ°Æ¡ng hiá»‡u '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho sáº£n pháº©m trong kho nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.Brands.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa thương hiệu '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a thÆ°Æ¡ng hiá»‡u '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Đơn vị tính hàng hóa tổng hợp kèm 4 thẻ KPI (port từ Mst_PartUnit Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c ÄÆ¡n vá»‹ tÃ­nh hÃ ng hÃ³a tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_PartUnit Skycic).</summary>
     public async Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null)
     {
         var query = db.PartUnits.AsQueryable();
@@ -6067,7 +6231,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreatePartUnitAsync(PartUnit item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên đơn vị tính không được để trống.");
+            throw new ArgumentException("TÃªn Ä‘Æ¡n vá»‹ tÃ­nh khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6080,7 +6244,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.PartUnits.AnyAsync(u => u.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã đơn vị tính '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ Ä‘Æ¡n vá»‹ tÃ­nh '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.PartUnits.Add(item);
@@ -6091,10 +6255,10 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdatePartUnitAsync(int id, PartUnit item)
     {
         var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n vá»‹ tÃ­nh.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên đơn vị tính không được để trống.");
+            return (false, "TÃªn Ä‘Æ¡n vá»‹ tÃ­nh khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.IsStandard = item.IsStandard;
@@ -6102,38 +6266,38 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin đơn vị tính '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin Ä‘Æ¡n vá»‹ tÃ­nh '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> TogglePartUnitStatusAsync(int id)
     {
         var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n vá»‹ tÃ­nh.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng đơn vị tính '{existing.Code}'." : $"Đã chuyển đơn vị tính '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng Ä‘Æ¡n vá»‹ tÃ­nh '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn Ä‘Æ¡n vá»‹ tÃ­nh '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeletePartUnitAsync(int id)
     {
         var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n vá»‹ tÃ­nh.");
 
         bool isUsed = await db.Products.AnyAsync(p => p.Uom.ToLower() == existing.Code.ToLower() || p.Uom.ToLower() == existing.Name.ToLower());
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Đơn vị tính '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"ÄÆ¡n vá»‹ tÃ­nh '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho sáº£n pháº©m trong kho nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.PartUnits.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa đơn vị tính '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a Ä‘Æ¡n vá»‹ tÃ­nh '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Nhóm chất liệu / Vật liệu hàng hóa tổng hợp kèm 4 thẻ KPI (port từ Mst_PartMaterialType Skycic: PMType, PMTypeName, FlagActive, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c NhÃ³m cháº¥t liá»‡u / Váº­t liá»‡u hÃ ng hÃ³a tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_PartMaterialType Skycic: PMType, PMTypeName, FlagActive, Remark).</summary>
     public async Task<PartMaterialTypeReport> PartMaterialTypesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.PartMaterialTypes.AsQueryable();
@@ -6222,7 +6386,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreatePartMaterialTypeAsync(PartMaterialType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên nhóm chất liệu không được để trống.");
+            throw new ArgumentException("TÃªn nhÃ³m cháº¥t liá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6235,7 +6399,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.PartMaterialTypes.AnyAsync(m => m.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã nhóm chất liệu '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ nhÃ³m cháº¥t liá»‡u '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.PartMaterialTypes.Add(item);
@@ -6246,48 +6410,48 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdatePartMaterialTypeAsync(int id, PartMaterialType item)
     {
         var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m cháº¥t liá»‡u.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên nhóm chất liệu không được để trống.");
+            return (false, "TÃªn nhÃ³m cháº¥t liá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin nhóm chất liệu '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin nhÃ³m cháº¥t liá»‡u '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> TogglePartMaterialTypeStatusAsync(int id)
     {
         var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m cháº¥t liá»‡u.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm chất liệu '{existing.Code}'." : $"Đã chuyển nhóm chất liệu '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng nhÃ³m cháº¥t liá»‡u '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn nhÃ³m cháº¥t liá»‡u '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeletePartMaterialTypeAsync(int id)
     {
         var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m cháº¥t liá»‡u.");
 
         bool isUsed = await db.Products.AnyAsync(p => p.PMType != null && (p.PMType.ToLower() == existing.Code.ToLower() || p.PMType.ToLower() == existing.Name.ToLower()));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Nhóm chất liệu '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"NhÃ³m cháº¥t liá»‡u '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho sáº£n pháº©m trong kho nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.PartMaterialTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa nhóm chất liệu '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a nhÃ³m cháº¥t liá»‡u '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Dòng sản phẩm / Model hàng hóa kho tổng hợp kèm 4 thẻ KPI (port từ Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c DÃ²ng sáº£n pháº©m / Model hÃ ng hÃ³a kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
     public async Task<ProductModelReport> ProductModelsReportAsync(string? q = null, string? brandCode = null, bool? activeOnly = null)
     {
         var query = db.ProductModels.AsQueryable();
@@ -6399,7 +6563,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateProductModelAsync(ProductModel item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên model / dòng sản phẩm không được để trống.");
+            throw new ArgumentException("TÃªn model / dÃ²ng sáº£n pháº©m khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6412,7 +6576,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.ProductModels.AnyAsync(m => m.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã model '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ model '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         if (!string.IsNullOrWhiteSpace(item.BrandCode))
             item.BrandCode = item.BrandCode.Trim().ToUpperInvariant();
@@ -6429,10 +6593,10 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateProductModelAsync(int id, ProductModel item)
     {
         var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y model / dÃ²ng sáº£n pháº©m.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên model / dòng sản phẩm không được để trống.");
+            return (false, "TÃªn model / dÃ²ng sáº£n pháº©m khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.BrandCode = string.IsNullOrWhiteSpace(item.BrandCode) ? null : item.BrandCode.Trim().ToUpperInvariant();
@@ -6441,38 +6605,38 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin model '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin model '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleProductModelStatusAsync(int id)
     {
         var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y model / dÃ²ng sáº£n pháº©m.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng model '{existing.Code}'." : $"Đã chuyển model '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng model '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn model '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteProductModelAsync(int id)
     {
         var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y model / dÃ²ng sáº£n pháº©m.");
 
         bool isUsed = await db.Products.AnyAsync(p => p.ModelCode != null && (p.ModelCode.ToLower() == existing.Code.ToLower() || p.ModelCode.ToLower() == existing.Name.ToLower()));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Model '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Model '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho sáº£n pháº©m trong kho nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.ProductModels.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa model '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a model '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Loại kho / Phân loại kho hàng tổng hợp kèm 4 thẻ KPI (port từ Mst_InventoryType Skycic: InvType, InvTypeName, FlagActive, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Loáº¡i kho / PhÃ¢n loáº¡i kho hÃ ng tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_InventoryType Skycic: InvType, InvTypeName, FlagActive, Remark).</summary>
     public async Task<InventoryTypeReport> InventoryTypesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.InventoryTypes.AsQueryable();
@@ -6561,7 +6725,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateInventoryTypeAsync(InventoryType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên loại kho không được để trống.");
+            throw new ArgumentException("TÃªn loáº¡i kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6574,7 +6738,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.InventoryTypes.AnyAsync(t => t.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã loại kho '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i kho '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.InventoryTypes.Add(item);
@@ -6585,48 +6749,48 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateInventoryTypeAsync(int id, InventoryType item)
     {
         var existing = await db.InventoryTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i kho.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên loại kho không được để trống.");
+            return (false, "TÃªn loáº¡i kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin loại kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin loáº¡i kho '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryTypeStatusAsync(int id)
     {
         var existing = await db.InventoryTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i kho.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại kho '{existing.Code}'." : $"Đã chuyển loại kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng loáº¡i kho '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn loáº¡i kho '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteInventoryTypeAsync(int id)
     {
         var existing = await db.InventoryTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i kho.");
 
         bool isUsed = await db.Warehouses.AnyAsync(w => w.InvTypeCode != null && (w.InvTypeCode.ToLower() == existing.Code.ToLower() || w.InvTypeCode.ToLower() == existing.Name.ToLower()));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Loại kho '{existing.Code}' đang được gán cho kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Loáº¡i kho '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho kho trong há»‡ thá»‘ng nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.InventoryTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i kho '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Cấp kho / Phân cấp quản lý kho hàng tổng hợp kèm 4 thẻ KPI (port từ Mst_InventoryLevelType Skycic: InvLevelType, InvLevelTypeName, FlagActive, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Cáº¥p kho / PhÃ¢n cáº¥p quáº£n lÃ½ kho hÃ ng tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_InventoryLevelType Skycic: InvLevelType, InvLevelTypeName, FlagActive, Remark).</summary>
     public async Task<InventoryLevelTypeReport> InventoryLevelTypesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.InventoryLevelTypes.AsQueryable();
@@ -6715,7 +6879,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateInventoryLevelTypeAsync(InventoryLevelType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên cấp kho không được để trống.");
+            throw new ArgumentException("TÃªn cáº¥p kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6728,7 +6892,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.InventoryLevelTypes.AnyAsync(t => t.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã cấp kho '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ cáº¥p kho '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.InventoryLevelTypes.Add(item);
@@ -6739,48 +6903,48 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateInventoryLevelTypeAsync(int id, InventoryLevelType item)
     {
         var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cáº¥p kho.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên cấp kho không được để trống.");
+            return (false, "TÃªn cáº¥p kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin cấp kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin cáº¥p kho '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryLevelTypeStatusAsync(int id)
     {
         var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cáº¥p kho.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng cấp kho '{existing.Code}'." : $"Đã chuyển cấp kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng cáº¥p kho '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn cáº¥p kho '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteInventoryLevelTypeAsync(int id)
     {
         var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cáº¥p kho.");
 
         bool isUsed = await db.Warehouses.AnyAsync(w => w.InvLevelTypeCode != null && (w.InvLevelTypeCode.ToLower() == existing.Code.ToLower() || w.InvLevelTypeCode.ToLower() == existing.Name.ToLower()));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Cấp kho '{existing.Code}' đang được gán cho kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Cáº¥p kho '{existing.Code}' Ä‘ang Ä‘Æ°á»£c gÃ¡n cho kho trong há»‡ thá»‘ng nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.InventoryLevelTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa cấp kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a cáº¥p kho '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Loại hình / Lý do Nhập kho tổng hợp kèm 4 thẻ KPI (port từ Mst_InvInType Skycic: InvInType, InvInTypeName, FlagActive, FlagStatistic, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Loáº¡i hÃ¬nh / LÃ½ do Nháº­p kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_InvInType Skycic: InvInType, InvInTypeName, FlagActive, FlagStatistic, Remark).</summary>
     public async Task<InventoryInTypeReport> InventoryInTypesReportAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null)
     {
         var query = db.InventoryInTypes.AsQueryable();
@@ -6805,12 +6969,12 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
                 if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
 
-                if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
-                if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khách trả") == true || d.Note?.Contains("đổi trả") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
-                if (codeUpper == "IN_PROD" && (d.Note?.Contains("thành phẩm") == true || d.Note?.Contains("sản xuất") == true)) return true;
+                if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiá»ƒm kÃª") == true || d.Note?.Contains("cÃ¢n báº±ng") == true)) return true;
+                if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khÃ¡ch tráº£") == true || d.Note?.Contains("Ä‘á»•i tráº£") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
+                if (codeUpper == "IN_PROD" && (d.Note?.Contains("thÃ nh pháº©m") == true || d.Note?.Contains("sáº£n xuáº¥t") == true)) return true;
                 if (codeUpper == "IN_BUY" && (!string.IsNullOrEmpty(d.SupplierCode) || !string.IsNullOrEmpty(d.SupplierName)) &&
-                    d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("khách trả") != true && d.Note?.Contains("thành phẩm") != true) return true;
-                if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+                    d.Note?.Contains("kiá»ƒm kÃª") != true && d.Note?.Contains("khÃ¡ch tráº£") != true && d.Note?.Contains("thÃ nh pháº©m") != true) return true;
+                if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyá»ƒn kho") == true) return true;
 
                 return false;
             }).ToList();
@@ -6866,12 +7030,12 @@ public class WmsService(AppDbContext db) : IWmsService
             if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
             if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
 
-            if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
-            if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khách trả") == true || d.Note?.Contains("đổi trả") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
-            if (codeUpper == "IN_PROD" && (d.Note?.Contains("thành phẩm") == true || d.Note?.Contains("sản xuất") == true)) return true;
+            if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiá»ƒm kÃª") == true || d.Note?.Contains("cÃ¢n báº±ng") == true)) return true;
+            if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khÃ¡ch tráº£") == true || d.Note?.Contains("Ä‘á»•i tráº£") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
+            if (codeUpper == "IN_PROD" && (d.Note?.Contains("thÃ nh pháº©m") == true || d.Note?.Contains("sáº£n xuáº¥t") == true)) return true;
             if (codeUpper == "IN_BUY" && (!string.IsNullOrEmpty(d.SupplierCode) || !string.IsNullOrEmpty(d.SupplierName)) &&
-                d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("khách trả") != true && d.Note?.Contains("thành phẩm") != true) return true;
-            if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+                d.Note?.Contains("kiá»ƒm kÃª") != true && d.Note?.Contains("khÃ¡ch tráº£") != true && d.Note?.Contains("thÃ nh pháº©m") != true) return true;
+            if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyá»ƒn kho") == true) return true;
 
             return false;
         }).ToList();
@@ -6885,7 +7049,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateInventoryInTypeAsync(InventoryInType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên loại nhập kho không được để trống.");
+            throw new ArgumentException("TÃªn loáº¡i nháº­p kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -6898,7 +7062,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.InventoryInTypes.AnyAsync(t => t.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã loại nhập kho '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i nháº­p kho '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.InventoryInTypes.Add(item);
@@ -6909,10 +7073,10 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateInventoryInTypeAsync(int id, InventoryInType item)
     {
         var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i nháº­p kho.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên loại nhập kho không được để trống.");
+            return (false, "TÃªn loáº¡i nháº­p kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
@@ -6920,48 +7084,48 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin loại nhập kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin loáº¡i nháº­p kho '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryInTypeStatusAsync(int id)
     {
         var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i nháº­p kho.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại nhập kho '{existing.Code}'." : $"Đã chuyển loại nhập kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng loáº¡i nháº­p kho '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn loáº¡i nháº­p kho '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryInTypeStatisticAsync(int id)
     {
         var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i nháº­p kho.");
 
         existing.FlagStatistic = !existing.FlagStatistic;
         await db.SaveChangesAsync();
-        return (true, existing.FlagStatistic ? $"Đã bật cờ tính vào thống kê phân tích mua hàng/sản lượng cho loại '{existing.Code}'." : $"Đã tắt cờ tính vào thống kê mua hàng/sản lượng cho loại '{existing.Code}'.");
+        return (true, existing.FlagStatistic ? $"ÄÃ£ báº­t cá» tÃ­nh vÃ o thá»‘ng kÃª phÃ¢n tÃ­ch mua hÃ ng/sáº£n lÆ°á»£ng cho loáº¡i '{existing.Code}'." : $"ÄÃ£ táº¯t cá» tÃ­nh vÃ o thá»‘ng kÃª mua hÃ ng/sáº£n lÆ°á»£ng cho loáº¡i '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> DeleteInventoryInTypeAsync(int id)
     {
         var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i nháº­p kho.");
 
         bool isUsed = await db.Docs.AnyAsync(d => d.Type == DocType.In && ((d.Note != null && d.Note.Contains(existing.Code)) || (d.RefNo != null && d.RefNo.Contains(existing.Code))));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Loại nhập kho '{existing.Code}' đã phát sinh giao dịch nhập kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Loáº¡i nháº­p kho '{existing.Code}' Ä‘Ã£ phÃ¡t sinh giao dá»‹ch nháº­p kho trong há»‡ thá»‘ng nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.InventoryInTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại nhập kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i nháº­p kho '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Loại hình / Lý do Xuất kho tổng hợp kèm 4 thẻ KPI (port từ Mst_InvOutType Skycic: InvOutType, InvOutTypeName, FlagActive, FlagStatistic, Remark).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Loáº¡i hÃ¬nh / LÃ½ do Xuáº¥t kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_InvOutType Skycic: InvOutType, InvOutTypeName, FlagActive, FlagStatistic, Remark).</summary>
     public async Task<InventoryOutTypeReport> InventoryOutTypesReportAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null)
     {
         var query = db.InventoryOutTypes.AsQueryable();
@@ -6986,14 +7150,14 @@ public class WmsService(AppDbContext db) : IWmsService
                 if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
                 if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
 
-                if (codeUpper == "OUT_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
-                if (codeUpper == "OUT_RETURN_SUP" && (d.Note?.Contains("trả ncc") == true || d.Note?.Contains("trả nhà cung cấp") == true || d.Note?.Contains("trả lại") == true || !string.IsNullOrEmpty(d.SupplierCode))) return true;
-                if (codeUpper == "OUT_PROD" && (d.Note?.Contains("sản xuất") == true || d.Note?.Contains("cấp phát") == true || d.Note?.Contains("nvl") == true)) return true;
-                if (codeUpper == "OUT_DISPOSAL" && (d.Note?.Contains("hủy") == true || d.Note?.Contains("thanh lý") == true || d.Note?.Contains("hỏng") == true)) return true;
-                if (codeUpper == "OUT_SAMPLE" && (d.Note?.Contains("hàng mẫu") == true || d.Note?.Contains("triển lãm") == true || d.Note?.Contains("khuyến mại") == true)) return true;
-                if (codeUpper == "OUT_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+                if (codeUpper == "OUT_AUDIT" && (d.Note?.Contains("kiá»ƒm kÃª") == true || d.Note?.Contains("cÃ¢n báº±ng") == true)) return true;
+                if (codeUpper == "OUT_RETURN_SUP" && (d.Note?.Contains("tráº£ ncc") == true || d.Note?.Contains("tráº£ nhÃ  cung cáº¥p") == true || d.Note?.Contains("tráº£ láº¡i") == true || !string.IsNullOrEmpty(d.SupplierCode))) return true;
+                if (codeUpper == "OUT_PROD" && (d.Note?.Contains("sáº£n xuáº¥t") == true || d.Note?.Contains("cáº¥p phÃ¡t") == true || d.Note?.Contains("nvl") == true)) return true;
+                if (codeUpper == "OUT_DISPOSAL" && (d.Note?.Contains("há»§y") == true || d.Note?.Contains("thanh lÃ½") == true || d.Note?.Contains("há»ng") == true)) return true;
+                if (codeUpper == "OUT_SAMPLE" && (d.Note?.Contains("hÃ ng máº«u") == true || d.Note?.Contains("triá»ƒn lÃ£m") == true || d.Note?.Contains("khuyáº¿n máº¡i") == true)) return true;
+                if (codeUpper == "OUT_TRANSFER" && d.Note?.Contains("chuyá»ƒn kho") == true) return true;
                 if (codeUpper == "OUT_SALE" && (!string.IsNullOrEmpty(d.CustomerCode) || !string.IsNullOrEmpty(d.CustomerName) ||
-                    (d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("trả ncc") != true && d.Note?.Contains("sản xuất") != true && d.Note?.Contains("hủy") != true && d.Note?.Contains("hàng mẫu") != true && d.Note?.Contains("chuyển kho") != true))) return true;
+                    (d.Note?.Contains("kiá»ƒm kÃª") != true && d.Note?.Contains("tráº£ ncc") != true && d.Note?.Contains("sáº£n xuáº¥t") != true && d.Note?.Contains("há»§y") != true && d.Note?.Contains("hÃ ng máº«u") != true && d.Note?.Contains("chuyá»ƒn kho") != true))) return true;
 
                 return false;
             }).ToList();
@@ -7049,14 +7213,14 @@ public class WmsService(AppDbContext db) : IWmsService
             if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
             if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
 
-            if (codeUpper == "OUT_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
-            if (codeUpper == "OUT_RETURN_SUP" && (d.Note?.Contains("trả ncc") == true || d.Note?.Contains("trả nhà cung cấp") == true || d.Note?.Contains("trả lại") == true || !string.IsNullOrEmpty(d.SupplierCode))) return true;
-            if (codeUpper == "OUT_PROD" && (d.Note?.Contains("sản xuất") == true || d.Note?.Contains("cấp phát") == true || d.Note?.Contains("nvl") == true)) return true;
-            if (codeUpper == "OUT_DISPOSAL" && (d.Note?.Contains("hủy") == true || d.Note?.Contains("thanh lý") == true || d.Note?.Contains("hỏng") == true)) return true;
-            if (codeUpper == "OUT_SAMPLE" && (d.Note?.Contains("hàng mẫu") == true || d.Note?.Contains("triển lãm") == true || d.Note?.Contains("khuyến mại") == true)) return true;
-            if (codeUpper == "OUT_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+            if (codeUpper == "OUT_AUDIT" && (d.Note?.Contains("kiá»ƒm kÃª") == true || d.Note?.Contains("cÃ¢n báº±ng") == true)) return true;
+            if (codeUpper == "OUT_RETURN_SUP" && (d.Note?.Contains("tráº£ ncc") == true || d.Note?.Contains("tráº£ nhÃ  cung cáº¥p") == true || d.Note?.Contains("tráº£ láº¡i") == true || !string.IsNullOrEmpty(d.SupplierCode))) return true;
+            if (codeUpper == "OUT_PROD" && (d.Note?.Contains("sáº£n xuáº¥t") == true || d.Note?.Contains("cáº¥p phÃ¡t") == true || d.Note?.Contains("nvl") == true)) return true;
+            if (codeUpper == "OUT_DISPOSAL" && (d.Note?.Contains("há»§y") == true || d.Note?.Contains("thanh lÃ½") == true || d.Note?.Contains("há»ng") == true)) return true;
+            if (codeUpper == "OUT_SAMPLE" && (d.Note?.Contains("hÃ ng máº«u") == true || d.Note?.Contains("triá»ƒn lÃ£m") == true || d.Note?.Contains("khuyáº¿n máº¡i") == true)) return true;
+            if (codeUpper == "OUT_TRANSFER" && d.Note?.Contains("chuyá»ƒn kho") == true) return true;
             if (codeUpper == "OUT_SALE" && (!string.IsNullOrEmpty(d.CustomerCode) || !string.IsNullOrEmpty(d.CustomerName) ||
-                (d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("trả ncc") != true && d.Note?.Contains("sản xuất") != true && d.Note?.Contains("hủy") != true && d.Note?.Contains("hàng mẫu") != true && d.Note?.Contains("chuyển kho") != true))) return true;
+                (d.Note?.Contains("kiá»ƒm kÃª") != true && d.Note?.Contains("tráº£ ncc") != true && d.Note?.Contains("sáº£n xuáº¥t") != true && d.Note?.Contains("há»§y") != true && d.Note?.Contains("hÃ ng máº«u") != true && d.Note?.Contains("chuyá»ƒn kho") != true))) return true;
 
             return false;
         }).ToList();
@@ -7070,7 +7234,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateInventoryOutTypeAsync(InventoryOutType item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên loại xuất kho không được để trống.");
+            throw new ArgumentException("TÃªn loáº¡i xuáº¥t kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -7083,7 +7247,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.InventoryOutTypes.AnyAsync(t => t.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã loại xuất kho '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i xuáº¥t kho '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.InventoryOutTypes.Add(item);
@@ -7094,10 +7258,10 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateInventoryOutTypeAsync(int id, InventoryOutType item)
     {
         var existing = await db.InventoryOutTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại xuất kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i xuáº¥t kho.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên loại xuất kho không được để trống.");
+            return (false, "TÃªn loáº¡i xuáº¥t kho khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.Name = item.Name.Trim();
         existing.Remark = item.Remark?.Trim();
@@ -7105,48 +7269,48 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin loại xuất kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin loáº¡i xuáº¥t kho '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryOutTypeStatusAsync(int id)
     {
         var existing = await db.InventoryOutTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại xuất kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i xuáº¥t kho.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại xuất kho '{existing.Code}'." : $"Đã chuyển loại xuất kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng loáº¡i xuáº¥t kho '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn loáº¡i xuáº¥t kho '{existing.Code}' sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleInventoryOutTypeStatisticAsync(int id)
     {
         var existing = await db.InventoryOutTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại xuất kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i xuáº¥t kho.");
 
         existing.FlagStatistic = !existing.FlagStatistic;
         await db.SaveChangesAsync();
-        return (true, existing.FlagStatistic ? $"Đã bật cờ tính vào thống kê sản lượng/doanh số xuất cho loại '{existing.Code}'." : $"Đã tắt cờ tính vào thống kê xuất cho loại '{existing.Code}'.");
+        return (true, existing.FlagStatistic ? $"ÄÃ£ báº­t cá» tÃ­nh vÃ o thá»‘ng kÃª sáº£n lÆ°á»£ng/doanh sá»‘ xuáº¥t cho loáº¡i '{existing.Code}'." : $"ÄÃ£ táº¯t cá» tÃ­nh vÃ o thá»‘ng kÃª xuáº¥t cho loáº¡i '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> DeleteInventoryOutTypeAsync(int id)
     {
         var existing = await db.InventoryOutTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại xuất kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i xuáº¥t kho.");
 
         bool isUsed = await db.Docs.AnyAsync(d => d.Type == DocType.Out && ((d.Note != null && d.Note.Contains(existing.Code)) || (d.RefNo != null && d.RefNo.Contains(existing.Code))));
         if (isUsed)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Loại xuất kho '{existing.Code}' đã phát sinh giao dịch xuất kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Loáº¡i xuáº¥t kho '{existing.Code}' Ä‘Ã£ phÃ¡t sinh giao dá»‹ch xuáº¥t kho trong há»‡ thá»‘ng nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.InventoryOutTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại xuất kho '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i xuáº¥t kho '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh sách phân quyền người dùng quản lý kho tổng hợp kèm 4 thẻ KPI (port từ Mst_UserMapInventory Skycic: OrgID, UserCode, InvCode, Remark, LogLUBy, LogLUDTimeUTC).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh sÃ¡ch phÃ¢n quyá»n ngÆ°á»i dÃ¹ng quáº£n lÃ½ kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_UserMapInventory Skycic: OrgID, UserCode, InvCode, Remark, LogLUBy, LogLUDTimeUTC).</summary>
     public async Task<UserMapInventoryReport> UserMapInventoriesReportAsync(int? warehouseId = null, string? userRole = null, bool? activeOnly = null, string? q = null)
     {
         var query = db.UserMapInventories.Include(m => m.Warehouse).AsQueryable();
@@ -7235,14 +7399,14 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateUserMapInventoryAsync(UserMapInventory item)
     {
         var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == item.WarehouseId);
-        if (wh == null) throw new InvalidOperationException($"Không tìm thấy kho có ID {item.WarehouseId}.");
+        if (wh == null) throw new InvalidOperationException($"KhÃ´ng tÃ¬m tháº¥y kho cÃ³ ID {item.WarehouseId}.");
 
         item.UserCode = item.UserCode.Trim().ToLowerInvariant();
         item.UserName = item.UserName.Trim();
-        item.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thủ kho chính" : item.UserRole.Trim();
+        item.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thá»§ kho chÃ­nh" : item.UserRole.Trim();
 
         bool exists = await db.UserMapInventories.AnyAsync(m => m.WarehouseId == item.WarehouseId && m.UserCode == item.UserCode);
-        if (exists) throw new InvalidOperationException($"Người dùng '{item.UserCode}' đã được phân quyền tại kho '{wh.Name}'.");
+        if (exists) throw new InvalidOperationException($"NgÆ°á»i dÃ¹ng '{item.UserCode}' Ä‘Ã£ Ä‘Æ°á»£c phÃ¢n quyá»n táº¡i kho '{wh.Name}'.");
 
         db.UserMapInventories.Add(item);
         await db.SaveChangesAsync();
@@ -7252,49 +7416,49 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateUserMapInventoryAsync(int id, UserMapInventory item)
     {
         var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£n ghi phÃ¢n quyá»n kho.");
 
-        if (string.IsNullOrWhiteSpace(item.UserName)) return (false, "Họ tên người dùng không được để trống.");
+        if (string.IsNullOrWhiteSpace(item.UserName)) return (false, "Há» tÃªn ngÆ°á»i dÃ¹ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         existing.UserName = item.UserName.Trim();
-        existing.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thủ kho chính" : item.UserRole.Trim();
+        existing.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thá»§ kho chÃ­nh" : item.UserRole.Trim();
         existing.Email = item.Email?.Trim();
         existing.Phone = item.Phone?.Trim();
         existing.Remark = item.Remark?.Trim();
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật phân quyền người dùng '{existing.UserCode}' tại kho '{existing.Warehouse.Name}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t phÃ¢n quyá»n ngÆ°á»i dÃ¹ng '{existing.UserCode}' táº¡i kho '{existing.Warehouse.Name}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleUserMapInventoryStatusAsync(int id)
     {
         var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£n ghi phÃ¢n quyá»n kho.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
         return (true, existing.IsActive
-            ? $"Đã kích hoạt lại phân quyền quản lý kho '{existing.Warehouse.Name}' cho nhân viên '{existing.UserName}'."
-            : $"Đã tạm dừng phân quyền quản lý kho '{existing.Warehouse.Name}' của nhân viên '{existing.UserName}'.");
+            ? $"ÄÃ£ kÃ­ch hoáº¡t láº¡i phÃ¢n quyá»n quáº£n lÃ½ kho '{existing.Warehouse.Name}' cho nhÃ¢n viÃªn '{existing.UserName}'."
+            : $"ÄÃ£ táº¡m dá»«ng phÃ¢n quyá»n quáº£n lÃ½ kho '{existing.Warehouse.Name}' cá»§a nhÃ¢n viÃªn '{existing.UserName}'.");
     }
 
     public async Task<(bool ok, string msg)> DeleteUserMapInventoryAsync(int id)
     {
         var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£n ghi phÃ¢n quyá»n kho.");
 
         db.UserMapInventories.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã hủy gán phân quyền thủ kho '{existing.UserName}' ({existing.UserCode}) khỏi kho '{existing.Warehouse.Name}'.");
+        return (true, $"ÄÃ£ há»§y gÃ¡n phÃ¢n quyá»n thá»§ kho '{existing.UserName}' ({existing.UserCode}) khá»i kho '{existing.Warehouse.Name}'.");
     }
 
     public async Task<(bool ok, string msg, int count)> BatchMapUsersToWarehouseAsync(int warehouseId, List<BatchMapUserItemDto> users, string assignedBy)
     {
         var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
-        if (wh == null) return (false, $"Không tìm thấy kho có ID {warehouseId}.", 0);
+        if (wh == null) return (false, $"KhÃ´ng tÃ¬m tháº¥y kho cÃ³ ID {warehouseId}.", 0);
 
-        if (users == null || users.Count == 0) return (false, "Không có nhân viên nào được chọn.", 0);
+        if (users == null || users.Count == 0) return (false, "KhÃ´ng cÃ³ nhÃ¢n viÃªn nÃ o Ä‘Æ°á»£c chá»n.", 0);
 
         int addedCount = 0;
         foreach (var u in users)
@@ -7320,10 +7484,10 @@ public class WmsService(AppDbContext db) : IWmsService
                     WarehouseId = warehouseId,
                     UserCode = uCode,
                     UserName = string.IsNullOrWhiteSpace(u.UserName) ? uCode : u.UserName.Trim(),
-                    UserRole = string.IsNullOrWhiteSpace(u.UserRole) ? "Thủ kho chính" : u.UserRole.Trim(),
+                    UserRole = string.IsNullOrWhiteSpace(u.UserRole) ? "Thá»§ kho chÃ­nh" : u.UserRole.Trim(),
                     Email = u.Email?.Trim(),
                     Phone = u.Phone?.Trim(),
-                    Remark = u.Remark?.Trim() ?? "Phân công quản lý kho hàng loạt",
+                    Remark = u.Remark?.Trim() ?? "PhÃ¢n cÃ´ng quáº£n lÃ½ kho hÃ ng loáº¡t",
                     IsActive = true,
                     AssignedBy = assignedBy,
                     AssignedAt = DateTime.Now
@@ -7333,10 +7497,10 @@ public class WmsService(AppDbContext db) : IWmsService
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã phân công thành công {addedCount} nhân sự quản lý cho kho '{wh.Name}'.", addedCount);
+        return (true, $"ÄÃ£ phÃ¢n cÃ´ng thÃ nh cÃ´ng {addedCount} nhÃ¢n sá»± quáº£n lÃ½ cho kho '{wh.Name}'.", addedCount);
     }
 
-    /// <summary>Báo cáo danh mục Nhóm hàng hóa / Phân nhóm sản phẩm kho kèm 4 thẻ KPI (port từ Mst_ProductGroup & Mst_ProductGroupSub Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c NhÃ³m hÃ ng hÃ³a / PhÃ¢n nhÃ³m sáº£n pháº©m kho kÃ¨m 4 tháº» KPI (port tá»« Mst_ProductGroup & Mst_ProductGroupSub Skycic).</summary>
     public async Task<ProductGroupReport> ProductGroupsReportAsync(string? q = null, string? parentCode = null, string? brandCode = null, bool? activeOnly = null)
     {
         var query = db.ProductGroups.AsQueryable();
@@ -7480,7 +7644,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateProductGroupAsync(ProductGroup item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên nhóm hàng không được để trống.");
+            throw new ArgumentException("TÃªn nhÃ³m hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -7495,7 +7659,7 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
             if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Nhóm hàng cha không thể là chính nhóm hàng này.");
+                throw new InvalidOperationException("NhÃ³m hÃ ng cha khÃ´ng thá»ƒ lÃ  chÃ­nh nhÃ³m hÃ ng nÃ y.");
         }
 
         if (!string.IsNullOrWhiteSpace(item.BrandCode))
@@ -7505,7 +7669,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.ProductGroups.AnyAsync(g => g.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã nhóm hàng '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ nhÃ³m hÃ ng '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.ProductGroups.Add(item);
@@ -7516,16 +7680,16 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateProductGroupAsync(int id, ProductGroup item)
     {
         var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m hÃ ng.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên nhóm hàng không được để trống.");
+            return (false, "TÃªn nhÃ³m hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (!string.IsNullOrWhiteSpace(item.ParentCode))
         {
             var pCode = item.ParentCode.Trim().ToUpperInvariant();
             if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
-                return (false, "Nhóm hàng cha không thể là chính nhóm hàng này.");
+                return (false, "NhÃ³m hÃ ng cha khÃ´ng thá»ƒ lÃ  chÃ­nh nhÃ³m hÃ ng nÃ y.");
             existing.ParentCode = pCode;
         }
         else
@@ -7539,23 +7703,23 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin nhóm hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin nhÃ³m hÃ ng '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleProductGroupStatusAsync(int id)
     {
         var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m hÃ ng.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm hàng '{existing.Code}'." : $"Đã chuyển nhóm hàng '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng nhÃ³m hÃ ng '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn nhÃ³m hÃ ng '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteProductGroupAsync(int id)
     {
         var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m hÃ ng.");
 
         bool hasProducts = await db.Products.AnyAsync(p => p.ProductGrpCode != null && p.ProductGrpCode.ToUpper() == existing.Code.ToUpper());
         bool hasSubGroups = await db.ProductGroups.AnyAsync(g => g.ParentCode != null && g.ParentCode.ToUpper() == existing.Code.ToUpper());
@@ -7564,16 +7728,16 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            string reason = hasProducts && hasSubGroups ? "đã có mặt hàng trực thuộc và nhóm hàng con" : hasProducts ? "đã có mặt hàng trực thuộc" : "đã có nhóm hàng con trực thuộc";
-            return (true, $"Nhóm hàng '{existing.Code}' {reason} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            string reason = hasProducts && hasSubGroups ? "Ä‘Ã£ cÃ³ máº·t hÃ ng trá»±c thuá»™c vÃ  nhÃ³m hÃ ng con" : hasProducts ? "Ä‘Ã£ cÃ³ máº·t hÃ ng trá»±c thuá»™c" : "Ä‘Ã£ cÃ³ nhÃ³m hÃ ng con trá»±c thuá»™c";
+            return (true, $"NhÃ³m hÃ ng '{existing.Code}' {reason} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.ProductGroups.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa nhóm hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a nhÃ³m hÃ ng '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Vùng & Khu vực thị trường kèm 4 thẻ KPI (port từ Mst_Area Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c VÃ¹ng & Khu vá»±c thá»‹ trÆ°á»ng kÃ¨m 4 tháº» KPI (port tá»« Mst_Area Skycic).</summary>
     public async Task<AreaReport> AreasReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
     {
         var query = db.Areas.AsQueryable();
@@ -7726,7 +7890,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateAreaAsync(Area item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên vùng / khu vực không được để trống.");
+            throw new ArgumentException("TÃªn vÃ¹ng / khu vá»±c khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -7741,12 +7905,12 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
             if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Vùng cha không thể là chính khu vực này.");
+                throw new InvalidOperationException("VÃ¹ng cha khÃ´ng thá»ƒ lÃ  chÃ­nh khu vá»±c nÃ y.");
         }
 
         bool exists = await db.Areas.AnyAsync(a => a.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã khu vực '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ khu vá»±c '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.Areas.Add(item);
@@ -7757,16 +7921,16 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateAreaAsync(int id, Area item)
     {
         var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
-        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vÃ¹ng / khu vá»±c.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên vùng / khu vực không được để trống.");
+            return (false, "TÃªn vÃ¹ng / khu vá»±c khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (!string.IsNullOrWhiteSpace(item.ParentCode))
         {
             var pCode = item.ParentCode.Trim().ToUpperInvariant();
             if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
-                return (false, "Vùng cha không thể là chính khu vực này.");
+                return (false, "VÃ¹ng cha khÃ´ng thá»ƒ lÃ  chÃ­nh khu vá»±c nÃ y.");
             existing.ParentCode = pCode;
         }
         else
@@ -7779,23 +7943,23 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin khu vực '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin khu vá»±c '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleAreaStatusAsync(int id)
     {
         var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
-        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vÃ¹ng / khu vá»±c.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng khu vực '{existing.Code}'." : $"Đã chuyển khu vực '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng khu vá»±c '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn khu vá»±c '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteAreaAsync(int id)
     {
         var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
-        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y vÃ¹ng / khu vá»±c.");
 
         bool hasWarehouses = await db.Warehouses.AnyAsync(w => w.AreaCode != null && w.AreaCode.ToUpper() == existing.Code.ToUpper());
         bool hasCustomers = await db.Customers.AnyAsync(c => c.AreaCode != null && c.AreaCode.ToUpper() == existing.Code.ToUpper());
@@ -7806,18 +7970,18 @@ public class WmsService(AppDbContext db) : IWmsService
             existing.IsActive = false;
             await db.SaveChangesAsync();
             var reasons = new List<string>();
-            if (hasWarehouses) reasons.Add("kho hàng trực thuộc");
-            if (hasCustomers) reasons.Add("khách hàng/đại lý");
-            if (hasSubAreas) reasons.Add("khu vực nhánh trực thuộc");
-            return (true, $"Khu vực '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            if (hasWarehouses) reasons.Add("kho hÃ ng trá»±c thuá»™c");
+            if (hasCustomers) reasons.Add("khÃ¡ch hÃ ng/Ä‘áº¡i lÃ½");
+            if (hasSubAreas) reasons.Add("khu vá»±c nhÃ¡nh trá»±c thuá»™c");
+            return (true, $"Khu vá»±c '{existing.Code}' Ä‘ang cÃ³ {string.Join(", ", reasons)} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.Areas.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa khu vực '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a khu vá»±c '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Nhóm khách hàng & Đại lý phân phối kèm 4 thẻ KPI (port từ Mst_CustomerGroup Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c NhÃ³m khÃ¡ch hÃ ng & Äáº¡i lÃ½ phÃ¢n phá»‘i kÃ¨m 4 tháº» KPI (port tá»« Mst_CustomerGroup Skycic).</summary>
     public async Task<CustomerGroupReport> CustomerGroupsReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
     {
         var query = db.CustomerGroups.AsQueryable();
@@ -7856,17 +8020,17 @@ public class WmsService(AppDbContext db) : IWmsService
             int level = string.IsNullOrWhiteSpace(g.ParentCode) ? 1 : 2;
             string? parentName = (parentUpper != null && groupDict.TryGetValue(parentUpper, out var pName)) ? pName : null;
 
-            // Lấy mã tất cả phân nhóm con (nếu có)
+            // Láº¥y mÃ£ táº¥t cáº£ phÃ¢n nhÃ³m con (náº¿u cÃ³)
             var childGroupCodes = allGroups.Where(sub => sub.ParentCode != null && sub.ParentCode.Equals(g.Code, StringComparison.OrdinalIgnoreCase)).Select(sub => sub.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Các khách hàng thuộc nhóm này hoặc các phân nhóm con của nó
+            // CÃ¡c khÃ¡ch hÃ ng thuá»™c nhÃ³m nÃ y hoáº·c cÃ¡c phÃ¢n nhÃ³m con cá»§a nÃ³
             var relevantCusts = allCustomers.Where(c => !string.IsNullOrEmpty(c.CustomerGrpCode) && (c.CustomerGrpCode.Equals(g.Code, StringComparison.OrdinalIgnoreCase) || childGroupCodes.Contains(c.CustomerGrpCode))).ToList();
             int custCount = relevantCusts.Count;
 
             var custCodes = relevantCusts.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var custNames = relevantCusts.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Tổng lượng xuất kho phân phối giao cho các khách hàng thuộc nhóm
+            // Tá»•ng lÆ°á»£ng xuáº¥t kho phÃ¢n phá»‘i giao cho cÃ¡c khÃ¡ch hÃ ng thuá»™c nhÃ³m
             int totalDispatched = allOutDocs
                 .Where(d => (!string.IsNullOrEmpty(d.CustomerCode) && custCodes.Contains(d.CustomerCode)) ||
                             (!string.IsNullOrEmpty(d.CustomerName) && custNames.Contains(d.CustomerName)))
@@ -7978,7 +8142,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateCustomerGroupAsync(CustomerGroup item)
     {
         if (string.IsNullOrWhiteSpace(item.Name))
-            throw new ArgumentException("Tên nhóm khách hàng không được để trống.");
+            throw new ArgumentException("TÃªn nhÃ³m khÃ¡ch hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (string.IsNullOrWhiteSpace(item.Code))
         {
@@ -7993,12 +8157,12 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
             if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Nhóm cha không thể là chính nhóm này.");
+                throw new InvalidOperationException("NhÃ³m cha khÃ´ng thá»ƒ lÃ  chÃ­nh nhÃ³m nÃ y.");
         }
 
         bool exists = await db.CustomerGroups.AnyAsync(g => g.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã nhóm khách hàng '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ nhÃ³m khÃ¡ch hÃ ng '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.CustomerGroups.Add(item);
@@ -8009,16 +8173,16 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateCustomerGroupAsync(int id, CustomerGroup item)
     {
         var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m khÃ¡ch hÃ ng.");
 
         if (string.IsNullOrWhiteSpace(item.Name))
-            return (false, "Tên nhóm khách hàng không được để trống.");
+            return (false, "TÃªn nhÃ³m khÃ¡ch hÃ ng khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
 
         if (!string.IsNullOrWhiteSpace(item.ParentCode))
         {
             var pCode = item.ParentCode.Trim().ToUpperInvariant();
             if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
-                return (false, "Nhóm cha không thể là chính nhóm này.");
+                return (false, "NhÃ³m cha khÃ´ng thá»ƒ lÃ  chÃ­nh nhÃ³m nÃ y.");
             existing.ParentCode = pCode;
         }
         else
@@ -8031,23 +8195,23 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin nhóm khách hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin nhÃ³m khÃ¡ch hÃ ng '{existing.Code}'.");
     }
 
     public async Task<(bool ok, string msg)> ToggleCustomerGroupStatusAsync(int id)
     {
         var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m khÃ¡ch hÃ ng.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm khách hàng '{existing.Code}'." : $"Đã chuyển nhóm '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng nhÃ³m khÃ¡ch hÃ ng '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn nhÃ³m '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteCustomerGroupAsync(int id)
     {
         var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nhÃ³m khÃ¡ch hÃ ng.");
 
         bool hasCustomers = await db.Customers.AnyAsync(c => c.CustomerGrpCode != null && c.CustomerGrpCode.ToUpper() == existing.Code.ToUpper());
         bool hasSubGroups = await db.CustomerGroups.AnyAsync(g => g.ParentCode != null && g.ParentCode.ToUpper() == existing.Code.ToUpper());
@@ -8057,17 +8221,17 @@ public class WmsService(AppDbContext db) : IWmsService
             existing.IsActive = false;
             await db.SaveChangesAsync();
             var reasons = new List<string>();
-            if (hasCustomers) reasons.Add("khách hàng/đại lý trực thuộc");
-            if (hasSubGroups) reasons.Add("phân nhóm nhánh con");
-            return (true, $"Nhóm khách hàng '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            if (hasCustomers) reasons.Add("khÃ¡ch hÃ ng/Ä‘áº¡i lÃ½ trá»±c thuá»™c");
+            if (hasSubGroups) reasons.Add("phÃ¢n nhÃ³m nhÃ¡nh con");
+            return (true, $"NhÃ³m khÃ¡ch hÃ ng '{existing.Code}' Ä‘ang cÃ³ {string.Join(", ", reasons)} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.CustomerGroups.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa nhóm khách hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a nhÃ³m khÃ¡ch hÃ ng '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Bộ phận / Phòng ban kèm 4 thẻ KPI (port từ Mst_Department & Mst_DepartmentExt Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Bá»™ pháº­n / PhÃ²ng ban kÃ¨m 4 tháº» KPI (port tá»« Mst_Department & Mst_DepartmentExt Skycic).</summary>
     public async Task<DepartmentReport> DepartmentsReportAsync(string? q = null, string? parentCode = null, int? level = null, bool? activeOnly = null)
     {
         var query = db.Departments.AsQueryable();
@@ -8132,10 +8296,10 @@ public class WmsService(AppDbContext db) : IWmsService
 
                 var levelName = d.Level switch
                 {
-                    1 => "Khối / Ban điều hành",
-                    2 => "Phòng ban chức năng",
-                    3 => "Phân xưởng / Tổ / Đội",
-                    _ => $"Cấp {d.Level}"
+                    1 => "Khá»‘i / Ban Ä‘iá»u hÃ nh",
+                    2 => "PhÃ²ng ban chá»©c nÄƒng",
+                    3 => "PhÃ¢n xÆ°á»Ÿng / Tá»• / Äá»™i",
+                    _ => $"Cáº¥p {d.Level}"
                 };
 
                 return new DepartmentRow(
@@ -8253,7 +8417,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.Departments.AnyAsync(d => d.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã bộ phận '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ bá»™ pháº­n '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.Departments.Add(item);
@@ -8264,13 +8428,13 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateDepartmentAsync(int id, Department item)
     {
         var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y bá»™ pháº­n / phÃ²ng ban.");
 
         existing.Name = item.Name.Trim();
         var newParent = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
         if (newParent != null && newParent.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
         {
-            return (false, "Không thể chọn chính bộ phận này làm bộ phận cấp trên.");
+            return (false, "KhÃ´ng thá»ƒ chá»n chÃ­nh bá»™ pháº­n nÃ y lÃ m bá»™ pháº­n cáº¥p trÃªn.");
         }
         existing.ParentCode = newParent;
         existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
@@ -8280,23 +8444,23 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin bộ phận '{existing.Code}' thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin bá»™ pháº­n '{existing.Code}' thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleDepartmentStatusAsync(int id)
     {
         var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y bá»™ pháº­n / phÃ²ng ban.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng bộ phận '{existing.Code}'." : $"Đã chuyển bộ phận '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t Ã¡p dá»¥ng bá»™ pháº­n '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn bá»™ pháº­n '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteDepartmentAsync(int id)
     {
         var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y bá»™ pháº­n / phÃ²ng ban.");
 
         bool hasSubDepts = await db.Departments.AnyAsync(d => d.ParentCode != null && d.ParentCode.ToUpper() == existing.Code.ToUpper());
         bool hasAssignedUsers = await db.UserMapInventories.AnyAsync(u => u.DepartmentCode != null && u.DepartmentCode.ToUpper() == existing.Code.ToUpper());
@@ -8307,18 +8471,18 @@ public class WmsService(AppDbContext db) : IWmsService
             existing.IsActive = false;
             await db.SaveChangesAsync();
             var reasons = new List<string>();
-            if (hasSubDepts) reasons.Add("bộ phận cấp dưới trực thuộc");
-            if (hasAssignedUsers) reasons.Add("nhân sự quản lý kho");
-            if (hasDocs) reasons.Add("phiếu xuất cấp phát vật tư");
-            return (true, $"Bộ phận '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            if (hasSubDepts) reasons.Add("bá»™ pháº­n cáº¥p dÆ°á»›i trá»±c thuá»™c");
+            if (hasAssignedUsers) reasons.Add("nhÃ¢n sá»± quáº£n lÃ½ kho");
+            if (hasDocs) reasons.Add("phiáº¿u xuáº¥t cáº¥p phÃ¡t váº­t tÆ°");
+            return (true, $"Bá»™ pháº­n '{existing.Code}' Ä‘ang cÃ³ {string.Join(", ", reasons)} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.Departments.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa bộ phận '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a bá»™ pháº­n '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo danh mục Nguồn khách hàng & Kênh tiếp nhận đối tác kho kèm 4 thẻ KPI (port từ Mst_CustomerSource Skycic).</summary>
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c Nguá»“n khÃ¡ch hÃ ng & KÃªnh tiáº¿p nháº­n Ä‘á»‘i tÃ¡c kho kÃ¨m 4 tháº» KPI (port tá»« Mst_CustomerSource Skycic).</summary>
     public async Task<CustomerSourceReport> CustomerSourcesReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
     {
         var query = db.CustomerSources.AsQueryable();
@@ -8402,7 +8566,7 @@ public class WmsService(AppDbContext db) : IWmsService
         int totalCustomersAssigned = customers.Count(c => !string.IsNullOrWhiteSpace(c.CustomerSourceCode));
 
         var topByVol = rows.OrderByDescending(r => r.TotalShippedQty).FirstOrDefault();
-        string topSourceByVolume = topByVol != null && topByVol.TotalShippedQty > 0 ? $"{topByVol.Name} ({topByVol.Code})" : "Chưa có phát sinh xuất";
+        string topSourceByVolume = topByVol != null && topByVol.TotalShippedQty > 0 ? $"{topByVol.Name} ({topByVol.Code})" : "ChÆ°a cÃ³ phÃ¡t sinh xuáº¥t";
         int topVolumeQty = topByVol?.TotalShippedQty ?? 0;
         decimal totalAllShippedAmount = rows.Sum(r => r.TotalShippedAmount);
 
@@ -8489,7 +8653,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.CustomerSources.AnyAsync(s => s.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã nguồn khách hàng '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ nguá»“n khÃ¡ch hÃ ng '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.CustomerSources.Add(item);
@@ -8500,13 +8664,13 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateCustomerSourceAsync(int id, CustomerSource item)
     {
         var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nguá»“n khÃ¡ch hÃ ng.");
 
         existing.Name = item.Name.Trim();
         var newParent = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
         if (newParent != null && newParent.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
         {
-            return (false, "Không thể chọn chính nguồn này làm nguồn cấp trên.");
+            return (false, "KhÃ´ng thá»ƒ chá»n chÃ­nh nguá»“n nÃ y lÃ m nguá»“n cáº¥p trÃªn.");
         }
         existing.ParentCode = newParent;
         existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
@@ -8514,23 +8678,23 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thông tin nguồn khách hàng '{existing.Code}' thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thÃ´ng tin nguá»“n khÃ¡ch hÃ ng '{existing.Code}' thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleCustomerSourceStatusAsync(int id)
     {
         var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nguá»“n khÃ¡ch hÃ ng.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt nguồn khách hàng '{existing.Code}'." : $"Đã chuyển nguồn khách hàng '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t nguá»“n khÃ¡ch hÃ ng '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn nguá»“n khÃ¡ch hÃ ng '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteCustomerSourceAsync(int id)
     {
         var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y nguá»“n khÃ¡ch hÃ ng.");
 
         bool hasCustomers = await db.Customers.AnyAsync(c => c.CustomerSourceCode != null && c.CustomerSourceCode.ToUpper() == existing.Code.ToUpper());
         bool hasSubSources = await db.CustomerSources.AnyAsync(s => s.ParentCode != null && s.ParentCode.ToUpper() == existing.Code.ToUpper());
@@ -8540,17 +8704,17 @@ public class WmsService(AppDbContext db) : IWmsService
             existing.IsActive = false;
             await db.SaveChangesAsync();
             var reasons = new List<string>();
-            if (hasCustomers) reasons.Add("khách hàng đang liên kết");
-            if (hasSubSources) reasons.Add("kênh nhánh trực thuộc");
-            return (true, $"Nguồn khách hàng '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+            if (hasCustomers) reasons.Add("khÃ¡ch hÃ ng Ä‘ang liÃªn káº¿t");
+            if (hasSubSources) reasons.Add("kÃªnh nhÃ¡nh trá»±c thuá»™c");
+            return (true, $"Nguá»“n khÃ¡ch hÃ ng '{existing.Code}' Ä‘ang cÃ³ {string.Join(", ", reasons)} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.CustomerSources.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa nguồn khách hàng '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a nguá»“n khÃ¡ch hÃ ng '{existing.Code}'.");
     }
 
-    /// <summary>Báo cáo / Danh sách loại hình điều chuyển kho tổng hợp kèm 4 thẻ KPI (port từ Mst_MoveOrdType Skycic: MoveOrdType, MoveOrdTypeName, FlagActive, LogLUDTimeUTC, LogLUBy).</summary>
+    /// <summary>BÃ¡o cÃ¡o / Danh sÃ¡ch loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_MoveOrdType Skycic: MoveOrdType, MoveOrdTypeName, FlagActive, LogLUDTimeUTC, LogLUBy).</summary>
     public async Task<MoveOrdTypeReport> MoveOrdTypesReportAsync(string? q = null, bool? activeOnly = null, bool? urgentOnly = null)
     {
         var query = db.MoveOrdTypes.AsQueryable();
@@ -8662,7 +8826,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         bool exists = await db.MoveOrdTypes.AnyAsync(t => t.Code == item.Code);
         if (exists)
-            throw new InvalidOperationException($"Mã loại điều chuyển '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i Ä‘iá»u chuyá»ƒn '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
 
         item.CreatedAt = DateTime.Now;
         db.MoveOrdTypes.Add(item);
@@ -8673,14 +8837,14 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateMoveOrdTypeAsync(int id, MoveOrdType item)
     {
         var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn.");
 
         existing.Name = item.Name.Trim();
         existing.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
         existing.IsUrgent = item.IsUrgent;
         existing.IsActive = item.IsActive;
 
-        // Cập nhật tên hiển thị ở các lệnh điều chuyển đã lưu
+        // Cáº­p nháº­t tÃªn hiá»ƒn thá»‹ á»Ÿ cÃ¡c lá»‡nh Ä‘iá»u chuyá»ƒn Ä‘Ã£ lÆ°u
         var ordersToUpdate = await db.MoveOrders.Where(m => m.MoveOrdTypeCode == existing.Code).ToListAsync();
         foreach (var order in ordersToUpdate)
         {
@@ -8688,48 +8852,48 @@ public class WmsService(AppDbContext db) : IWmsService
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật loại điều chuyển '{existing.Code}' thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}' thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleMoveOrdTypeStatusAsync(int id)
     {
         var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt loại điều chuyển '{existing.Code}'." : $"Đã chuyển loại điều chuyển '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleMoveOrdTypeUrgentAsync(int id)
     {
         var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn.");
 
         existing.IsUrgent = !existing.IsUrgent;
         await db.SaveChangesAsync();
-        return (true, existing.IsUrgent ? $"Đã đánh dấu loại điều chuyển '{existing.Code}' là Khẩn cấp / Ưu tiên cao." : $"Đã chuyển loại điều chuyển '{existing.Code}' về mức Tiêu chuẩn.");
+        return (true, existing.IsUrgent ? $"ÄÃ£ Ä‘Ã¡nh dáº¥u loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}' lÃ  Kháº©n cáº¥p / Æ¯u tiÃªn cao." : $"ÄÃ£ chuyá»ƒn loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}' vá» má»©c TiÃªu chuáº©n.");
     }
 
     public async Task<(bool ok, string msg)> DeleteMoveOrdTypeAsync(int id)
     {
         var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn.");
 
         bool inUse = await db.MoveOrders.AnyAsync(m => m.MoveOrdTypeCode != null && m.MoveOrdTypeCode.ToUpper() == existing.Code.ToUpper());
         if (inUse)
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Loại điều chuyển '{existing.Code}' đã có lệnh điều chuyển sử dụng nên đã được chuyển sang trạng thái Tạm dừng áp dụng thay vì xóa hẳn.");
+            return (true, $"Loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}' Ä‘Ã£ cÃ³ lá»‡nh Ä‘iá»u chuyá»ƒn sá»­ dá»¥ng nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.MoveOrdTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại điều chuyển '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i Ä‘iá»u chuyá»ƒn '{existing.Code}'.");
     }
 
-    // ==================== QUẢN LÝ ĐẠI LÝ PHÂN PHỐI & MẠNG LƯỚI ĐIỂM BÁN KHO (Mst_Dealer Skycic) ====================
+    // ==================== QUáº¢N LÃ Äáº I LÃ PHÃ‚N PHá»I & Máº NG LÆ¯á»šI ÄIá»‚M BÃN KHO (Mst_Dealer Skycic) ====================
     public async Task<DealerReport> DealersReportAsync(string? q = null, int? level = null, string? province = null, bool? activeOnly = null)
     {
         var query = db.Dealers.Include(d => d.Warehouse).AsQueryable();
@@ -8773,10 +8937,10 @@ public class WmsService(AppDbContext db) : IWmsService
 
             string levelLabel = d.Level switch
             {
-                1 => "Cấp 1 - Tổng đại lý",
-                2 => "Cấp 2 - Đại lý vùng",
-                3 => "Cấp 3 - Showroom / Điểm bán",
-                _ => $"Cấp {d.Level}"
+                1 => "Cáº¥p 1 - Tá»•ng Ä‘áº¡i lÃ½",
+                2 => "Cáº¥p 2 - Äáº¡i lÃ½ vÃ¹ng",
+                3 => "Cáº¥p 3 - Showroom / Äiá»ƒm bÃ¡n",
+                _ => $"Cáº¥p {d.Level}"
             };
 
             string badgeClass = d.Level switch
@@ -8926,7 +9090,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.Dealers.AnyAsync(d => d.Code == item.Code);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã đại lý '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ Ä‘áº¡i lÃ½ '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         item.CreatedAt = DateTime.Now;
@@ -8938,12 +9102,12 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateDealerAsync(int id, Dealer item)
     {
         var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½ phÃ¢n phá»‘i.");
 
         existing.Name = item.Name.Trim();
         existing.ParentCode = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
         existing.Level = item.Level > 0 ? item.Level : 1;
-        existing.DealerType = string.IsNullOrWhiteSpace(item.DealerType) ? "Đại lý phân phối" : item.DealerType.Trim();
+        existing.DealerType = string.IsNullOrWhiteSpace(item.DealerType) ? "Äáº¡i lÃ½ phÃ¢n phá»‘i" : item.DealerType.Trim();
         existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
         existing.ProvinceCode = string.IsNullOrWhiteSpace(item.ProvinceCode) ? null : item.ProvinceCode.Trim();
         existing.Address = string.IsNullOrWhiteSpace(item.Address) ? null : item.Address.Trim();
@@ -8956,28 +9120,28 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.Remark = string.IsNullOrWhiteSpace(item.Remark) ? null : item.Remark.Trim();
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật đại lý '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t Ä‘áº¡i lÃ½ '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id)
     {
         var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½ phÃ¢n phá»‘i.");
 
         existing.IsActive = !existing.IsActive;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt hoạt động đại lý '{existing.Code}'." : $"Đã chuyển đại lý '{existing.Code}' sang trạng thái tạm dừng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t hoáº¡t Ä‘á»™ng Ä‘áº¡i lÃ½ '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn Ä‘áº¡i lÃ½ '{existing.Code}' sang tráº¡ng thÃ¡i táº¡m dá»«ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteDealerAsync(int id)
     {
         var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
-        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½ phÃ¢n phá»‘i.");
 
         bool hasSubs = await db.Dealers.AnyAsync(d => d.ParentCode != null && d.ParentCode.ToUpper() == existing.Code.ToUpper());
         if (hasSubs)
         {
-            return (false, $"Đại lý '{existing.Code}' đang có các đại lý cấp dưới trực thuộc, không thể xóa.");
+            return (false, $"Äáº¡i lÃ½ '{existing.Code}' Ä‘ang cÃ³ cÃ¡c Ä‘áº¡i lÃ½ cáº¥p dÆ°á»›i trá»±c thuá»™c, khÃ´ng thá»ƒ xÃ³a.");
         }
 
         bool inUse = await db.Docs.AnyAsync(doc => doc.CustomerCode != null && doc.CustomerCode.ToUpper() == existing.Code.ToUpper());
@@ -8985,15 +9149,15 @@ public class WmsService(AppDbContext db) : IWmsService
         {
             existing.IsActive = false;
             await db.SaveChangesAsync();
-            return (true, $"Đại lý '{existing.Code}' đã có phiếu xuất kho liên kết nên đã được chuyển sang trạng thái Tạm dừng hoạt động thay vì xóa hẳn.");
+            return (true, $"Äáº¡i lÃ½ '{existing.Code}' Ä‘Ã£ cÃ³ phiáº¿u xuáº¥t kho liÃªn káº¿t nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Táº¡m dá»«ng hoáº¡t Ä‘á»™ng thay vÃ¬ xÃ³a háº³n.");
         }
 
         db.Dealers.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa đại lý '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a Ä‘áº¡i lÃ½ '{existing.Code}'.");
     }
 
-    // ==================== BẢN ĐỒ LỆNH GIAO HÀNG THEO PHIẾU XUẤT KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================
+    // ==================== Báº¢N Äá»’ Lá»†NH GIAO HÃ€NG THEO PHIáº¾U XUáº¤T KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================
     public async Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(
         int? warehouseId,
         string? areaCode,
@@ -9006,7 +9170,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var today = DateTime.Today;
         var todayStr = today.ToString("yyyy-MM-dd");
 
-        // Dải ngày mặc định: hôm nay - 7 ngày đến hôm nay + 7 ngày
+        // Dáº£i ngÃ y máº·c Ä‘á»‹nh: hÃ´m nay - 7 ngÃ y Ä‘áº¿n hÃ´m nay + 7 ngÃ y
         var dtFrom = (fromDate ?? today.AddDays(-7)).Date;
         var dtTo = (toDate ?? today.AddDays(7)).Date;
 
@@ -9017,7 +9181,7 @@ public class WmsService(AppDbContext db) : IWmsService
             dtTo = temp;
         }
 
-        // Khống chế tối đa 31 ngày giống quy tắc DateDiff > 31 trong Skycic
+        // Khá»‘ng cháº¿ tá»‘i Ä‘a 31 ngÃ y giá»‘ng quy táº¯c DateDiff > 31 trong Skycic
         if ((dtTo - dtFrom).TotalDays > 31)
         {
             dtTo = dtFrom.AddDays(31);
@@ -9027,7 +9191,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .Select(d => dtFrom.AddDays(d).ToString("yyyy-MM-dd"))
             .ToList();
 
-        // Lấy danh mục Khu vực & Khách hàng để đối chiếu AreaCode/AreaName
+        // Láº¥y danh má»¥c Khu vá»±c & KhÃ¡ch hÃ ng Ä‘á»ƒ Ä‘á»‘i chiáº¿u AreaCode/AreaName
         var areas = await db.Areas.ToListAsync();
         var areaDict = areas.ToDictionary(a => a.Code.ToUpper(), a => a.Name);
 
@@ -9036,12 +9200,12 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var warehouses = await db.Warehouses.ToListAsync();
         string whName = warehouseId.HasValue
-            ? (warehouses.FirstOrDefault(w => w.Id == warehouseId.Value)?.Name ?? "Kho không xác định")
-            : "Toàn bộ kho";
+            ? (warehouses.FirstOrDefault(w => w.Id == warehouseId.Value)?.Name ?? "Kho khÃ´ng xÃ¡c Ä‘á»‹nh")
+            : "ToÃ n bá»™ kho";
 
         var allRows = new List<MapDeliveryOrderRow>();
 
-        // 1. Lấy dữ liệu từ StockDoc (Loại Out, không lấy trạng thái Hủy)
+        // 1. Láº¥y dá»¯ liá»‡u tá»« StockDoc (Loáº¡i Out, khÃ´ng láº¥y tráº¡ng thÃ¡i Há»§y)
         var stockDocsQuery = db.Docs
             .Include(d => d.FromWarehouse)
             .Include(d => d.Lines).ThenInclude(l => l.Product)
@@ -9059,9 +9223,9 @@ public class WmsService(AppDbContext db) : IWmsService
         foreach (var doc in stockDocs)
         {
             string cCode = doc.CustomerCode?.Trim() ?? "";
-            string cName = doc.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "Khách vãng lai");
+            string cName = doc.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "KhÃ¡ch vÃ£ng lai");
 
-            // Xác định AreaCode: ưu tiên từ Khách hàng, kế đến từ Kho xuất
+            // XÃ¡c Ä‘á»‹nh AreaCode: Æ°u tiÃªn tá»« KhÃ¡ch hÃ ng, káº¿ Ä‘áº¿n tá»« Kho xuáº¥t
             string rAreaCode = "AREA_MB";
             if (!string.IsNullOrEmpty(cCode) && cusDict.TryGetValue(cCode.ToUpper(), out var cus) && !string.IsNullOrEmpty(cus.AreaCode))
             {
@@ -9076,10 +9240,10 @@ public class WmsService(AppDbContext db) : IWmsService
             string docDateStr = doc.Date.ToString("yyyy-MM-dd");
             bool isPosted = doc.Status == DocStatus.Posted;
             string docStatus = isPosted ? "DELIVERED" : "PENDING";
-            string statusLabel = isPosted ? "Đã giao hàng" : "Chờ giao";
+            string statusLabel = isPosted ? "ÄÃ£ giao hÃ ng" : "Chá» giao";
             string badgeClass = isPosted ? "bg-success text-white" : "bg-warning text-dark";
 
-            // Phiếu xuất giao chậm: PENDING mà ngày hẹn <= Hôm nay
+            // Phiáº¿u xuáº¥t giao cháº­m: PENDING mÃ  ngÃ y háº¹n <= HÃ´m nay
             bool isDelayed = (!isPosted) && (doc.Date.Date <= today);
 
             foreach (var line in doc.Lines)
@@ -9094,12 +9258,12 @@ public class WmsService(AppDbContext db) : IWmsService
                     CustomerCode = cCode,
                     CustomerName = cName,
                     DeliveryOrderNo = doc.Code,
-                    DocTypeLabel = "Xuất bán hàng",
+                    DocTypeLabel = "Xuáº¥t bÃ¡n hÃ ng",
                     OrderDate = doc.Date,
                     ProductId = line.ProductId,
                     ProductCode = line.Product?.Code ?? "",
                     ProductName = line.Product?.Name ?? "",
-                    Uom = line.Product?.Uom ?? "cái",
+                    Uom = line.Product?.Uom ?? "cÃ¡i",
                     TotalQty = line.Quantity,
                     Status = docStatus,
                     StatusLabel = statusLabel,
@@ -9108,7 +9272,7 @@ public class WmsService(AppDbContext db) : IWmsService
                     Note = doc.Note
                 };
 
-                // Điền sản lượng cho các ngày
+                // Äiá»n sáº£n lÆ°á»£ng cho cÃ¡c ngÃ y
                 foreach (var dStr in listDates)
                 {
                     int qtyForDay = (dStr == docDateStr) ? line.Quantity : 0;
@@ -9123,7 +9287,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 2. Lấy dữ liệu từ InventoryOutFG (Phiếu xuất kho thành phẩm)
+        // 2. Láº¥y dá»¯ liá»‡u tá»« InventoryOutFG (Phiáº¿u xuáº¥t kho thÃ nh pháº©m)
         var fgDocsQuery = db.InventoryOutFGs
             .Include(f => f.Warehouse)
             .Include(f => f.Lines).ThenInclude(l => l.Product)
@@ -9141,7 +9305,7 @@ public class WmsService(AppDbContext db) : IWmsService
         foreach (var fg in fgDocs)
         {
             string cCode = fg.AgentCode?.Trim() ?? "";
-            string cName = fg.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "Đại lý nhận hàng");
+            string cName = fg.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "Äáº¡i lÃ½ nháº­n hÃ ng");
 
             string rAreaCode = "AREA_MB";
             if (!string.IsNullOrEmpty(cCode) && cusDict.TryGetValue(cCode.ToUpper(), out var cus) && !string.IsNullOrEmpty(cus.AreaCode))
@@ -9157,7 +9321,7 @@ public class WmsService(AppDbContext db) : IWmsService
             string docDateStr = fg.Date.ToString("yyyy-MM-dd");
             bool isApproved = fg.Status == InvOutFGStatus.Approved;
             string docStatus = isApproved ? "DELIVERED" : "PENDING";
-            string statusLabel = isApproved ? "Đã giao hàng" : "Chờ giao";
+            string statusLabel = isApproved ? "ÄÃ£ giao hÃ ng" : "Chá» giao";
             string badgeClass = isApproved ? "bg-success text-white" : "bg-warning text-dark";
 
             bool isDelayed = (!isApproved) && (fg.Date.Date <= today);
@@ -9180,12 +9344,12 @@ public class WmsService(AppDbContext db) : IWmsService
                     CustomerCode = cCode,
                     CustomerName = cName,
                     DeliveryOrderNo = fg.Code,
-                    DocTypeLabel = "Xuất thành phẩm",
+                    DocTypeLabel = "Xuáº¥t thÃ nh pháº©m",
                     OrderDate = fg.Date,
                     ProductId = line.ProductId,
                     ProductCode = line.Product?.Code ?? "",
                     ProductName = line.Product?.Name ?? "",
-                    Uom = line.Product?.Uom ?? "cái",
+                    Uom = line.Product?.Uom ?? "cÃ¡i",
                     TotalQty = line.Qty,
                     Status = docStatus,
                     StatusLabel = statusLabel,
@@ -9210,7 +9374,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // Áp dụng các bộ lọc bổ sung
+        // Ãp dá»¥ng cÃ¡c bá»™ lá»c bá»• sung
         var filteredRows = allRows.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(areaCode))
@@ -9251,20 +9415,20 @@ public class WmsService(AppDbContext db) : IWmsService
             );
         }
 
-        // Sắp xếp theo ngày tăng dần, sau đó theo khu vực và số phiếu xuất
+        // Sáº¯p xáº¿p theo ngÃ y tÄƒng dáº§n, sau Ä‘Ã³ theo khu vá»±c vÃ  sá»‘ phiáº¿u xuáº¥t
         var resultList = filteredRows
             .OrderBy(r => r.OrderDate)
             .ThenBy(r => r.AreaName)
             .ThenBy(r => r.DeliveryOrderNo)
             .ToList();
 
-        // Gán STT
+        // GÃ¡n STT
         for (int i = 0; i < resultList.Count; i++)
         {
             resultList[i].Stt = i + 1;
         }
 
-        // Tính toán các chỉ số KPI
+        // TÃ­nh toÃ¡n cÃ¡c chá»‰ sá»‘ KPI
         int totalOrders = resultList.Count;
         int completedOrders = resultList.Count(r => r.Status == "DELIVERED");
         int pendingOrders = resultList.Count(r => r.Status == "PENDING");
@@ -9274,7 +9438,7 @@ public class WmsService(AppDbContext db) : IWmsService
             ? Math.Round((double)(totalOrders - delayedOrders) / totalOrders * 100.0, 1)
             : 100.0;
 
-        // Phân bổ thống kê theo từng Khu vực (Area Summaries)
+        // PhÃ¢n bá»• thá»‘ng kÃª theo tá»«ng Khu vá»±c (Area Summaries)
         var areaSummaries = resultList
             .GroupBy(r => new { r.AreaCode, r.AreaName })
             .Select(g =>
@@ -9324,7 +9488,7 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    // ==================== QUẢN LÝ BIỂU MẪU IN KHO & THIẾT KẾ TEM NHÃN (InvF_TempPrint & Mst_TempPrintType Skycic) ====================
+    // ==================== QUáº¢N LÃ BIá»‚U MáºªU IN KHO & THIáº¾T Káº¾ TEM NHÃƒN (InvF_TempPrint & Mst_TempPrintType Skycic) ====================
     public Task<List<TempPrintType>> TempPrintTypesAsync(bool? activeOnly = null)
     {
         var query = db.TempPrintTypes.AsQueryable();
@@ -9444,34 +9608,34 @@ public class WmsService(AppDbContext db) : IWmsService
             _ => "DOC-2026-0088"
         };
         string todayStr = DateTime.Today.ToString("dd/MM/yyyy");
-        string todayFull = $"Ngày {DateTime.Today.Day:D2} tháng {DateTime.Today.Month:D2} năm {DateTime.Today.Year}";
+        string todayFull = $"NgÃ y {DateTime.Today.Day:D2} thÃ¡ng {DateTime.Today.Month:D2} nÄƒm {DateTime.Today.Year}";
 
         string partnerName = t.TypeCode switch
         {
-            "IN" => "Công ty TNHH Apple Computer Việt Nam",
-            "OUT" => "Công ty Cổ phần Bán lẻ Kỹ thuật số FPT (FPT Retail)",
-            "MOVE" => "Kho TP. Hồ Chí Minh - Chi nhánh Tân Bình",
-            "AUDIT" => "Hội đồng kiểm kê kho MiniWMS",
-            "CARTON" => "Tổng Đại lý Phân phối Miền Bắc - Phúc Thịnh",
-            _ => "Khách hàng thương mại"
+            "IN" => "CÃ´ng ty TNHH Apple Computer Viá»‡t Nam",
+            "OUT" => "CÃ´ng ty Cá»• pháº§n BÃ¡n láº» Ká»¹ thuáº­t sá»‘ FPT (FPT Retail)",
+            "MOVE" => "Kho TP. Há»“ ChÃ­ Minh - Chi nhÃ¡nh TÃ¢n BÃ¬nh",
+            "AUDIT" => "Há»™i Ä‘á»“ng kiá»ƒm kÃª kho MiniWMS",
+            "CARTON" => "Tá»•ng Äáº¡i lÃ½ PhÃ¢n phá»‘i Miá»n Báº¯c - PhÃºc Thá»‹nh",
+            _ => "KhÃ¡ch hÃ ng thÆ°Æ¡ng máº¡i"
         };
 
         string partnerAddress = t.TypeCode switch
         {
-            "IN" => "Tầng 5, Tòa nhà Metropolitan, 235 Đồng Khởi, Q.1, TP.HCM",
-            "OUT" => "261 - 263 Khánh Hội, Phường 2, Quận 4, TP.HCM",
-            "MOVE" => "KCN Tân Bình, Tây Thạnh, Tân Phú, TP.HCM",
-            _ => "Số 188 Nguyễn Trãi, Thanh Xuân, Hà Nội"
+            "IN" => "Táº§ng 5, TÃ²a nhÃ  Metropolitan, 235 Äá»“ng Khá»Ÿi, Q.1, TP.HCM",
+            "OUT" => "261 - 263 KhÃ¡nh Há»™i, PhÆ°á»ng 2, Quáº­n 4, TP.HCM",
+            "MOVE" => "KCN TÃ¢n BÃ¬nh, TÃ¢y Tháº¡nh, TÃ¢n PhÃº, TP.HCM",
+            _ => "Sá»‘ 188 Nguyá»…n TrÃ£i, Thanh XuÃ¢n, HÃ  Ná»™i"
         };
 
         string reason = t.TypeCode switch
         {
-            "IN" => "Nhập kho theo Đơn đặt hàng mua PO-2026-881, Hóa đơn VAT 004812",
-            "OUT" => "Xuất bán buôn theo Đơn hàng SO-2026-9812, Lệnh giao DO-0388",
-            "MOVE" => "Điều chuyển cân đối an toàn định mức tồn kho chi nhánh miền Nam",
-            "AUDIT" => "Kiểm kê toàn diện số dư thực tế kỳ chốt tháng 03/2026",
-            "CARTON" => "Đóng kiện xuất kho vận chuyển logistics liên tỉnh",
-            _ => "Nghiệp vụ lưu chuyển kho"
+            "IN" => "Nháº­p kho theo ÄÆ¡n Ä‘áº·t hÃ ng mua PO-2026-881, HÃ³a Ä‘Æ¡n VAT 004812",
+            "OUT" => "Xuáº¥t bÃ¡n buÃ´n theo ÄÆ¡n hÃ ng SO-2026-9812, Lá»‡nh giao DO-0388",
+            "MOVE" => "Äiá»u chuyá»ƒn cÃ¢n Ä‘á»‘i an toÃ n Ä‘á»‹nh má»©c tá»“n kho chi nhÃ¡nh miá»n Nam",
+            "AUDIT" => "Kiá»ƒm kÃª toÃ n diá»‡n sá»‘ dÆ° thá»±c táº¿ ká»³ chá»‘t thÃ¡ng 03/2026",
+            "CARTON" => "ÄÃ³ng kiá»‡n xuáº¥t kho váº­n chuyá»ƒn logistics liÃªn tá»‰nh",
+            _ => "Nghiá»‡p vá»¥ lÆ°u chuyá»ƒn kho"
         };
 
         string itemsTableHtml = @"
@@ -9479,20 +9643,20 @@ public class WmsService(AppDbContext db) : IWmsService
     <thead>
         <tr style=""background:#f2f2f2; text-align:center;"">
             <th style=""border:1px solid #000; padding:6px; width:40px;"">STT</th>
-            <th style=""border:1px solid #000; padding:6px; width:100px;"">Mã hàng</th>
-            <th style=""border:1px solid #000; padding:6px;"">Tên hàng hóa, quy cách</th>
-            <th style=""border:1px solid #000; padding:6px; width:60px;"">ĐVT</th>
-            <th style=""border:1px solid #000; padding:6px; width:70px;"">Số lượng</th>
-            <th style=""border:1px solid #000; padding:6px; width:110px;"">Đơn giá</th>
-            <th style=""border:1px solid #000; padding:6px; width:120px;"">Thành tiền (VNĐ)</th>
+            <th style=""border:1px solid #000; padding:6px; width:100px;"">MÃ£ hÃ ng</th>
+            <th style=""border:1px solid #000; padding:6px;"">TÃªn hÃ ng hÃ³a, quy cÃ¡ch</th>
+            <th style=""border:1px solid #000; padding:6px; width:60px;"">ÄVT</th>
+            <th style=""border:1px solid #000; padding:6px; width:70px;"">Sá»‘ lÆ°á»£ng</th>
+            <th style=""border:1px solid #000; padding:6px; width:110px;"">ÄÆ¡n giÃ¡</th>
+            <th style=""border:1px solid #000; padding:6px; width:120px;"">ThÃ nh tiá»n (VNÄ)</th>
         </tr>
     </thead>
     <tbody>
         <tr>
             <td style=""border:1px solid #000; padding:6px; text-align:center;"">1</td>
             <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">IP15-128</td>
-            <td style=""border:1px solid #000; padding:6px;"">Điện thoại iPhone 15 128GB Black - Chính hãng VN/A</td>
-            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiếc</td>
+            <td style=""border:1px solid #000; padding:6px;"">Äiá»‡n thoáº¡i iPhone 15 128GB Black - ChÃ­nh hÃ£ng VN/A</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiáº¿c</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">50</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right;"">19,500,000</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">975,000,000</td>
@@ -9501,7 +9665,7 @@ public class WmsService(AppDbContext db) : IWmsService
             <td style=""border:1px solid #000; padding:6px; text-align:center;"">2</td>
             <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">MAC-M3-16</td>
             <td style=""border:1px solid #000; padding:6px;"">MacBook Air 13 inch M3 (16GB RAM / 256GB SSD) Space Gray</td>
-            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Máy</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">MÃ¡y</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">15</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right;"">27,000,000</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">405,000,000</td>
@@ -9509,14 +9673,14 @@ public class WmsService(AppDbContext db) : IWmsService
         <tr>
             <td style=""border:1px solid #000; padding:6px; text-align:center;"">3</td>
             <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">WATCH-S9-41</td>
-            <td style=""border:1px solid #000; padding:6px;"">Đồng hồ thông minh Apple Watch Series 9 GPS 41mm</td>
-            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiếc</td>
+            <td style=""border:1px solid #000; padding:6px;"">Äá»“ng há»“ thÃ´ng minh Apple Watch Series 9 GPS 41mm</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiáº¿c</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">10</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right;"">7,000,000</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">70,000,000</td>
         </tr>
         <tr style=""font-weight:bold; background:#fafafa;"">
-            <td colspan=""4"" style=""border:1px solid #000; padding:6px; text-align:center;"">CỘNG TỔNG</td>
+            <td colspan=""4"" style=""border:1px solid #000; padding:6px; text-align:center;"">Cá»˜NG Tá»”NG</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; color:#b02a37;"">75</td>
             <td style=""border:1px solid #000; padding:6px; text-align:center;"">x</td>
             <td style=""border:1px solid #000; padding:6px; text-align:right; color:#b02a37;"">1,450,000,000</td>
@@ -9524,17 +9688,17 @@ public class WmsService(AppDbContext db) : IWmsService
     </tbody>
 </table>
 <div style=""font-size:13px; font-style:italic; margin-bottom:15px;"">
-    - Tổng số tiền (viết bằng chữ): <strong>Một tỷ bốn trăm năm mươi triệu đồng chẵn.</strong><br/>
-    - Kèm theo: <strong>03</strong> chứng từ gốc (Hóa đơn GTGT, Phiếu xuất xưởng, Giấy bảo hành).
+    - Tá»•ng sá»‘ tiá»n (viáº¿t báº±ng chá»¯): <strong>Má»™t tá»· bá»‘n trÄƒm nÄƒm mÆ°Æ¡i triá»‡u Ä‘á»“ng cháºµn.</strong><br/>
+    - KÃ¨m theo: <strong>03</strong> chá»©ng tá»« gá»‘c (HÃ³a Ä‘Æ¡n GTGT, Phiáº¿u xuáº¥t xÆ°á»Ÿng, Giáº¥y báº£o hÃ nh).
 </div>";
 
         string signaturesHtml = @"
 <table style=""width:100%; border-collapse:collapse; margin-top:25px; font-size:13px; text-align:center;"">
     <tr>
-        <td style=""width:25%; font-weight:bold;"">NGƯỜI LẬP BIỂU<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Nguyễn Thị Thu</strong></td>
-        <td style=""width:25%; font-weight:bold;"">NGƯỜI GIAO HÀNG<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Trần Đình Trọng</strong></td>
-        <td style=""width:25%; font-weight:bold;"">THỦ KHO<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Nguyễn Văn Hùng</strong></td>
-        <td style=""width:25%; font-weight:bold;"">KẾ TOÁN TRƯỞNG / GIÁM ĐỐC<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên, đóng dấu)</span><br/><br/><br/><br/><strong>Lê Hoàng Long</strong></td>
+        <td style=""width:25%; font-weight:bold;"">NGÆ¯á»œI Láº¬P BIá»‚U<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(KÃ½, há» tÃªn)</span><br/><br/><br/><br/><strong>Nguyá»…n Thá»‹ Thu</strong></td>
+        <td style=""width:25%; font-weight:bold;"">NGÆ¯á»œI GIAO HÃ€NG<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(KÃ½, há» tÃªn)</span><br/><br/><br/><br/><strong>Tráº§n ÄÃ¬nh Trá»ng</strong></td>
+        <td style=""width:25%; font-weight:bold;"">THá»¦ KHO<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(KÃ½, há» tÃªn)</span><br/><br/><br/><br/><strong>Nguyá»…n VÄƒn HÃ¹ng</strong></td>
+        <td style=""width:25%; font-weight:bold;"">Káº¾ TOÃN TRÆ¯á»žNG / GIÃM Äá»C<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(KÃ½, há» tÃªn, Ä‘Ã³ng dáº¥u)</span><br/><br/><br/><br/><strong>LÃª HoÃ ng Long</strong></td>
     </tr>
 </table>";
 
@@ -9547,7 +9711,7 @@ public class WmsService(AppDbContext db) : IWmsService
         string html = t.BodyTemplateHtml;
         if (string.IsNullOrWhiteSpace(html))
         {
-            html = "<p>Mẫu in chưa có nội dung template.</p>";
+            html = "<p>Máº«u in chÆ°a cÃ³ ná»™i dung template.</p>";
         }
 
         html = html
@@ -9555,23 +9719,23 @@ public class WmsService(AppDbContext db) : IWmsService
             .Replace("{{DocDate}}", todayStr)
             .Replace("{{DocDateFull}}", todayFull)
             .Replace("{{UnitName}}", t.UnitName ?? "")
-            .Replace("{{UnitAddress}}", t.UnitAddress ?? "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội")
+            .Replace("{{UnitAddress}}", t.UnitAddress ?? "LÃ´ CN-08, KCN Báº¯c ThÄƒng Long, ÄÃ´ng Anh, TP. HÃ  Ná»™i")
             .Replace("{{UnitPhone}}", t.UnitPhone ?? "024-3795-8888")
             .Replace("{{UnitEmail}}", t.UnitEmail ?? "contact@miniwms.vn")
             .Replace("{{HeaderTitle}}", t.HeaderTitle ?? "")
             .Replace("{{SubTitle}}", t.SubTitle ?? "")
-            .Replace("{{WarehouseName}}", "Kho Hà Nội (KHO-HN)")
-            .Replace("{{WarehouseAddress}}", "KCN Bắc Thăng Long, Đông Anh, Hà Nội")
+            .Replace("{{WarehouseName}}", "Kho HÃ  Ná»™i (KHO-HN)")
+            .Replace("{{WarehouseAddress}}", "KCN Báº¯c ThÄƒng Long, ÄÃ´ng Anh, HÃ  Ná»™i")
             .Replace("{{PartnerName}}", partnerName)
             .Replace("{{PartnerAddress}}", partnerAddress)
-            .Replace("{{Deliverer}}", "Trần Đình Trọng (Bộ phận Vận chuyển)")
-            .Replace("{{Receiver}}", "Nguyễn Văn Hùng (Thủ kho tiếp nhận)")
+            .Replace("{{Deliverer}}", "Tráº§n ÄÃ¬nh Trá»ng (Bá»™ pháº­n Váº­n chuyá»ƒn)")
+            .Replace("{{Receiver}}", "Nguyá»…n VÄƒn HÃ¹ng (Thá»§ kho tiáº¿p nháº­n)")
             .Replace("{{Reason}}", reason)
-            .Replace("{{Note}}", "Hàng hóa nguyên kiện, đầy đủ chứng chỉ CO/CQ và phiếu bảo hành chính hãng.")
+            .Replace("{{Note}}", "HÃ ng hÃ³a nguyÃªn kiá»‡n, Ä‘áº§y Ä‘á»§ chá»©ng chá»‰ CO/CQ vÃ  phiáº¿u báº£o hÃ nh chÃ­nh hÃ£ng.")
             .Replace("{{NoteFooter}}", t.NoteFooter ?? "")
             .Replace("{{TotalQty}}", "75")
-            .Replace("{{TotalAmount}}", "1,450,000,000 đ")
-            .Replace("{{TotalAmountWords}}", "Một tỷ bốn trăm năm mươi triệu đồng chẵn")
+            .Replace("{{TotalAmount}}", "1,450,000,000 Ä‘")
+            .Replace("{{TotalAmountWords}}", "Má»™t tá»· bá»‘n trÄƒm nÄƒm mÆ°Æ¡i triá»‡u Ä‘á»“ng cháºµn")
             .Replace("{{ItemsTable}}", itemsTableHtml)
             .Replace("{{Signatures}}", signaturesHtml)
             .Replace("{{Barcode}}", barcodeSvg);
@@ -9602,7 +9766,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.TempPrints.AnyAsync(x => x.Code == item.Code);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã mẫu in '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ máº«u in '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         if (item.IsDefault)
@@ -9620,7 +9784,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateTempPrintAsync(int id, TempPrint item)
     {
         var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº«u in.");
 
         existing.Name = item.Name.Trim();
         existing.TypeCode = item.TypeCode.Trim().ToUpperInvariant();
@@ -9650,24 +9814,24 @@ public class WmsService(AppDbContext db) : IWmsService
         }
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật mẫu in '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t máº«u in '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleTempPrintStatusAsync(int id)
     {
         var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº«u in.");
 
         existing.IsActive = !existing.IsActive;
         existing.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt mẫu in '{existing.Code}'." : $"Đã chuyển mẫu in '{existing.Code}' sang trạng thái tạm dừng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t máº«u in '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn máº«u in '{existing.Code}' sang tráº¡ng thÃ¡i táº¡m dá»«ng.");
     }
 
     public async Task<(bool ok, string msg)> SetDefaultTempPrintAsync(int id)
     {
         var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº«u in.");
 
         await db.TempPrints
             .Where(x => x.TypeCode == existing.TypeCode && x.Id != id && x.IsDefault)
@@ -9677,22 +9841,22 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = true;
         existing.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
-        return (true, $"Đã đặt mẫu in '{existing.Name}' ({existing.Code}) làm mẫu in mặc định cho nghiệp vụ {existing.TypeCode}.");
+        return (true, $"ÄÃ£ Ä‘áº·t máº«u in '{existing.Name}' ({existing.Code}) lÃ m máº«u in máº·c Ä‘á»‹nh cho nghiá»‡p vá»¥ {existing.TypeCode}.");
     }
 
     public async Task<(bool ok, string msg)> DeleteTempPrintAsync(int id)
     {
         var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y máº«u in.");
 
         if (existing.IsDefault)
         {
-            return (false, $"Mẫu in '{existing.Code}' đang là mẫu mặc định cho loại {existing.TypeCode}. Vui lòng chỉ định mẫu khác làm mặc định trước khi xóa.");
+            return (false, $"Máº«u in '{existing.Code}' Ä‘ang lÃ  máº«u máº·c Ä‘á»‹nh cho loáº¡i {existing.TypeCode}. Vui lÃ²ng chá»‰ Ä‘á»‹nh máº«u khÃ¡c lÃ m máº·c Ä‘á»‹nh trÆ°á»›c khi xÃ³a.");
         }
 
         db.TempPrints.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa mẫu in '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a máº«u in '{existing.Code}'.");
     }
 
     public async Task<int> CreateTempPrintTypeAsync(TempPrintType item)
@@ -9705,7 +9869,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.TempPrintTypes.AnyAsync(x => x.Code == item.Code);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã loại mẫu in '{item.Code}' đã tồn tại.");
+            throw new InvalidOperationException($"MÃ£ loáº¡i máº«u in '{item.Code}' Ä‘Ã£ tá»“n táº¡i.");
         }
 
         db.TempPrintTypes.Add(item);
@@ -9716,7 +9880,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateTempPrintTypeAsync(int id, TempPrintType item)
     {
         var existing = await db.TempPrintTypes.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i máº«u in.");
 
         existing.Name = item.Name.Trim();
         existing.GroupCode = string.IsNullOrWhiteSpace(item.GroupCode) ? "DOC" : item.GroupCode.Trim().ToUpperInvariant();
@@ -9724,35 +9888,35 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.IsActive = item.IsActive;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật loại mẫu in '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t loáº¡i máº«u in '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteTempPrintTypeAsync(int id)
     {
         var existing = await db.TempPrintTypes.FirstOrDefaultAsync(x => x.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại mẫu in.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i máº«u in.");
 
         bool inUse = await db.TempPrints.AnyAsync(x => x.TypeCode == existing.Code);
         if (inUse)
         {
-            return (false, $"Loại mẫu '{existing.Code}' đang có các mẫu in liên kết, không thể xóa.");
+            return (false, $"Loáº¡i máº«u '{existing.Code}' Ä‘ang cÃ³ cÃ¡c máº«u in liÃªn káº¿t, khÃ´ng thá»ƒ xÃ³a.");
         }
 
         db.TempPrintTypes.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại mẫu in '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i máº«u in '{existing.Code}'.");
     }
 
     private static string PaperSizeLabel(string? size) => size switch
     {
-        "A4_Portrait" => "A4 Dọc (210 x 297 mm)",
+        "A4_Portrait" => "A4 Dá»c (210 x 297 mm)",
         "A4_Landscape" => "A4 Ngang (297 x 210 mm)",
         "A5_Landscape" => "A5 Ngang (210 x 148 mm)",
-        "A5_Portrait" => "A5 Dọc (148 x 210 mm)",
-        "Label_100x150" => "Decal Thùng 100 x 150 mm",
-        "Label_100x75" => "Decal Hộp 100 x 75 mm",
-        "Thermal_K80" => "In nhiệt POS K80 (80 mm)",
-        _ => size ?? "A4 Dọc"
+        "A5_Portrait" => "A5 Dá»c (148 x 210 mm)",
+        "Label_100x150" => "Decal ThÃ¹ng 100 x 150 mm",
+        "Label_100x75" => "Decal Há»™p 100 x 75 mm",
+        "Thermal_K80" => "In nhiá»‡t POS K80 (80 mm)",
+        _ => size ?? "A4 Dá»c"
     };
 
     private static string PaperSizeCss(string? size) => size switch
@@ -9767,7 +9931,7 @@ public class WmsService(AppDbContext db) : IWmsService
         _ => "width: 210mm; min-height: 297mm; padding: 15mm 20mm; margin: 0 auto; background: #fff;"
     };
 
-    // ==================== BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
+    // ==================== BÃO CÃO Lá»ŠCH Sá»¬ GIAO Dá»ŠCH NHáº¬P XUáº¤T THEO Äá»I TÃC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
     public async Task<SummaryInOutPartnerPivotReport> SummaryInOutPartnerPivotReportAsync(
         int? warehouseId,
         string? partnerCode,
@@ -9778,7 +9942,7 @@ public class WmsService(AppDbContext db) : IWmsService
         DateTime? toDate,
         string? keyword)
     {
-        string whName = "Tất cả kho";
+        string whName = "Táº¥t cáº£ kho";
         if (warehouseId.HasValue)
         {
             var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
@@ -9827,7 +9991,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var rawItems = new List<SummaryInOutPartnerPivotItem>();
         int seq = 1;
 
-        // 1. Giao dịch từ StockDoc (nhập mua, xuất bán, trả hàng)
+        // 1. Giao dá»‹ch tá»« StockDoc (nháº­p mua, xuáº¥t bÃ¡n, tráº£ hÃ ng)
         var docs = await db.Docs
             .Where(d => d.Status == DocStatus.Posted && d.Date >= start && d.Date <= end)
             .Include(d => d.FromWarehouse)
@@ -9843,17 +10007,17 @@ public class WmsService(AppDbContext db) : IWmsService
             {
                 int wId = doc.ToWarehouseId ?? 0;
                 if (warehouseId.HasValue && wId != warehouseId.Value) continue;
-                string wDocName = doc.ToWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho nhận");
+                string wDocName = doc.ToWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho nháº­n");
 
                 string pCode = !string.IsNullOrWhiteSpace(doc.SupplierCode) ? doc.SupplierCode.Trim() : "NCC-KHAC";
-                string pName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName.Trim() : (pCode == "NCC-KHAC" ? "Nhà cung cấp / Đối tác giao" : pCode);
-                string pType = "Nhà cung cấp";
-                string inOutType = "Nhập mua NCC";
+                string pName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName.Trim() : (pCode == "NCC-KHAC" ? "NhÃ  cung cáº¥p / Äá»‘i tÃ¡c giao" : pCode);
+                string pType = "NhÃ  cung cáº¥p";
+                string inOutType = "Nháº­p mua NCC";
 
                 if (!string.IsNullOrWhiteSpace(doc.RefNo) && doc.RefNo.StartsWith("THKH", StringComparison.OrdinalIgnoreCase))
                 {
-                    pType = "Khách hàng / Đại lý";
-                    inOutType = "Nhập khách trả hàng";
+                    pType = "KhÃ¡ch hÃ ng / Äáº¡i lÃ½";
+                    inOutType = "Nháº­p khÃ¡ch tráº£ hÃ ng";
                     if (!string.IsNullOrWhiteSpace(doc.CustomerCode)) { pCode = doc.CustomerCode; pName = doc.CustomerName ?? pCode; }
                 }
 
@@ -9884,7 +10048,7 @@ public class WmsService(AppDbContext db) : IWmsService
                         grpName,
                         prod.Uom,
                         "IN",
-                        "Nhập kho",
+                        "Nháº­p kho",
                         inOutType,
                         line.Quantity,
                         up,
@@ -9900,7 +10064,7 @@ public class WmsService(AppDbContext db) : IWmsService
             {
                 int wId = doc.FromWarehouseId ?? 0;
                 if (warehouseId.HasValue && wId != warehouseId.Value) continue;
-                string wDocName = doc.FromWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho xuất");
+                string wDocName = doc.FromWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho xuáº¥t");
 
                 string pCode;
                 string pName;
@@ -9911,29 +10075,29 @@ public class WmsService(AppDbContext db) : IWmsService
                 {
                     pCode = doc.CustomerCode.Trim();
                     pName = doc.CustomerName?.Trim() ?? pCode;
-                    pType = "Khách hàng / Đại lý";
-                    inOutType = "Xuất bán khách hàng";
+                    pType = "KhÃ¡ch hÃ ng / Äáº¡i lÃ½";
+                    inOutType = "Xuáº¥t bÃ¡n khÃ¡ch hÃ ng";
                 }
                 else if (!string.IsNullOrWhiteSpace(doc.DepartmentCode))
                 {
                     pCode = doc.DepartmentCode.Trim();
                     pName = doc.DepartmentName?.Trim() ?? pCode;
-                    pType = "Nội bộ";
-                    inOutType = "Xuất cấp phát nội bộ";
+                    pType = "Ná»™i bá»™";
+                    inOutType = "Xuáº¥t cáº¥p phÃ¡t ná»™i bá»™";
                 }
                 else if (!string.IsNullOrWhiteSpace(doc.SupplierCode) || (!string.IsNullOrWhiteSpace(doc.RefNo) && doc.RefNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase)))
                 {
                     pCode = doc.SupplierCode?.Trim() ?? "SUP-RET";
-                    pName = doc.SupplierName?.Trim() ?? "Nhà cung cấp nhận trả";
-                    pType = "Nhà cung cấp";
-                    inOutType = "Xuất trả NCC";
+                    pName = doc.SupplierName?.Trim() ?? "NhÃ  cung cáº¥p nháº­n tráº£";
+                    pType = "NhÃ  cung cáº¥p";
+                    inOutType = "Xuáº¥t tráº£ NCC";
                 }
                 else
                 {
                     pCode = "KH-KHAC";
-                    pName = "Khách hàng / Đối tác nhận";
-                    pType = "Khách hàng / Đại lý";
-                    inOutType = "Xuất kho chung";
+                    pName = "KhÃ¡ch hÃ ng / Äá»‘i tÃ¡c nháº­n";
+                    pType = "KhÃ¡ch hÃ ng / Äáº¡i lÃ½";
+                    inOutType = "Xuáº¥t kho chung";
                 }
 
                 var (areaName, provName) = ResolveLocation(pCode, pType);
@@ -9963,7 +10127,7 @@ public class WmsService(AppDbContext db) : IWmsService
                         grpName,
                         prod.Uom,
                         "OUT",
-                        "Xuất kho",
+                        "Xuáº¥t kho",
                         inOutType,
                         line.Quantity,
                         up,
@@ -9977,7 +10141,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 2. Giao dịch từ InventoryInFG (Nhập thành phẩm sản xuất)
+        // 2. Giao dá»‹ch tá»« InventoryInFG (Nháº­p thÃ nh pháº©m sáº£n xuáº¥t)
         var inFGs = await db.InventoryInFGs
             .Where(f => f.Status != InvInFGStatus.Cancelled && f.Date >= start && f.Date <= end &&
                         (!warehouseId.HasValue || f.WarehouseId == warehouseId.Value))
@@ -9988,9 +10152,9 @@ public class WmsService(AppDbContext db) : IWmsService
         foreach (var fg in inFGs)
         {
             string pCode = "XUONG-SX";
-            string pName = !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "Xưởng sản xuất";
-            string pType = "Phân xưởng SX";
-            string wName = fg.Warehouse?.Name ?? "Kho thành phẩm";
+            string pName = !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "XÆ°á»Ÿng sáº£n xuáº¥t";
+            string pType = "PhÃ¢n xÆ°á»Ÿng SX";
+            string wName = fg.Warehouse?.Name ?? "Kho thÃ nh pháº©m";
 
             foreach (var line in fg.Lines)
             {
@@ -10011,7 +10175,7 @@ public class WmsService(AppDbContext db) : IWmsService
                     pCode,
                     pName,
                     pType,
-                    "Nhà máy / Xưởng",
+                    "NhÃ  mÃ¡y / XÆ°á»Ÿng",
                     null,
                     prod.Id,
                     prod.Code,
@@ -10020,8 +10184,8 @@ public class WmsService(AppDbContext db) : IWmsService
                     grpName,
                     prod.Uom,
                     "IN",
-                    "Nhập kho",
-                    "Nhập thành phẩm SX",
+                    "Nháº­p kho",
+                    "Nháº­p thÃ nh pháº©m SX",
                     line.ActualQty,
                     up,
                     amt,
@@ -10033,7 +10197,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 3. Giao dịch từ InventoryOutFG (Xuất thành phẩm giao khách hàng)
+        // 3. Giao dá»‹ch tá»« InventoryOutFG (Xuáº¥t thÃ nh pháº©m giao khÃ¡ch hÃ ng)
         var outFGs = await db.InventoryOutFGs
             .Where(f => f.Status != InvOutFGStatus.Cancelled && f.Date >= start && f.Date <= end &&
                         (!warehouseId.HasValue || f.WarehouseId == warehouseId.Value))
@@ -10044,9 +10208,9 @@ public class WmsService(AppDbContext db) : IWmsService
         foreach (var fg in outFGs)
         {
             string pCode = fg.AgentCode ?? "KH-TP";
-            string pName = !string.IsNullOrWhiteSpace(fg.CustomerName) ? fg.CustomerName : "Khách hàng dự án";
-            string pType = "Khách hàng / Đại lý";
-            string wName = fg.Warehouse?.Name ?? "Kho xuất TP";
+            string pName = !string.IsNullOrWhiteSpace(fg.CustomerName) ? fg.CustomerName : "KhÃ¡ch hÃ ng dá»± Ã¡n";
+            string pType = "KhÃ¡ch hÃ ng / Äáº¡i lÃ½";
+            string wName = fg.Warehouse?.Name ?? "Kho xuáº¥t TP";
             var (areaName, provName) = ResolveLocation(pCode, pType);
 
             foreach (var line in fg.Lines)
@@ -10077,8 +10241,8 @@ public class WmsService(AppDbContext db) : IWmsService
                     grpName,
                     prod.Uom,
                     "OUT",
-                    "Xuất kho",
-                    "Xuất thành phẩm",
+                    "Xuáº¥t kho",
+                    "Xuáº¥t thÃ nh pháº©m",
                     line.Qty,
                     up,
                     amt,
@@ -10090,7 +10254,7 @@ public class WmsService(AppDbContext db) : IWmsService
             }
         }
 
-        // 4. Áp dụng các bộ lọc (Filters)
+        // 4. Ãp dá»¥ng cÃ¡c bá»™ lá»c (Filters)
         var filtered = rawItems.AsEnumerable();
 
         if (warehouseId.HasValue)
@@ -10133,7 +10297,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var detailList = filtered.OrderByDescending(x => x.DocDate).ThenByDescending(x => x.Stt).ToList();
 
-        // 5. Xây dựng danh sách Pivot Rows (Partner x Product)
+        // 5. XÃ¢y dá»±ng danh sÃ¡ch Pivot Rows (Partner x Product)
         var pivotRows = detailList
             .GroupBy(x => new { x.PartnerCode, x.PartnerName, x.PartnerType, x.AreaName, x.ProvinceName, x.ProductId, x.ProductCode, x.ProductName, x.ProductGrpCode, x.ProductGrpName, x.Uom })
             .Select(g =>
@@ -10174,7 +10338,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenBy(r => r.ProductCode)
             .ToList();
 
-        // 6. Xây dựng nhóm Đối tác (Partner Groups)
+        // 6. XÃ¢y dá»±ng nhÃ³m Äá»‘i tÃ¡c (Partner Groups)
         int grandTotalVolume = pivotRows.Sum(r => r.TotalInQty + r.TotalOutQty);
         var partnerGroups = pivotRows
             .GroupBy(r => new { r.PartnerCode, r.PartnerName, r.PartnerType, r.AreaName, r.ProvinceName })
@@ -10213,7 +10377,7 @@ public class WmsService(AppDbContext db) : IWmsService
             .ThenBy(g => g.PartnerName)
             .ToList();
 
-        // 7. Tính 4 thẻ KPI
+        // 7. TÃ­nh 4 tháº» KPI
         int totalPartners = partnerGroups.Count;
         int totalInQty = detailList.Where(x => x.ActionType == "IN").Sum(x => x.Quantity);
         decimal totalInAmount = detailList.Where(x => x.ActionType == "IN").Sum(x => x.Amount);
@@ -10247,7 +10411,7 @@ public class WmsService(AppDbContext db) : IWmsService
         );
     }
 
-    // ==================== QUẢN LÝ LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
+    // ==================== QUáº¢N LÃ LOáº I TIá»€N & Tá»¶ GIÃ NGOáº I Tá»† KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
     public async Task<CurrencyExchangeReport> CurrencyExchangesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.CurrencyExchanges.AsQueryable();
@@ -10335,7 +10499,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.CurrencyExchanges.AnyAsync(c => c.Code == item.Code);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã ngoại tệ '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ ngoáº¡i tá»‡ '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         db.CurrencyExchanges.Add(item);
@@ -10346,7 +10510,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateCurrencyExchangeAsync(int id, CurrencyExchange item)
     {
         var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i ngoáº¡i tá»‡.");
 
         existing.Name = item.Name.Trim();
         existing.Symbol = item.Symbol?.Trim();
@@ -10359,38 +10523,38 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.UpdatedTime = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật tỷ giá loại tiền '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t tá»· giÃ¡ loáº¡i tiá»n '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleCurrencyExchangeStatusAsync(int id)
     {
         var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i ngoáº¡i tá»‡.");
 
         if (existing.IsBase)
         {
-            return (false, "Không thể ngừng áp dụng đồng tiền cơ sở (VND).");
+            return (false, "KhÃ´ng thá»ƒ ngá»«ng Ã¡p dá»¥ng Ä‘á»“ng tiá»n cÆ¡ sá»Ÿ (VND).");
         }
 
         existing.IsActive = !existing.IsActive;
         existing.UpdatedTime = DateTime.Now;
         await db.SaveChangesAsync();
-        return (true, existing.IsActive ? $"Đã kích hoạt tỷ giá '{existing.Code}'." : $"Đã chuyển '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+        return (true, existing.IsActive ? $"ÄÃ£ kÃ­ch hoáº¡t tá»· giÃ¡ '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
     }
 
     public async Task<(bool ok, string msg)> DeleteCurrencyExchangeAsync(int id)
     {
         var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
-        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y loáº¡i ngoáº¡i tá»‡.");
 
         if (existing.IsBase)
         {
-            return (false, "Không được xóa đồng tiền cơ sở (VND).");
+            return (false, "KhÃ´ng Ä‘Æ°á»£c xÃ³a Ä‘á»“ng tiá»n cÆ¡ sá»Ÿ (VND).");
         }
 
         db.CurrencyExchanges.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa loại ngoại tệ '{existing.Code}'.");
+        return (true, $"ÄÃ£ xÃ³a loáº¡i ngoáº¡i tá»‡ '{existing.Code}'.");
     }
 
     public async Task<CurrencyConvertResultDto> ConvertCurrencyAsync(decimal amount, string sourceCode, string targetCode, string rateType = "buy")
@@ -10425,31 +10589,31 @@ public class WmsService(AppDbContext db) : IWmsService
 
         if (targetCode == "VND" || targetCurr.IsBase)
         {
-            // Ngoại tệ -> VND: Amount * sRate
+            // Ngoáº¡i tá»‡ -> VND: Amount * sRate
             convertedAmount = Math.Round(amount * sRate, 2);
             appliedRate = sRate;
-            formula = $"{amount:N2} {sourceCode} × {appliedRate:N2} = {convertedAmount:N2} {targetCode}";
+            formula = $"{amount:N2} {sourceCode} Ã— {appliedRate:N2} = {convertedAmount:N2} {targetCode}";
         }
         else if (sourceCode == "VND" || sourceCurr.IsBase)
         {
-            // VND -> Ngoại tệ: Amount / tRate
+            // VND -> Ngoáº¡i tá»‡: Amount / tRate
             appliedRate = tRate > 0 ? tRate : 1m;
             convertedAmount = Math.Round(amount / appliedRate, 4);
-            formula = $"{amount:N0} VND ÷ {appliedRate:N2} = {convertedAmount:N4} {targetCode}";
+            formula = $"{amount:N0} VND Ã· {appliedRate:N2} = {convertedAmount:N4} {targetCode}";
         }
         else
         {
-            // Ngoại tệ A -> Ngoại tệ B: (Amount * sRate) / tRate
+            // Ngoáº¡i tá»‡ A -> Ngoáº¡i tá»‡ B: (Amount * sRate) / tRate
             decimal inVnd = amount * sRate;
             appliedRate = tRate > 0 ? (sRate / tRate) : 1m;
             convertedAmount = tRate > 0 ? Math.Round(inVnd / tRate, 4) : 0m;
-            formula = $"{amount:N2} {sourceCode} × {sRate:N2} ÷ {tRate:N2} = {convertedAmount:N4} {targetCode}";
+            formula = $"{amount:N2} {sourceCode} Ã— {sRate:N2} Ã· {tRate:N2} = {convertedAmount:N4} {targetCode}";
         }
 
         return new CurrencyConvertResultDto(amount, sourceCode, targetCode, convertedAmount, appliedRate, rateType, formula);
     }
 
-    // ==================== QUẢN LÝ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+    // ==================== QUáº¢N LÃ QUY CÃCH Sáº¢N PHáº¨M KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
     public async Task<ProductSpecReport> ProductSpecsReportAsync(string? q = null, string? modelCode = null, string? specType1 = null, bool? hasSerial = null, bool? hasLot = null, bool? activeOnly = null)
     {
         var query = db.ProductSpecs.AsQueryable();
@@ -10486,7 +10650,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var allBrands = await db.Brands.ToListAsync();
         var allProducts = await db.Products.ToListAsync();
 
-        // Tính tồn kho thực tế của từng sản phẩm
+        // TÃ­nh tá»“n kho thá»±c táº¿ cá»§a tá»«ng sáº£n pháº©m
         var docs = await db.Docs.Include(d => d.Lines).Where(d => d.Status == DocStatus.Posted).ToListAsync();
         var stockByProduct = new Dictionary<int, int>();
         foreach (var doc in docs)
@@ -10524,7 +10688,7 @@ public class WmsService(AppDbContext db) : IWmsService
                 }
             }
 
-            // Mặt hàng liên kết theo SpecCode hoặc theo ModelCode
+            // Máº·t hÃ ng liÃªn káº¿t theo SpecCode hoáº·c theo ModelCode
             var matchedProducts = allProducts.Where(p => p.SpecCode == s.Code || (!string.IsNullOrEmpty(s.ModelCode) && p.ModelCode == s.ModelCode)).ToList();
             int prdCount = matchedProducts.Count;
             int stockQty = matchedProducts.Sum(p => stockByProduct.TryGetValue(p.Id, out var qty) ? Math.Max(0, qty) : 0);
@@ -10625,12 +10789,12 @@ public class WmsService(AppDbContext db) : IWmsService
     {
         item.Code = item.Code.Trim().ToUpper();
         item.Name = item.Name.Trim();
-        if (string.IsNullOrWhiteSpace(item.StandardUnitCode)) item.StandardUnitCode = "cái";
+        if (string.IsNullOrWhiteSpace(item.StandardUnitCode)) item.StandardUnitCode = "cÃ¡i";
 
         bool exists = await db.ProductSpecs.AnyAsync(s => s.Code == item.Code);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã quy cách '{item.Code}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ quy cÃ¡ch '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         item.CreatedAt = DateTime.Now;
@@ -10642,14 +10806,14 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item)
     {
         var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y quy cÃ¡ch sáº£n pháº©m.");
 
         existing.Name = item.Name.Trim();
         existing.SpecDesc = item.SpecDesc?.Trim();
         existing.ModelCode = item.ModelCode?.Trim();
         existing.SpecType1 = item.SpecType1?.Trim();
         existing.Color = item.Color?.Trim();
-        existing.StandardUnitCode = !string.IsNullOrWhiteSpace(item.StandardUnitCode) ? item.StandardUnitCode.Trim() : "cái";
+        existing.StandardUnitCode = !string.IsNullOrWhiteSpace(item.StandardUnitCode) ? item.StandardUnitCode.Trim() : "cÃ¡i";
         existing.FlagHasSerial = item.FlagHasSerial;
         existing.FlagHasLOT = item.FlagHasLOT;
         existing.IsActive = item.IsActive;
@@ -10657,39 +10821,39 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật quy cách '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t quy cÃ¡ch '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id)
     {
         var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y quy cÃ¡ch sáº£n pháº©m.");
 
         existing.IsActive = !existing.IsActive;
         existing.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
-        return (true, $"Đã {status} quy cách '{existing.Name}' ({existing.Code}).");
+        var status = existing.IsActive ? "kÃ­ch hoáº¡t Ã¡p dá»¥ng" : "táº¡m dá»«ng Ã¡p dá»¥ng";
+        return (true, $"ÄÃ£ {status} quy cÃ¡ch '{existing.Name}' ({existing.Code}).");
     }
 
     public async Task<(bool ok, string msg)> DeleteProductSpecAsync(int id)
     {
         var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y quy cÃ¡ch sáº£n pháº©m.");
 
         bool hasProducts = await db.Products.AnyAsync(p => p.SpecCode == existing.Code);
         if (hasProducts)
         {
-            return (false, $"Không thể xóa quy cách '{existing.Code}' vì đang có mặt hàng liên kết. Hãy chuyển sang trạng thái tạm dừng.");
+            return (false, $"KhÃ´ng thá»ƒ xÃ³a quy cÃ¡ch '{existing.Code}' vÃ¬ Ä‘ang cÃ³ máº·t hÃ ng liÃªn káº¿t. HÃ£y chuyá»ƒn sang tráº¡ng thÃ¡i táº¡m dá»«ng.");
         }
 
         db.ProductSpecs.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa quy cách '{existing.Name}' ({existing.Code}) thành công.");
+        return (true, $"ÄÃ£ xÃ³a quy cÃ¡ch '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
     }
 
-    // ==================== BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+    // ==================== Báº¢NG GIÃ QUY CÃCH Sáº¢N PHáº¨M KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
     public async Task<SpecPriceReport> SpecPricesReportAsync(string? q = null, string? specCode = null, string? unitCode = null, string? currencyCode = null, bool? activeOnly = null)
     {
         var query = db.SpecPrices.AsQueryable();
@@ -10826,13 +10990,13 @@ public class WmsService(AppDbContext db) : IWmsService
         var curr = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Code == item.CurrencyCode);
         var allCurrencies = await db.CurrencyExchanges.Where(c => c.IsActive).ToListAsync();
 
-        // Định giá quy đổi sang các ngoại tệ
+        // Äá»‹nh giÃ¡ quy Ä‘á»•i sang cÃ¡c ngoáº¡i tá»‡
         var valuations = new List<CurrencyValuationRow>();
         decimal baseBuyVnd = item.BuyPrice;
         decimal baseSellVnd = item.SellPrice;
         decimal baseNetVnd = item.NetSellPrice;
 
-        // Nếu bảng giá không phải VND, quy đổi về VND trước
+        // Náº¿u báº£ng giÃ¡ khÃ´ng pháº£i VND, quy Ä‘á»•i vá» VND trÆ°á»›c
         if (!item.CurrencyCode.Equals("VND", StringComparison.OrdinalIgnoreCase) && curr != null && curr.BuyRate > 0)
         {
             baseBuyVnd = item.BuyPrice * curr.BuyRate;
@@ -10874,7 +11038,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.SpecPrices.AnyAsync(s => s.SpecCode == item.SpecCode && s.UnitCode == item.UnitCode);
         if (exists)
         {
-            throw new InvalidOperationException($"Bảng giá cho quy cách '{item.SpecCode}' với đơn vị tính '{item.UnitCode}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"Báº£ng giÃ¡ cho quy cÃ¡ch '{item.SpecCode}' vá»›i Ä‘Æ¡n vá»‹ tÃ­nh '{item.UnitCode}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         item.CreatedAt = DateTime.Now;
@@ -10886,7 +11050,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateSpecPriceAsync(int id, SpecPrice item)
     {
         var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£ng giÃ¡ quy cÃ¡ch sáº£n pháº©m.");
 
         existing.BuyPrice = item.BuyPrice >= 0 ? item.BuyPrice : 0m;
         existing.SellPrice = item.SellPrice >= 0 ? item.SellPrice : 0m;
@@ -10900,33 +11064,33 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t báº£ng giÃ¡ quy cÃ¡ch '{existing.SpecCode}' ({existing.UnitCode}) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleSpecPriceStatusAsync(int id)
     {
         var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£ng giÃ¡ quy cÃ¡ch sáº£n pháº©m.");
 
         existing.IsActive = !existing.IsActive;
         existing.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
-        return (true, $"Đã {status} bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}).");
+        var status = existing.IsActive ? "kÃ­ch hoáº¡t Ã¡p dá»¥ng" : "táº¡m dá»«ng Ã¡p dá»¥ng";
+        return (true, $"ÄÃ£ {status} báº£ng giÃ¡ quy cÃ¡ch '{existing.SpecCode}' ({existing.UnitCode}).");
     }
 
     public async Task<(bool ok, string msg)> DeleteSpecPriceAsync(int id)
     {
         var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
-        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y báº£ng giÃ¡ quy cÃ¡ch sáº£n pháº©m.");
 
         db.SpecPrices.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}) thành công.");
+        return (true, $"ÄÃ£ xÃ³a báº£ng giÃ¡ quy cÃ¡ch '{existing.SpecCode}' ({existing.UnitCode}) thÃ nh cÃ´ng.");
     }
 
-    // ==================== QUẢN LÝ DANH MỤC THUẾ SUẤT VAT HÀNG HÓA (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
+    // ==================== QUáº¢N LÃ DANH Má»¤C THUáº¾ SUáº¤T VAT HÃ€NG HÃ“A (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
     public async Task<VATRateReport> VATRatesReportAsync(string? q = null, bool? activeOnly = null)
     {
         var query = db.VATRates.AsNoTracking().AsQueryable();
@@ -10946,7 +11110,7 @@ public class WmsService(AppDbContext db) : IWmsService
 
         var list = await query.ToListAsync();
 
-        // Lấy thống kê số lượng bảng giá quy cách sản phẩm đang áp dụng từng mức thuế suất VAT
+        // Láº¥y thá»‘ng kÃª sá»‘ lÆ°á»£ng báº£ng giÃ¡ quy cÃ¡ch sáº£n pháº©m Ä‘ang Ã¡p dá»¥ng tá»«ng má»©c thuáº¿ suáº¥t VAT
         var mappedPrices = await db.SpecPrices.AsNoTracking()
             .Where(s => s.VATRateCode != null)
             .GroupBy(s => s.VATRateCode!)
@@ -11028,7 +11192,7 @@ public class WmsService(AppDbContext db) : IWmsService
         bool exists = await db.VATRates.AnyAsync(v => v.VATRateCode == item.VATRateCode);
         if (exists)
         {
-            throw new InvalidOperationException($"Mã thuế suất VAT '{item.VATRateCode}' đã tồn tại trong hệ thống.");
+            throw new InvalidOperationException($"MÃ£ thuáº¿ suáº¥t VAT '{item.VATRateCode}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
         }
 
         item.CreatedAt = DateTime.Now;
@@ -11040,7 +11204,7 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<(bool ok, string msg)> UpdateVATRateAsync(int id, VATRate item)
     {
         var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y mÃ£ thuáº¿ suáº¥t VAT.");
 
         existing.Rate = Math.Max(0m, item.Rate);
         existing.VATDesc = item.VATDesc.Trim();
@@ -11049,37 +11213,214 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.UpdatedAt = DateTime.Now;
 
         await db.SaveChangesAsync();
-        return (true, $"Đã cập nhật thuế suất '{existing.VATRateCode}' ({existing.Rate}%) thành công.");
+        return (true, $"ÄÃ£ cáº­p nháº­t thuáº¿ suáº¥t '{existing.VATRateCode}' ({existing.Rate}%) thÃ nh cÃ´ng.");
     }
 
     public async Task<(bool ok, string msg)> ToggleVATRateStatusAsync(int id)
     {
         var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y mÃ£ thuáº¿ suáº¥t VAT.");
 
         existing.IsActive = !existing.IsActive;
         existing.UpdatedAt = DateTime.Now;
         await db.SaveChangesAsync();
 
-        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
-        return (true, $"Đã {status} thuế suất '{existing.VATRateCode}' ({existing.Rate}%).");
+        var status = existing.IsActive ? "kÃ­ch hoáº¡t Ã¡p dá»¥ng" : "táº¡m dá»«ng Ã¡p dá»¥ng";
+        return (true, $"ÄÃ£ {status} thuáº¿ suáº¥t '{existing.VATRateCode}' ({existing.Rate}%).");
     }
 
     public async Task<(bool ok, string msg)> DeleteVATRateAsync(int id)
     {
         var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
-        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y mÃ£ thuáº¿ suáº¥t VAT.");
 
         bool inUse = await db.SpecPrices.AnyAsync(s => s.VATRateCode == existing.VATRateCode);
         if (inUse)
         {
-            return (false, $"Không thể xóa thuế suất '{existing.VATRateCode}' vì đang được áp dụng trong {await db.SpecPrices.CountAsync(s => s.VATRateCode == existing.VATRateCode)} bảng giá quy cách sản phẩm.");
+            return (false, $"KhÃ´ng thá»ƒ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' vÃ¬ Ä‘ang Ä‘Æ°á»£c Ã¡p dá»¥ng trong {await db.SpecPrices.CountAsync(s => s.VATRateCode == existing.VATRateCode)} báº£ng giÃ¡ quy cÃ¡ch sáº£n pháº©m.");
         }
 
         db.VATRates.Remove(existing);
         await db.SaveChangesAsync();
-        return (true, $"Đã xóa thuế suất '{existing.VATRateCode}' thành công.");
+        return (true, $"ÄÃ£ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' thÃ nh cÃ´ng.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
+
+    /// <summary>BÃ¡o cÃ¡o Tá»“n kho theo Tuá»•i tá»“n (thÃ¡ng) & NhÃ³m hÃ ng (port tá»« Rpt_Inv_InventoryBalance_ByStorageMonth Skycic).</summary>
+    public async Task<StorageMonthReport> StorageMonthReportAsync(int? warehouseId, StorageMonthBracket? bracket, string? keyword, DateTime? asOfDate = null)
+    {
+        var asOf = (asOfDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Táº¥t cáº£ kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+
+        // Láº¥y táº¥t cáº£ cÃ¡c phiáº¿u kho Ä‘Ã£ ghi sá»• tÃ­nh Ä‘áº¿n ngÃ y chá»‘t bÃ¡o cÃ¡o
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= asOf)
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        var balMap = new Dictionary<(int whId, int prodId), int>();
+        var lastInMap = new Dictionary<(int whId, int prodId), DateTime>();
+
+        foreach (var d in docs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (l.Quantity <= 0) continue;
+
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to)
+                {
+                    balMap.TryGetValue((to, l.ProductId), out var cur);
+                    balMap[(to, l.ProductId)] = cur + l.Quantity;
+
+                    if (!lastInMap.TryGetValue((to, l.ProductId), out var prevDate) || d.Date > prevDate)
+                        lastInMap[(to, l.ProductId)] = d.Date;
+                }
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr)
+                {
+                    balMap.TryGetValue((fr, l.ProductId), out var cur);
+                    balMap[(fr, l.ProductId)] = cur - l.Quantity;
+                }
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } frWh)
+                    {
+                        balMap.TryGetValue((frWh, l.ProductId), out var cur);
+                        balMap[(frWh, l.ProductId)] = cur - l.Quantity;
+                    }
+                    if (d.ToWarehouseId is { } toWh)
+                    {
+                        balMap.TryGetValue((toWh, l.ProductId), out var cur);
+                        balMap[(toWh, l.ProductId)] = cur + l.Quantity;
+
+                        if (!lastInMap.TryGetValue((toWh, l.ProductId), out var prevDate) || d.Date > prevDate)
+                            lastInMap[(toWh, l.ProductId)] = d.Date;
+                    }
+                }
+            }
+        }
+
+        // NhÃ³m hÃ ng hÃ³a Ä‘á»ƒ tra cá»©u tÃªn/mÃ´ táº£ nhÃ³m
+        var groups = await db.ProductGroups.ToListAsync();
+        var groupByCode = groups.ToDictionary(g => g.Code, g => g);
+
+        // Tá»•ng há»£p giÃ¡ trá»‹ tá»“n theo (NhÃ³m hÃ ng x NhÃ³m tuá»•i thÃ¡ng)
+        var agg = new Dictionary<(string grpCode, StorageMonthBracket bracket), decimal>();
+        var today = DateTime.Today;
+
+        foreach (var w in targetWarehouses)
+        {
+            foreach (var p in products)
+            {
+                balMap.TryGetValue((w.Id, p.Id), out var curQty);
+                if (curQty <= 0) continue; // Chá»‰ tÃ­nh cÃ¡c máº·t hÃ ng Ä‘ang cÃ³ tá»“n thá»±c táº¿ > 0
+
+                lastInMap.TryGetValue((w.Id, p.Id), out var lastInDate);
+                DateTime? validLastIn = lastInDate != default ? lastInDate : null;
+
+                // Tuá»•i tá»“n tÃ­nh theo sá»‘ ngÃ y ká»ƒ tá»« ngÃ y nháº­p kho gáº§n nháº¥t
+                int storageDays = validLastIn.HasValue ? Math.Max(0, (today - validLastIn.Value.Date).Days) : 0;
+
+                StorageMonthBracket b;
+                if (storageDays < 30 * 3) b = StorageMonthBracket.Under3Months;
+                else if (storageDays < 30 * 6) b = StorageMonthBracket.From3To6Months;
+                else if (storageDays < 30 * 12) b = StorageMonthBracket.From6To12Months;
+                else if (storageDays < 30 * 24) b = StorageMonthBracket.From12To24Months;
+                else b = StorageMonthBracket.Over24Months;
+
+                decimal cost = p.CostPrice > 0 ? p.CostPrice : 100000m;
+                decimal totalVal = curQty * cost;
+
+                string grpCode = string.IsNullOrWhiteSpace(p.ProductGrpCode) ? "__UNGROUPED__" : p.ProductGrpCode!;
+                var key = (grpCode, b);
+                agg.TryGetValue(key, out var acc);
+                agg[key] = acc + totalVal;
+            }
+        }
+
+        decimal grandTotal = agg.Values.Sum();
+
+        var rows = new List<StorageMonthRow>();
+        foreach (var kv in agg)
+        {
+            var (grpCode, b) = kv.Key;
+            decimal val = kv.Value;
+            if (val <= 0) continue;
+            if (bracket.HasValue && b != bracket.Value) continue;
+
+            groupByCode.TryGetValue(grpCode, out var grp);
+            string grpName = grp?.Name ?? (grpCode == "__UNGROUPED__" ? "ChÆ°a phÃ¢n nhÃ³m" : grpCode);
+            string? grpDesc = grp?.Description;
+
+            var (bLabel, badge) = StorageMonthBracketMeta(b);
+            double pct = grandTotal > 0 ? Math.Round((double)(val / grandTotal * 100), 2) : 0;
+
+            rows.Add(new StorageMonthRow(grpCode, grpName, grpDesc, b, bLabel, badge, val, pct));
+        }
+
+        // Sáº¯p xáº¿p: nhÃ³m tuá»•i lÃ¢u nháº¥t lÃªn Ä‘áº§u, tiáº¿p theo giÃ¡ trá»‹ giáº£m dáº§n
+        rows = rows
+            .OrderByDescending(r => r.Bracket)
+            .ThenByDescending(r => r.TotalValue)
+            .ThenBy(r => r.ProductGrpName)
+            .ToList();
+
+        decimal SumBracket(StorageMonthBracket b) => agg.Where(k => k.Key.bracket == b).Sum(k => k.Value);
+        decimal under3 = SumBracket(StorageMonthBracket.Under3Months);
+        decimal from3To6 = SumBracket(StorageMonthBracket.From3To6Months);
+        decimal from6To12 = SumBracket(StorageMonthBracket.From6To12Months);
+        decimal from12To24 = SumBracket(StorageMonthBracket.From12To24Months);
+        decimal over24 = SumBracket(StorageMonthBracket.Over24Months);
+        decimal stagnant = from12To24 + over24;
+        double stagnantPct = grandTotal > 0 ? Math.Round((double)(stagnant / grandTotal * 100), 2) : 0;
+
+        return new StorageMonthReport(
+            warehouseId,
+            whName,
+            asOf.Date,
+            bracket,
+            keyword,
+            grandTotal,
+            rows.Select(r => r.ProductGrpCode).Distinct().Count(),
+            under3,
+            from3To6,
+            from6To12,
+            from12To24,
+            over24,
+            stagnant,
+            stagnantPct,
+            rows
+        );
+    }
+
+    private static (string label, string badge) StorageMonthBracketMeta(StorageMonthBracket b) => b switch
+    {
+        StorageMonthBracket.Under3Months => ("< 3 thÃ¡ng (Má»›i nháº­p)", "bg-success"),
+        StorageMonthBracket.From3To6Months => ("3 - 6 thÃ¡ng (BÃ¬nh thÆ°á»ng)", "bg-info text-dark"),
+        StorageMonthBracket.From6To12Months => ("6 thÃ¡ng - 1 nÄƒm (Cáº§n lÆ°u Ã½)", "bg-warning text-dark"),
+        StorageMonthBracket.From12To24Months => ("1 - 2 nÄƒm (Tá»“n lÃ¢u)", "bg-danger"),
+        _ => ("> 2 nÄƒm (Tá»“n Ä‘á»ng vá»‘n)", "bg-dark")
+    };
+
 }

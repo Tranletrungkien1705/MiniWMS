@@ -551,6 +551,47 @@ public record StorageTimeReport(
     List<StorageTimeRow> Rows
 );
 
+/// <summary>Phân nhóm tuổi tồn theo THÁNG lưu kho (port từ Rpt_Inv_InventoryBalance_ByStorageMonth Skycic).</summary>
+public enum StorageMonthBracket
+{
+    Under3Months = 0,   // < 3 tháng: Hàng mới nhập, luân chuyển tốt
+    From3To6Months = 1, // 3 - 6 tháng: Lưu kho bình thường
+    From6To12Months = 2,// 6 tháng - 1 năm: Cần lưu ý
+    From12To24Months = 3,// 1 - 2 năm: Tồn lâu
+    Over24Months = 4    // > 2 năm: Tồn đọng vốn nghiêm trọng
+}
+
+/// <summary>Dòng chi tiết Báo cáo Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng (port từ Rpt_Inv_InventoryBalance_ByStorageMonth Skycic).</summary>
+public record StorageMonthRow(
+    string ProductGrpCode,
+    string ProductGrpName,
+    string? ProductGrpDesc,
+    StorageMonthBracket Bracket,
+    string BracketLabel,
+    string BadgeClass,
+    decimal TotalValue,
+    double InvPercent
+);
+
+/// <summary>Báo cáo Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng tổng hợp (port từ Rpt_Inv_InventoryBalance_ByStorageMonth Skycic).</summary>
+public record StorageMonthReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,
+    StorageMonthBracket? BracketFilter,
+    string? Keyword,
+    decimal GrandTotalValue,
+    int TotalGroups,
+    decimal Under3MonthsValue,
+    decimal From3To6MonthsValue,
+    decimal From6To12MonthsValue,
+    decimal From12To24MonthsValue,
+    decimal Over24MonthsValue,
+    decimal StagnantValue,
+    double StagnantPercent,
+    List<StorageMonthRow> Rows
+);
+
 /// <summary>Trạng thái tồn kho theo Serial / IMEI (port từ Inv_InventoryBalanceSerial Skycic).</summary>
 public enum StockSerialStatus
 {
@@ -3156,5 +3197,44 @@ public record VatCalculationResult(
     decimal Rate,
     decimal VatAmount,
     decimal TotalAmount
+);
+
+// ==================== BÁO CÁO TỒN KHO TẠI THỜI ĐIỂM (Rpt_Inv_InventoryBalance_ByPeriod Skycic) ====================
+
+/// <summary>Dòng báo cáo Tồn kho tại thời điểm (Point-in-time Inventory Balance - port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic).
+/// Tồn tại mốc thời gian = Tổng nhập đã duyệt (Qty - QtyReturn) - Tổng xuất đã duyệt, tính đến mốc chốt.</summary>
+public record PointInTimeBalanceRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int WarehouseId,
+    string WarehouseName,
+    int QtyIn,               // Tổng nhập lũy kế đến mốc (Qty_InvfIn)
+    int QtyOut,              // Tổng xuất lũy kế đến mốc (Qty_InvfOut)
+    int QtyAtDate,           // Tồn tại thời điểm = QtyIn - QtyOut (QtyTotalOK Skycic)
+    int QtyCurrent,          // Tồn hiện tại (để so sánh biến động)
+    int QtyDelta,            // Chênh lệch tồn hiện tại - tồn tại mốc (QtyCurrent - QtyAtDate)
+    decimal CostPrice,       // Đơn giá vốn kho hiện hành
+    decimal ValueAtDate,     // Giá trị tồn tại mốc = QtyAtDate * CostPrice
+    string MovementStatus,   // Trạng thái biến động (Tăng tồn / Giảm tồn / Không đổi)
+    string MovementBadgeClass
+);
+
+/// <summary>Báo cáo Tồn kho tại thời điểm tổng hợp (port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic).</summary>
+public record PointInTimeBalanceReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,           // Mốc thời điểm chốt tồn (ReportDTimeUTC Skycic)
+    string? Keyword,
+    int TotalItems,              // Số mặt hàng có tồn tại mốc
+    int TotalQtyAtDate,          // Tổng tồn tại mốc
+    int TotalQtyCurrent,         // Tổng tồn hiện tại
+    int TotalQtyDelta,           // Tổng chênh lệch
+    decimal TotalValueAtDate,    // Tổng giá trị tồn tại mốc
+    int IncreasedCount,          // Số mặt hàng tăng tồn
+    int DecreasedCount,          // Số mặt hàng giảm tồn
+    int UnchangedCount,          // Số mặt hàng không đổi
+    List<PointInTimeBalanceRow> Rows
 );
 

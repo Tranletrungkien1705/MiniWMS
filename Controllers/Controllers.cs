@@ -6000,3 +6000,49 @@ public class VATRateController(IWmsService svc) : Controller
 
 
 
+
+// ==================== BÁO CÁO TỒN KHO TẠI THỜI ĐIỂM (Rpt_Inv_InventoryBalance_ByPeriod Skycic) ====================
+public class PointInTimeBalanceController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? asOfDate, string? q = null)
+    {
+        var asOf = asOfDate ?? DateTime.Today;
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.AsOfDate = asOf.ToString("yyyy-MM-dd");
+
+        var report = await svc.PointInTimeBalanceReportAsync(warehouseId, asOf, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? asOfDate, string? q = null)
+    {
+        var asOf = asOfDate ?? DateTime.Today;
+        var report = await svc.PointInTimeBalanceReportAsync(warehouseId, asOf, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị tiếng Việt chuẩn
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO TẠI THỜI ĐIỂM (PORT TỪ RPT_INV_INVENTORYBALANCE_BYPERIOD)");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Mốc chốt tồn:;{report.AsOfDate:dd/MM/yyyy};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng mặt hàng:;{report.TotalItems};Tổng tồn tại mốc:;{report.TotalQtyAtDate};Tổng tồn hiện tại:;{report.TotalQtyCurrent};Tổng chênh lệch:;{report.TotalQtyDelta};Tổng giá trị tồn tại mốc:;{report.TotalValueAtDate:N0} đ");
+        sb.AppendLine($"Biến động:;Tăng tồn: {report.IncreasedCount};Giảm tồn: {report.DecreasedCount};Không đổi: {report.UnchangedCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng hoá;Tên hàng hoá;ĐVT;Kho lưu trữ;Tổng nhập đến mốc;Tổng xuất đến mốc;Tồn tại mốc;Tồn hiện tại;Chênh lệch;Đơn giá vốn kho (đ);Giá trị tồn tại mốc (đ);Trạng thái biến động");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.QtyIn};{r.QtyOut};{r.QtyAtDate};{r.QtyCurrent};{r.QtyDelta};{r.CostPrice:F0};{r.ValueAtDate:F0};\"{r.MovementStatus}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;;;;{report.TotalQtyAtDate};{report.TotalQtyCurrent};{report.TotalQtyDelta};;{report.TotalValueAtDate:F0};");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoTaiThoiDiem_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}

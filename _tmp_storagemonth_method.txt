@@ -1,0 +1,176 @@
+
+    /// <summary>Báo cáo Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng (port từ Rpt_Inv_InventoryBalance_ByStorageMonth Skycic).</summary>
+    public async Task<StorageMonthReport> StorageMonthReportAsync(int? warehouseId, StorageMonthBracket? bracket, string? keyword, DateTime? asOfDate = null)
+    {
+        var asOf = (asOfDate ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+
+        // Lấy tất cả các phiếu kho đã ghi sổ tính đến ngày chốt báo cáo
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= asOf)
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        var balMap = new Dictionary<(int whId, int prodId), int>();
+        var lastInMap = new Dictionary<(int whId, int prodId), DateTime>();
+
+        foreach (var d in docs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (l.Quantity <= 0) continue;
+
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to)
+                {
+                    balMap.TryGetValue((to, l.ProductId), out var cur);
+                    balMap[(to, l.ProductId)] = cur + l.Quantity;
+
+                    if (!lastInMap.TryGetValue((to, l.ProductId), out var prevDate) || d.Date > prevDate)
+                        lastInMap[(to, l.ProductId)] = d.Date;
+                }
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr)
+                {
+                    balMap.TryGetValue((fr, l.ProductId), out var cur);
+                    balMap[(fr, l.ProductId)] = cur - l.Quantity;
+                }
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } frWh)
+                    {
+                        balMap.TryGetValue((frWh, l.ProductId), out var cur);
+                        balMap[(frWh, l.ProductId)] = cur - l.Quantity;
+                    }
+                    if (d.ToWarehouseId is { } toWh)
+                    {
+                        balMap.TryGetValue((toWh, l.ProductId), out var cur);
+                        balMap[(toWh, l.ProductId)] = cur + l.Quantity;
+
+                        if (!lastInMap.TryGetValue((toWh, l.ProductId), out var prevDate) || d.Date > prevDate)
+                            lastInMap[(toWh, l.ProductId)] = d.Date;
+                    }
+                }
+            }
+        }
+
+        // Nhóm hàng hóa để tra cứu tên/mô tả nhóm
+        var groups = await db.ProductGroups.ToListAsync();
+        var groupByCode = groups.ToDictionary(g => g.Code, g => g);
+
+        // Tổng hợp giá trị tồn theo (Nhóm hàng x Nhóm tuổi tháng)
+        var agg = new Dictionary<(string grpCode, StorageMonthBracket bracket), decimal>();
+        var today = DateTime.Today;
+
+        foreach (var w in targetWarehouses)
+        {
+            foreach (var p in products)
+            {
+                balMap.TryGetValue((w.Id, p.Id), out var curQty);
+                if (curQty <= 0) continue; // Chỉ tính các mặt hàng đang có tồn thực tế > 0
+
+                lastInMap.TryGetValue((w.Id, p.Id), out var lastInDate);
+                DateTime? validLastIn = lastInDate != default ? lastInDate : null;
+
+                // Tuổi tồn tính theo số ngày kể từ ngày nhập kho gần nhất
+                int storageDays = validLastIn.HasValue ? Math.Max(0, (today - validLastIn.Value.Date).Days) : 0;
+
+                StorageMonthBracket b;
+                if (storageDays < 30 * 3) b = StorageMonthBracket.Under3Months;
+                else if (storageDays < 30 * 6) b = StorageMonthBracket.From3To6Months;
+                else if (storageDays < 30 * 12) b = StorageMonthBracket.From6To12Months;
+                else if (storageDays < 30 * 24) b = StorageMonthBracket.From12To24Months;
+                else b = StorageMonthBracket.Over24Months;
+
+                decimal cost = p.CostPrice > 0 ? p.CostPrice : 100000m;
+                decimal totalVal = curQty * cost;
+
+                string grpCode = string.IsNullOrWhiteSpace(p.ProductGrpCode) ? "__UNGROUPED__" : p.ProductGrpCode!;
+                var key = (grpCode, b);
+                agg.TryGetValue(key, out var acc);
+                agg[key] = acc + totalVal;
+            }
+        }
+
+        decimal grandTotal = agg.Values.Sum();
+
+        var rows = new List<StorageMonthRow>();
+        foreach (var kv in agg)
+        {
+            var (grpCode, b) = kv.Key;
+            decimal val = kv.Value;
+            if (val <= 0) continue;
+            if (bracket.HasValue && b != bracket.Value) continue;
+
+            groupByCode.TryGetValue(grpCode, out var grp);
+            string grpName = grp?.Name ?? (grpCode == "__UNGROUPED__" ? "Chưa phân nhóm" : grpCode);
+            string? grpDesc = grp?.Description;
+
+            var (bLabel, badge) = StorageMonthBracketMeta(b);
+            double pct = grandTotal > 0 ? Math.Round((double)(val / grandTotal * 100), 2) : 0;
+
+            rows.Add(new StorageMonthRow(grpCode, grpName, grpDesc, b, bLabel, badge, val, pct));
+        }
+
+        // Sắp xếp: nhóm tuổi lâu nhất lên đầu, tiếp theo giá trị giảm dần
+        rows = rows
+            .OrderByDescending(r => r.Bracket)
+            .ThenByDescending(r => r.TotalValue)
+            .ThenBy(r => r.ProductGrpName)
+            .ToList();
+
+        decimal SumBracket(StorageMonthBracket b) => agg.Where(k => k.Key.bracket == b).Sum(k => k.Value);
+        decimal under3 = SumBracket(StorageMonthBracket.Under3Months);
+        decimal from3To6 = SumBracket(StorageMonthBracket.From3To6Months);
+        decimal from6To12 = SumBracket(StorageMonthBracket.From6To12Months);
+        decimal from12To24 = SumBracket(StorageMonthBracket.From12To24Months);
+        decimal over24 = SumBracket(StorageMonthBracket.Over24Months);
+        decimal stagnant = from12To24 + over24;
+        double stagnantPct = grandTotal > 0 ? Math.Round((double)(stagnant / grandTotal * 100), 2) : 0;
+
+        return new StorageMonthReport(
+            warehouseId,
+            whName,
+            asOf.Date,
+            bracket,
+            keyword,
+            grandTotal,
+            rows.Select(r => r.ProductGrpCode).Distinct().Count(),
+            under3,
+            from3To6,
+            from6To12,
+            from12To24,
+            over24,
+            stagnant,
+            stagnantPct,
+            rows
+        );
+    }
+
+    private static (string label, string badge) StorageMonthBracketMeta(StorageMonthBracket b) => b switch
+    {
+        StorageMonthBracket.Under3Months => ("< 3 tháng (Mới nhập)", "bg-success"),
+        StorageMonthBracket.From3To6Months => ("3 - 6 tháng (Bình thường)", "bg-info text-dark"),
+        StorageMonthBracket.From6To12Months => ("6 tháng - 1 năm (Cần lưu ý)", "bg-warning text-dark"),
+        StorageMonthBracket.From12To24Months => ("1 - 2 năm (Tồn lâu)", "bg-danger"),
+        _ => ("> 2 năm (Tồn đọng vốn)", "bg-dark")
+    };
