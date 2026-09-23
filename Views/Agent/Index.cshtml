@@ -1,0 +1,568 @@
+@model AgentReport
+@{
+    ViewData["Title"] = "Đại lý theo địa bàn";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var province = (string)(ViewBag.Province ?? "");
+    var district = (string)(ViewBag.District ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var provinces = ViewBag.Provinces as List<Province> ?? [];
+    var districts = ViewBag.Districts as List<District> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-geo-alt text-primary me-2"></i>Danh mục Đại lý theo địa bàn</h5>
+        <div class="text-muted small">Port từ <code>Mst_Agent</code> (Skycic) — Quản lý điểm đại lý gắn chặt địa bàn Tỉnh/Thành phố & Quận/Huyện, theo dõi trạng thái hoạt động và sản lượng xuất kho giao hàng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Dealer" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-shop me-1"></i> Đại lý phân phối
+        </a>
+        <a href="/Agent/ExportCsv?q=@keyword&province=@province&district=@district&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> In danh sách
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createAgentModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Đại lý
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ ĐẠI LÝ</span>
+                    <i class="bi bi-geo-alt text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalAgents</div>
+                <div class="small text-muted">@Model.ProvinceCount tỉnh · @Model.DistrictCount quận/huyện</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG HOẠT ĐỘNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng giao dịch (@Model.InactiveCount tạm dừng)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">SỐ TỈNH / QUẬN</span>
+                    <i class="bi bi-pin-map text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.ProvinceCount / @Model.DistrictCount</div>
+                <div class="small text-muted">Địa bàn có đại lý đang quản lý</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SẢN LƯỢNG XUẤT</span>
+                    <i class="bi bi-box-seam text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalShippedQty.ToString("N0")</div>
+                <div class="small text-muted">@Model.TotalShippedDocsCount phiếu xuất kho giao hàng</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã, tên đại lý, địa chỉ..." />
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="province" class="form-select form-select-sm" id="filterProvince">
+                    <option value="">-- Tỉnh / Thành: Tất cả --</option>
+                    @foreach (var p in provinces)
+                    {
+                        <!option value="@p.Code" @(province == p.Code ? "selected" : "")>@p.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="district" class="form-select form-select-sm" id="filterDistrict">
+                    <option value="">-- Quận / Huyện: Tất cả --</option>
+                    @foreach (var d in districts)
+                    {
+                        <!option value="@d.Code" @(district == d.Code ? "selected" : "")>@d.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái: Tất cả --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang hoạt động</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng hoạt động</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/Agent" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Đại lý -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width: 40px;">STT</th>
+                        <th style="width: 130px;">Mã đại lý</th>
+                        <th>Tên đại lý</th>
+                        <th style="width: 150px;">Tỉnh / Thành phố</th>
+                        <th style="width: 150px;">Quận / Huyện</th>
+                        <th>Địa chỉ</th>
+                        <th class="text-end" style="width: 110px;">SL xuất</th>
+                        <th class="text-center" style="width: 110px;">Trạng thái</th>
+                        <th class="text-end" style="width: 140px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                Không tìm thấy đại lý nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border font-monospace">@r.Code</span>
+                                </td>
+                                <td>
+                                    <a href="javascript:void(0)" onclick="viewAgentDetail(@r.Id)" class="text-decoration-none text-dark fw-bold">
+                                        @r.Name
+                                    </a>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.ProvinceName) || !string.IsNullOrEmpty(r.ProvinceCode))
+                                    {
+                                        <span class="fw-semibold text-dark"><i class="bi bi-pin-map text-danger me-1"></i>@(r.ProvinceName ?? r.ProvinceCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.DistrictName) || !string.IsNullOrEmpty(r.DistrictCode))
+                                    {
+                                        <span class="badge bg-light text-secondary border">@(r.DistrictName ?? r.DistrictCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.Address))
+                                    {
+                                        <div class="small text-muted text-truncate" style="max-width: 260px;" title="@r.Address">
+                                            <i class="bi bi-geo-alt me-1"></i>@r.Address
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="fw-bold text-dark">@r.TotalShippedQty.ToString("N0")</div>
+                                    <div class="small text-muted">@r.TotalShippedDocsCount phiếu</div>
+                                </td>
+                                <td class="text-center">
+                                    @if (r.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border-success-subtle">
+                                            <i class="bi bi-check-circle me-1"></i>Hoạt động
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border-secondary-subtle">
+                                            <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-info" title="Xem chi tiết" onclick="viewAgentDetail(@r.Id)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin"
+                                                onclick="openEditAgentModal(@r.Id, '@r.Code', '@Html.Raw(Html.Encode(r.Name))', '@r.ProvinceCode', '@r.DistrictCode', '@Html.Raw(Html.Encode(r.Address))', @(r.IsActive ? "true" : "false"), '@Html.Raw(Html.Encode(r.Remark))')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" action="/Agent/ToggleStatus/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái đại lý @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-warning" title="@(r.IsActive ? "Tạm dừng" : "Kích hoạt")">
+                                                <i class="bi @(r.IsActive ? "bi-toggle-on text-success" : "bi-toggle-off text-muted")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="/Agent/Delete/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa đại lý @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL THÊM MỚI ĐẠI LÝ -->
+<div class="modal fade" id="createAgentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="/Agent/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-primary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Thêm mới Đại lý theo địa bàn</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã đại lý</label>
+                            <input type="text" name="Code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="vd: AG-HN-003..." />
+                            <div class="form-text small">Để trống để hệ thống tự động sinh</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên đại lý <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" class="form-control form-control-sm" placeholder="vd: Đại lý Hà Nội - Hoàn Kiếm" required />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <select name="ProvinceCode" class="form-select form-select-sm" id="createProvince">
+                                <option value="">-- Chọn tỉnh / thành phố --</option>
+                                @foreach (var p in provinces)
+                                {
+                                    <option value="@p.Code">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Quận / Huyện</label>
+                            <select name="DistrictCode" class="form-select form-select-sm" id="createDistrict">
+                                <option value="">-- Chọn quận / huyện --</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Địa chỉ đại lý</label>
+                            <input type="text" name="Address" class="form-control form-control-sm" placeholder="Số nhà, đường phố, phường/xã..." />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Ghi chú</label>
+                            <textarea name="Remark" class="form-control form-control-sm" rows="2" placeholder="Ghi chú về đại lý..."></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="createIsActive" checked />
+                                <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt hoạt động ngay khi tạo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu đại lý</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHỈNH SỬA ĐẠI LÝ -->
+<div class="modal fade" id="editAgentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" id="editAgentForm" action="/Agent/Update">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-secondary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Chỉnh sửa Đại lý</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã đại lý</label>
+                            <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên đại lý <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" id="editName" class="form-control form-control-sm" required />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <select name="ProvinceCode" class="form-select form-select-sm" id="editProvince">
+                                <option value="">-- Chọn tỉnh / thành phố --</option>
+                                @foreach (var p in provinces)
+                                {
+                                    <option value="@p.Code">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Quận / Huyện</label>
+                            <select name="DistrictCode" class="form-select form-select-sm" id="editDistrict">
+                                <option value="">-- Chọn quận / huyện --</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Địa chỉ đại lý</label>
+                            <input type="text" name="Address" id="editAddress" class="form-control form-control-sm" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Ghi chú</label>
+                            <textarea name="Remark" id="editRemark" class="form-control form-control-sm" rows="2"></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="editIsActive" />
+                                <label class="form-check-label small fw-semibold" for="editIsActive">Trạng thái hoạt động</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHI TIẾT ĐẠI LÝ -->
+<div class="modal fade" id="detailAgentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white">
+                <h6 class="modal-title fw-bold"><i class="bi bi-geo-alt me-2"></i>Hồ sơ chi tiết Đại lý</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4" id="detailModalBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2 text-muted small">Đang tải hồ sơ đại lý...</div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    async function loadDistricts(provinceCode, targetSelectId, selected) {
+        const sel = document.getElementById(targetSelectId);
+        sel.innerHTML = '<option value="">-- Chọn quận / huyện --</option>';
+        if (!provinceCode) return;
+        try {
+            const res = await fetch('/Agent/Districts?provinceCode=' + encodeURIComponent(provinceCode));
+            if (!res.ok) return;
+            const list = await res.json();
+            list.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.code;
+                opt.textContent = d.name;
+                if (selected && selected === d.code) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    document.getElementById('createProvince').addEventListener('change', function () {
+        loadDistricts(this.value, 'createDistrict', null);
+    });
+    document.getElementById('editProvince').addEventListener('change', function () {
+        loadDistricts(this.value, 'editDistrict', null);
+    });
+
+    function openEditAgentModal(id, code, name, provinceCode, districtCode, address, isActive, remark) {
+        document.getElementById('editAgentForm').action = '/Agent/Update/' + id;
+        document.getElementById('editCode').value = code || '';
+        document.getElementById('editName').value = name || '';
+        document.getElementById('editProvince').value = provinceCode || '';
+        document.getElementById('editAddress').value = address || '';
+        document.getElementById('editIsActive').checked = isActive;
+        document.getElementById('editRemark').value = remark || '';
+        loadDistricts(provinceCode, 'editDistrict', districtCode);
+
+        new bootstrap.Modal(document.getElementById('editAgentModal')).show();
+    }
+
+    async function viewAgentDetail(id) {
+        const modal = new bootstrap.Modal(document.getElementById('detailAgentModal'));
+        modal.show();
+        const container = document.getElementById('detailModalBody');
+        container.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 text-muted small">Đang tải hồ sơ đại lý...</div>
+            </div>`;
+
+        try {
+            const res = await fetch('/Agent/Detail/' + id);
+            if (!res.ok) throw new Error('Không thể tải dữ liệu');
+            const data = await res.json();
+            const d = data.agent;
+
+            let dispatchesHtml = '';
+            if (data.recentDispatches && data.recentDispatches.length > 0) {
+                dispatchesHtml = `
+                    <div class="table-responsive mt-2">
+                        <table class="table table-sm table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Số phiếu xuất</th>
+                                    <th>Ngày xuất</th>
+                                    <th>Kho xuất</th>
+                                    <th class="text-end">Số lượng (cái)</th>
+                                    <th>Số tham chiếu</th>
+                                    <th>Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.recentDispatches.map(p => `
+                                    <tr>
+                                        <td><span class="badge bg-light text-primary border font-monospace">${p.code}</span></td>
+                                        <td>${p.date}</td>
+                                        <td>${p.fromWarehouse || 'Kho trung tâm'}</td>
+                                        <td class="text-end fw-bold text-dark">${p.totalQty.toLocaleString()}</td>
+                                        <td>${p.refNo || '—'}</td>
+                                        <td class="small text-muted">${p.note || '—'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } else {
+                dispatchesHtml = '<div class="alert alert-light border small text-muted py-2 mb-0">Chưa ghi nhận phiếu xuất kho giao hàng nào cho đại lý này.</div>';
+            }
+
+            container.innerHTML = `
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="badge bg-primary fs-6 font-monospace">${d.code}</span>
+                            <h5 class="fw-bold mb-0 text-dark">${d.name}</h5>
+                            ${d.isActive ? '<span class="badge bg-success ms-2">Đang hoạt động</span>' : '<span class="badge bg-secondary ms-2">Tạm dừng</span>'}
+                        </div>
+                        <p class="text-muted small mb-3"><i class="bi bi-geo-alt-fill text-danger me-1"></i>${d.address || 'Chưa cập nhật địa chỉ'}</p>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Tỉnh / Thành phố:</div>
+                                    <div class="fw-semibold">${d.provinceName || d.provinceCode || '—'}</div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Quận / Huyện:</div>
+                                    <div class="fw-semibold">${d.districtName || d.districtCode || '—'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card border">
+                            <div class="card-header bg-light py-2">
+                                <span class="fw-bold small text-dark"><i class="bi bi-box-arrow-up-right text-success me-1"></i>Lịch sử phiếu xuất kho giao hàng gần nhất (${data.totalShippedDocsCount} đợt)</span>
+                            </div>
+                            <div class="card-body p-2">
+                                ${dispatchesHtml}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light p-3 mb-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2"><i class="bi bi-info-circle text-info me-1"></i>Thông tin đại lý</h6>
+                            <div class="mb-2">
+                                <div class="small text-muted">Ngày thiết lập:</div>
+                                <div class="fw-semibold">${d.createdAt}</div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="small text-muted">Cập nhật cuối:</div>
+                                <div class="fw-semibold">${d.updatedAt || '—'}</div>
+                            </div>
+                        </div>
+
+                        <div class="card border-0 bg-light p-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2"><i class="bi bi-graph-up-arrow text-warning me-1"></i>Thống kê luân chuyển hàng</h6>
+                            <div class="d-flex justify-content-between py-1 border-bottom">
+                                <span class="small text-muted">Số phiếu xuất kho:</span>
+                                <span class="fw-bold">${data.totalShippedDocsCount} phiếu</span>
+                            </div>
+                            <div class="d-flex justify-content-between py-1 border-bottom">
+                                <span class="small text-muted">Tổng sản lượng xuất:</span>
+                                <span class="fw-bold text-primary">${data.totalShippedQty.toLocaleString()} cái</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="small text-muted mb-1">Ghi chú:</div>
+                                <div class="small text-secondary p-2 bg-white rounded border">${d.remark || 'Chưa có ghi chú.'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        } catch (err) {
+            container.innerHTML = `<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Lỗi khi tải thông tin: ${err.message}</div>`;
+        }
+    }
+</script>
+}

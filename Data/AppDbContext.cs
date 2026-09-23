@@ -65,6 +65,9 @@ public class AppDbContext : DbContext
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
     public DbSet<InventorySecret> InventorySecrets => Set<InventorySecret>();
     public DbSet<SecretLicense> SecretLicenses => Set<SecretLicense>();
+    public DbSet<Province> Provinces => Set<Province>();
+    public DbSet<District> Districts => Set<District>();
+    public DbSet<Agent> Agents => Set<Agent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -423,6 +426,24 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Mst }).IsUnique();
             e.Ignore(x => x.RemainingQty);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<Province>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<District>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ProvinceCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<Agent>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ProvinceCode });
+            e.HasIndex(x => new { x.OrgId, x.DistrictCode });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

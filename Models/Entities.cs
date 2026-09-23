@@ -3500,3 +3500,85 @@ public record InventorySecretReport(
     int MappedCount,          // Số serial đã gán kiện
     List<InventorySecretRow> Rows
 );
+/// <summary>Danh mục Tỉnh / Thành phố (port từ Mst_Province Skycic). Cấp địa lý cao nhất trong phân cấp địa bàn của đại lý.</summary>
+public class Province : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã tỉnh / thành phố (ProvinceCode, vd: HN, HCM, DN)
+    public string Name { get; set; } = "";             // Tên tỉnh / thành phố (ProvinceName)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Danh mục Quận / Huyện (port từ Mst_District Skycic). Trực thuộc một Tỉnh / Thành phố.</summary>
+public class District : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã quận / huyện (DistrictCode, vd: Q1, Q3, HBT)
+    public string ProvinceCode { get; set; } = "";     // Mã tỉnh / thành phố trực thuộc (ProvinceCode)
+    public string Name { get; set; } = "";             // Tên quận / huyện (DistrictName)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Danh mục Đại lý / Điểm đại lý theo địa bàn (port từ Mst_Agent Skycic: AgentCode, ProvinceCode, DistrictCode, AgentName, AgentAddress, FlagActive).
+/// Khác với Dealer (mạng lưới phân phối phân cấp) — Agent là điểm đại lý gắn chặt địa bàn Tỉnh/Quận.</summary>
+public class Agent : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã đại lý (AgentCode, vd: AG-HN-001)
+    public string Name { get; set; } = "";             // Tên đại lý (AgentName)
+    public string? ProvinceCode { get; set; }          // Mã tỉnh / thành phố (ProvinceCode)
+    public string? DistrictCode { get; set; }          // Mã quận / huyện (DistrictCode)
+    public string? Address { get; set; }               // Địa chỉ đại lý (AgentAddress)
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive)
+    public string? Remark { get; set; }                // Ghi chú
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }           // Thời điểm cập nhật cuối (LogLUDTimeUTC)
+}
+
+/// <summary>Dòng hiển thị Đại lý theo địa bàn kèm tên Tỉnh/Quận và thống kê phiếu xuất kho.</summary>
+public record AgentRow(
+    int Id,
+    string Code,
+    string Name,
+    string? ProvinceCode,
+    string? ProvinceName,
+    string? DistrictCode,
+    string? DistrictName,
+    string? Address,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int TotalShippedDocsCount,
+    int TotalShippedQty
+);
+
+/// <summary>Báo cáo / Danh sách Đại lý theo địa bàn tổng hợp kèm 4 thẻ KPI (port từ Mst_Agent Skycic).</summary>
+public record AgentReport(
+    string? Keyword,
+    string? ProvinceFilter,
+    string? DistrictFilter,
+    bool? ActiveFilter,
+    int TotalAgents,
+    int ActiveCount,
+    int InactiveCount,
+    int ProvinceCount,
+    int DistrictCount,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    List<AgentRow> Rows
+);
+
+/// <summary>Chi tiết Đại lý kèm thông tin địa bàn và lịch sử phiếu xuất kho gần nhất.</summary>
+public record AgentDetailDto(
+    Agent AgentItem,
+    Province? Province,
+    District? District,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    List<StockDoc> RecentDispatches
+);

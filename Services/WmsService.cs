@@ -296,6 +296,16 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateDealerAsync(int id, Dealer item);
     Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteDealerAsync(int id);
+    Task<AgentReport> AgentsReportAsync(string? q = null, string? province = null, string? district = null, bool? activeOnly = null);
+    Task<List<Agent>> AgentsAsync(string? q = null, bool? activeOnly = null);
+    Task<Agent?> GetAgentAsync(int id);
+    Task<AgentDetailDto?> GetAgentDetailAsync(int id);
+    Task<int> CreateAgentAsync(Agent item);
+    Task<(bool ok, string msg)> UpdateAgentAsync(int id, Agent item);
+    Task<(bool ok, string msg)> ToggleAgentStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteAgentAsync(int id);
+    Task<List<Province>> ProvincesAsync(bool? activeOnly = null);
+    Task<List<District>> DistrictsAsync(string? provinceCode = null, bool? activeOnly = null);
     Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<List<TempPrintType>> TempPrintTypesAsync(bool? activeOnly = null);
     Task<List<TempPrint>> TempPrintsAsync(string? typeCode = null, bool? activeOnly = null);
@@ -9384,6 +9394,212 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Dealers.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"ÄÃ£ xÃ³a Ä‘áº¡i lÃ½ '{existing.Code}'.");
+    }
+
+    // ==================== QUáº¢N LÃ Äáº I LÃ THEO Äá»A BÃN (Mst_Agent / Mst_Province / Mst_District Skycic) ====================
+    public async Task<AgentReport> AgentsReportAsync(string? q = null, string? province = null, string? district = null, bool? activeOnly = null)
+    {
+        var provinces = await db.Provinces.ToListAsync();
+        var districts = await db.Districts.ToListAsync();
+        var allAgents = await db.Agents.ToListAsync();
+
+        var query = db.Agents.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(province)) query = query.Where(a => a.ProvinceCode == province);
+        if (!string.IsNullOrWhiteSpace(district)) query = query.Where(a => a.DistrictCode == district);
+        if (activeOnly.HasValue) query = query.Where(a => a.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) || a.Name.ToLower().Contains(kw)
+                || (a.Address != null && a.Address.ToLower().Contains(kw)));
+        }
+
+        var agentsList = await query.OrderBy(a => a.ProvinceCode).ThenBy(a => a.Code).ToListAsync();
+
+        // Thá»‘ng kÃª phiáº¿u xuáº¥t kho giao hÃ ng theo mÃ£ / tÃªn Ä‘áº¡i lÃ½
+        var outDocs = await db.Docs.Include(d => d.Lines)
+            .Where(d => d.Type == DocType.Out && d.Status == DocStatus.Posted)
+            .ToListAsync();
+
+        var rows = new List<AgentRow>();
+        foreach (var a in agentsList)
+        {
+            var prov = !string.IsNullOrEmpty(a.ProvinceCode) ? provinces.FirstOrDefault(p => p.Code.Equals(a.ProvinceCode, StringComparison.OrdinalIgnoreCase)) : null;
+            var dist = !string.IsNullOrEmpty(a.DistrictCode) ? districts.FirstOrDefault(d => d.Code.Equals(a.DistrictCode, StringComparison.OrdinalIgnoreCase)) : null;
+
+            var matched = outDocs.Where(doc =>
+                (!string.IsNullOrEmpty(doc.CustomerCode) && doc.CustomerCode.Equals(a.Code, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(doc.CustomerName) && doc.CustomerName.Equals(a.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+
+            rows.Add(new AgentRow(
+                a.Id,
+                a.Code,
+                a.Name,
+                a.ProvinceCode,
+                prov?.Name,
+                a.DistrictCode,
+                dist?.Name,
+                a.Address,
+                a.IsActive,
+                a.Remark,
+                a.CreatedAt,
+                matched.Count,
+                matched.Sum(d => d.TotalQty)
+            ));
+        }
+
+        int totalAgents = allAgents.Count;
+        int activeCount = allAgents.Count(a => a.IsActive);
+        int inactiveCount = totalAgents - activeCount;
+        int provinceCount = allAgents.Where(a => !string.IsNullOrEmpty(a.ProvinceCode)).Select(a => a.ProvinceCode).Distinct().Count();
+        int districtCount = allAgents.Where(a => !string.IsNullOrEmpty(a.DistrictCode)).Select(a => a.DistrictCode).Distinct().Count();
+
+        return new AgentReport(
+            q,
+            province,
+            district,
+            activeOnly,
+            totalAgents,
+            activeCount,
+            inactiveCount,
+            provinceCount,
+            districtCount,
+            rows.Sum(r => r.TotalShippedDocsCount),
+            rows.Sum(r => r.TotalShippedQty),
+            rows
+        );
+    }
+
+    public Task<List<Agent>> AgentsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Agents.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(a => a.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) || a.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(a => a.Code).ToListAsync();
+    }
+
+    public Task<Agent?> GetAgentAsync(int id) =>
+        db.Agents.FirstOrDefaultAsync(a => a.Id == id);
+
+    public async Task<AgentDetailDto?> GetAgentDetailAsync(int id)
+    {
+        var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == id);
+        if (agent == null) return null;
+
+        Province? prov = null;
+        if (!string.IsNullOrEmpty(agent.ProvinceCode))
+            prov = await db.Provinces.FirstOrDefaultAsync(p => p.Code.ToLower() == agent.ProvinceCode.ToLower());
+
+        District? dist = null;
+        if (!string.IsNullOrEmpty(agent.DistrictCode))
+            dist = await db.Districts.FirstOrDefaultAsync(d => d.Code.ToLower() == agent.DistrictCode.ToLower());
+
+        var outDocs = await db.Docs.Include(d => d.Lines).Include(d => d.FromWarehouse)
+            .Where(doc => doc.Type == DocType.Out && doc.Status == DocStatus.Posted &&
+                ((doc.CustomerCode != null && doc.CustomerCode.ToLower() == agent.Code.ToLower()) ||
+                 (doc.CustomerName != null && doc.CustomerName.ToLower() == agent.Name.ToLower())))
+            .OrderByDescending(d => d.Date)
+            .ToListAsync();
+
+        return new AgentDetailDto(
+            agent,
+            prov,
+            dist,
+            outDocs.Count,
+            outDocs.Sum(d => d.TotalQty),
+            outDocs.Take(10).ToList()
+        );
+    }
+
+    public async Task<int> CreateAgentAsync(Agent item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"AG-{await db.Agents.CountAsync() + 1:D3}";
+        }
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(item.ProvinceCode)) item.ProvinceCode = item.ProvinceCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(item.DistrictCode)) item.DistrictCode = item.DistrictCode.Trim().ToUpperInvariant();
+
+        bool exists = await db.Agents.AnyAsync(a => a.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"MÃ£ Ä‘áº¡i lÃ½ '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.Agents.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateAgentAsync(int id, Agent item)
+    {
+        var existing = await db.Agents.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½.");
+
+        existing.Name = item.Name.Trim();
+        existing.ProvinceCode = string.IsNullOrWhiteSpace(item.ProvinceCode) ? null : item.ProvinceCode.Trim().ToUpperInvariant();
+        existing.DistrictCode = string.IsNullOrWhiteSpace(item.DistrictCode) ? null : item.DistrictCode.Trim().ToUpperInvariant();
+        existing.Address = string.IsNullOrWhiteSpace(item.Address) ? null : item.Address.Trim();
+        existing.IsActive = item.IsActive;
+        existing.Remark = string.IsNullOrWhiteSpace(item.Remark) ? null : item.Remark.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"ÄÃ£ cáº­p nháº­t Ä‘áº¡i lÃ½ '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleAgentStatusAsync(int id)
+    {
+        var existing = await db.Agents.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"ÄÃ£ kÃch hoáº¡t hoáº¡t Ä‘á»™ng Ä‘áº¡i lÃ½ '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn Ä‘áº¡i lÃ½ '{existing.Code}' sang tráº¡ng thÃ¡i táº¡m dá»«ng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteAgentAsync(int id)
+    {
+        var existing = await db.Agents.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y Ä‘áº¡i lÃ½.");
+
+        bool inUse = await db.Docs.AnyAsync(doc =>
+            (doc.CustomerCode != null && doc.CustomerCode.ToUpper() == existing.Code.ToUpper()) ||
+            (doc.CustomerName != null && doc.CustomerName.ToUpper() == existing.Name.ToUpper()));
+        if (inUse)
+        {
+            existing.IsActive = false;
+            existing.UpdatedAt = DateTime.Now;
+            await db.SaveChangesAsync();
+            return (true, $"Äáº¡i lÃ½ '{existing.Code}' Ä‘Ã£ cÃ³ phiáº¿u xuáº¥t kho liÃªn káº¿t nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Táº¡m dá»«ng hoáº¡t Ä‘á»™ng thay vÃ¬ xÃ³a háº³n.");
+        }
+
+        db.Agents.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"ÄÃ£ xÃ³a Ä‘áº¡i lÃ½ '{existing.Code}'.");
+    }
+
+    public Task<List<Province>> ProvincesAsync(bool? activeOnly = null)
+    {
+        var query = db.Provinces.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(p => p.IsActive == activeOnly.Value);
+        return query.OrderBy(p => p.Code).ToListAsync();
+    }
+
+    public Task<List<District>> DistrictsAsync(string? provinceCode = null, bool? activeOnly = null)
+    {
+        var query = db.Districts.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(provinceCode)) query = query.Where(d => d.ProvinceCode == provinceCode);
+        if (activeOnly.HasValue) query = query.Where(d => d.IsActive == activeOnly.Value);
+        return query.OrderBy(d => d.Code).ToListAsync();
     }
 
     // ==================== Báº¢N Äá»’ Lá»†NH GIAO HÃ€NG THEO PHIáº¾U XUáº¤T KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================

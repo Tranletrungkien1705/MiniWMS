@@ -693,6 +693,42 @@ public static class Seeder
             }
             await db.SaveChangesAsync();
         }
+        if (!await db.Provinces.AnyAsync())
+        {
+            db.Provinces.AddRange(
+                new Province { Code = "HN", Name = "Thành phố Hà Nội", IsActive = true },
+                new Province { Code = "HCM", Name = "Thành phố Hồ Chí Minh", IsActive = true },
+                new Province { Code = "DN", Name = "Thành phố Đà Nẵng", IsActive = true },
+                new Province { Code = "HP", Name = "Thành phố Hải Phòng", IsActive = true },
+                new Province { Code = "CT", Name = "Thành phố Cần Thơ", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
+        if (!await db.Districts.AnyAsync())
+        {
+            db.Districts.AddRange(
+                new District { Code = "HBT", ProvinceCode = "HN", Name = "Quận Hai Bà Trưng", IsActive = true },
+                new District { Code = "CG", ProvinceCode = "HN", Name = "Quận Cầu Giấy", IsActive = true },
+                new District { Code = "Q1", ProvinceCode = "HCM", Name = "Quận 1", IsActive = true },
+                new District { Code = "TB", ProvinceCode = "HCM", Name = "Quận Tân Bình", IsActive = true },
+                new District { Code = "HC", ProvinceCode = "DN", Name = "Quận Hải Châu", IsActive = true },
+                new District { Code = "LC", ProvinceCode = "HP", Name = "Quận Lê Chân", IsActive = true },
+                new District { Code = "NK", ProvinceCode = "CT", Name = "Quận Ninh Kiều", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
+        if (!await db.Agents.AnyAsync())
+        {
+            db.Agents.AddRange(
+                new Agent { Code = "AG-HN-001", Name = "Đại lý Hà Nội - Hai Bà Trưng", ProvinceCode = "HN", DistrictCode = "HBT", Address = "Số 12 Bà Triệu, P. Nguyễn Du", IsActive = true, Remark = "Đại lý cấp 1 khu vực nội thành Hà Nội" },
+                new Agent { Code = "AG-HN-002", Name = "Đại lý Hà Nội - Cầu Giấy", ProvinceCode = "HN", DistrictCode = "CG", Address = "Số 45 Xuân Thủy, P. Dịch Vọng Hậu", IsActive = true, Remark = "Đại lý phân phối khu vực phía Tây Hà Nội" },
+                new Agent { Code = "AG-HCM-001", Name = "Đại lý Sài Gòn - Quận 1", ProvinceCode = "HCM", DistrictCode = "Q1", Address = "Số 88 Lê Lợi, P. Bến Thành", IsActive = true, Remark = "Đại lý trung tâm thương mại Quận 1" },
+                new Agent { Code = "AG-HCM-002", Name = "Đại lý Sài Gòn - Tân Bình", ProvinceCode = "HCM", DistrictCode = "TB", Address = "Số 210 Cộng Hòa, P. 12", IsActive = true, Remark = "Đại lý khu vực sân bay Tân Sơn Nhất" },
+                new Agent { Code = "AG-DN-001", Name = "Đại lý Đà Nẵng - Hải Châu", ProvinceCode = "DN", DistrictCode = "HC", Address = "Số 30 Bạch Đằng, P. Thạch Thang", IsActive = true, Remark = "Đại lý miền Trung" },
+                new Agent { Code = "AG-HP-001", Name = "Đại lý Hải Phòng - Lê Chân", ProvinceCode = "HP", DistrictCode = "LC", Address = "Số 15 Tô Hiệu, P. Trại Cau", IsActive = false, Remark = "Tạm dừng hoạt động để tái cơ cấu" }
+            );
+            await db.SaveChangesAsync();
+        }
         else
         {
             // Cập nhật giá vốn, loại mặt hàng và thương hiệu cho dữ liệu cũ nếu chưa có
@@ -3994,7 +4030,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4075,6 +4111,15 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_InventorySecrets_OrgId_FlagUsed\" ON miniwms.\"InventorySecrets\" (\"OrgId\", \"FlagUsed\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"SecretLicenses\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Mst\" text NOT NULL DEFAULT '', \"TotalQty\" integer NOT NULL DEFAULT 0, \"TotalQtyIssued\" integer NOT NULL DEFAULT 0, \"TotalQtyUsed\" integer NOT NULL DEFAULT 0, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SecretLicenses_OrgId_Mst\" ON miniwms.\"SecretLicenses\" (\"OrgId\", \"Mst\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Provinces\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Provinces_OrgId_Code\" ON miniwms.\"Provinces\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Districts\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"ProvinceCode\" text NOT NULL DEFAULT '', \"Name\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Districts_OrgId_Code\" ON miniwms.\"Districts\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Districts_OrgId_ProvinceCode\" ON miniwms.\"Districts\" (\"OrgId\", \"ProvinceCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Agents\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"ProvinceCode\" text NULL, \"DistrictCode\" text NULL, \"Address\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON miniwms.\"Agents\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON miniwms.\"Agents\" (\"OrgId\", \"ProvinceCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_DistrictCode\" ON miniwms.\"Agents\" (\"OrgId\", \"DistrictCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -4107,7 +4152,7 @@ public static class Seeder
     private static async Task MigrateSqliteAsync(AppDbContext db)
     {
         if (db.Database.IsNpgsql()) return;
-        var sql = new[]
+        var sql = new List<string>
         {
             @"CREATE TABLE IF NOT EXISTS ""MoveOrders"" (
                 ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -4900,6 +4945,15 @@ public static class Seeder
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartColorMaps_OrgId_ProductId_PartColorCode"" ON ""PartColorMaps"" (""OrgId"", ""ProductId"", ""PartColorCode"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_PartColorMaps_OrgId_PartColorCode"" ON ""PartColorMaps"" (""OrgId"", ""PartColorCode"");"
         };
+        sql.Add("CREATE TABLE IF NOT EXISTS \"Provinces\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL DEFAULT '', \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Provinces_OrgId_Code\" ON \"Provinces\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"Districts\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"ProvinceCode\" TEXT NOT NULL DEFAULT '', \"Name\" TEXT NOT NULL DEFAULT '', \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Districts_OrgId_Code\" ON \"Districts\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Districts_OrgId_ProvinceCode\" ON \"Districts\" (\"OrgId\", \"ProvinceCode\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"Agents\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL DEFAULT '', \"ProvinceCode\" TEXT NULL, \"DistrictCode\" TEXT NULL, \"Address\" TEXT NULL, \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"Remark\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL, \"UpdatedAt\" TEXT NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON \"Agents\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON \"Agents\" (\"OrgId\", \"ProvinceCode\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_DistrictCode\" ON \"Agents\" (\"OrgId\", \"DistrictCode\");");
         foreach (var s in sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(s); } catch { }

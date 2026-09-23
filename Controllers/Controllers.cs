@@ -5344,6 +5344,154 @@ public class DealerController(IWmsService svc) : Controller
     }
 }
 
+public class AgentController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? province, string? district, bool? activeOnly)
+    {
+        var report = await svc.AgentsReportAsync(q, province, district, activeOnly);
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Province = province ?? "";
+        ViewBag.District = district ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Provinces = await svc.ProvincesAsync(activeOnly: true);
+        ViewBag.Districts = await svc.DistrictsAsync(province, activeOnly: true);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(Agent item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên đại lý.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            await svc.CreateAgentAsync(item);
+            TempData["Success"] = $"Đã tạo mới đại lý '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, Agent item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên đại lý.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (ok, msg) = await svc.UpdateAgentAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleAgentStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteAgentAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetAgentDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy đại lý." });
+
+        return Json(new
+        {
+            agent = new
+            {
+                detail.AgentItem.Id,
+                detail.AgentItem.Code,
+                detail.AgentItem.Name,
+                detail.AgentItem.ProvinceCode,
+                provinceName = detail.Province?.Name,
+                detail.AgentItem.DistrictCode,
+                districtName = detail.District?.Name,
+                detail.AgentItem.Address,
+                detail.AgentItem.IsActive,
+                detail.AgentItem.Remark,
+                createdAt = detail.AgentItem.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                updatedAt = detail.AgentItem.UpdatedAt?.ToString("dd/MM/yyyy HH:mm")
+            },
+            totalShippedDocsCount = detail.TotalShippedDocsCount,
+            totalShippedQty = detail.TotalShippedQty,
+            recentDispatches = detail.RecentDispatches.Select(doc => new
+            {
+                doc.Id,
+                doc.Code,
+                date = doc.Date.ToString("dd/MM/yyyy"),
+                fromWarehouse = doc.FromWarehouse?.Name,
+                totalQty = doc.TotalQty,
+                doc.RefNo,
+                doc.Note
+            })
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Districts(string? provinceCode)
+    {
+        var list = await svc.DistrictsAsync(provinceCode, activeOnly: true);
+        return Json(list.Select(d => new { d.Code, d.Name, d.ProvinceCode }));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? province, string? district, bool? activeOnly)
+    {
+        var report = await svc.AgentsReportAsync(q, province, district, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC ĐẠI LÝ THEO ĐỊA BÀN (MST_AGENT)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc tỉnh thành:;{(string.IsNullOrWhiteSpace(province) ? "Tất cả" : province)}");
+        sb.AppendLine($"Bộ lọc quận huyện:;{(string.IsNullOrWhiteSpace(district) ? "Tất cả" : district)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang hoạt động" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã đại lý;Tên đại lý;Tỉnh / Thành phố;Quận / Huyện;Địa chỉ;Trạng thái;Số phiếu xuất;Tổng SL xuất;Ghi chú;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang hoạt động" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.ProvinceName ?? r.ProvinceCode}\";\"{r.DistrictName ?? r.DistrictCode}\";\"{r.Address?.Replace("\"", "\"\"")}\";\"{statusStr}\";{r.TotalShippedDocsCount};{r.TotalShippedQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ ĐẠI LÝ:;{report.TotalAgents};;;;;;;;");
+        sb.AppendLine($";;HOẠT ĐỘNG:;{report.ActiveCount};;;;;;;;");
+        sb.AppendLine($";;TẠM DỪNG:;{report.InactiveCount};;;;;;;;");
+        sb.AppendLine($";;SỐ TỈNH THÀNH:;{report.ProvinceCount};;;;;;;;");
+        sb.AppendLine($";;SỐ QUẬN HUYỆN:;{report.DistrictCount};;;;;;;;");
+        sb.AppendLine($";;TỔNG PHIẾU XUẤT:;{report.TotalShippedDocsCount};;;;;;;;");
+        sb.AppendLine($";;TỔNG SẢN LƯỢNG XUẤT:;{report.TotalShippedQty};;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DaiLyTheoDiaBan_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class MapDeliveryOrderController(IWmsService svc) : Controller
 {
     [HttpGet("/MapDeliveryOrder")]

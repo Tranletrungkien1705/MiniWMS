@@ -663,6 +663,93 @@ app.MapPost("/api/customer-returns/{id:int}/cancel", async (int id, IWmsService 
     }
 });
 
+// API Quản lý Đại lý theo địa bàn (Agent - port từ Mst_Agent / Mst_Province / Mst_District Skycic)
+app.MapGet("/api/agents", async (string? province, string? district, bool? activeOnly, string? q, IWmsService svc) =>
+{
+    var report = await svc.AgentsReportAsync(q, province, district, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/agents/{id:int}", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetAgentDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy đại lý." });
+    return Results.Ok(new
+    {
+        detail.AgentItem.Id,
+        detail.AgentItem.Code,
+        detail.AgentItem.Name,
+        detail.AgentItem.ProvinceCode,
+        ProvinceName = detail.Province?.Name,
+        detail.AgentItem.DistrictCode,
+        DistrictName = detail.District?.Name,
+        detail.AgentItem.Address,
+        detail.AgentItem.IsActive,
+        detail.AgentItem.Remark,
+        detail.AgentItem.CreatedAt,
+        detail.AgentItem.UpdatedAt,
+        detail.TotalShippedDocsCount,
+        detail.TotalShippedQty
+    });
+});
+
+app.MapPost("/api/agents", async (CreateAgentDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
+    try
+    {
+        var agent = new Agent
+        {
+            Code = dto.Code?.Trim() ?? "",
+            Name = dto.Name.Trim(),
+            ProvinceCode = dto.ProvinceCode?.Trim(),
+            DistrictCode = dto.DistrictCode?.Trim(),
+            Address = dto.Address?.Trim(),
+            IsActive = dto.IsActive ?? true,
+            Remark = dto.Remark?.Trim()
+        };
+        var id = await svc.CreateAgentAsync(agent);
+        return Results.Ok(new { id, code = agent.Code, isActive = agent.IsActive });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/agents/{id:int}", async (int id, UpdateAgentDto dto, IWmsService svc) =>
+{
+    var agent = new Agent
+    {
+        Name = dto.Name ?? "",
+        ProvinceCode = dto.ProvinceCode,
+        DistrictCode = dto.DistrictCode,
+        Address = dto.Address,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark
+    };
+    var (ok, msg) = await svc.UpdateAgentAsync(id, agent);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/agents/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleAgentStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/agents/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteAgentAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapGet("/api/provinces", async (bool? activeOnly, IWmsService svc) =>
+    Results.Ok(await svc.ProvincesAsync(activeOnly)));
+
+app.MapGet("/api/districts", async (string? provinceCode, bool? activeOnly, IWmsService svc) =>
+    Results.Ok(await svc.DistrictsAsync(provinceCode, activeOnly)));
+
 // API Kỳ chốt sổ tồn kho & Lưu vết Snapshot số dư (port từ Rpt_In_Out_Inv & 20200407.ChotTonKho.sql Skycic)
 app.MapGet("/api/period-closings", async (int? warehouseId, PeriodClosingStatus? status, int? year, IWmsService svc) =>
 {
@@ -3903,6 +3990,8 @@ record CreateMoveOrdTypeDto(string? Code, string Name, string? Description, bool
 record UpdateMoveOrdTypeDto(string Name, string? Description, bool? IsUrgent, bool? IsActive);
 record CreateDealerDto(string? Code, string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
 record UpdateDealerDto(string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
+record CreateAgentDto(string? Code, string Name, string? ProvinceCode, string? DistrictCode, string? Address, bool? IsActive, string? Remark);
+record UpdateAgentDto(string Name, string? ProvinceCode, string? DistrictCode, string? Address, bool? IsActive, string? Remark);
 record CreateTempPrintDto(string? Code, string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
 record UpdateTempPrintDto(string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
 record CreateTempPrintTypeDto(string? Code, string Name, string? GroupCode, string? Description, bool? IsActive);
