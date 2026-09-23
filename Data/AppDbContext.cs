@@ -49,11 +49,18 @@ public class AppDbContext : DbContext
     public DbSet<UserMapInventory> UserMapInventories => Set<UserMapInventory>();
     public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
     public DbSet<Area> Areas => Set<Area>();
+    public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<CustomerGroup>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
         b.Entity<ProductGroup>(e =>
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
@@ -83,7 +90,12 @@ public class AppDbContext : DbContext
         b.Entity<Brand>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Supplier>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
-        b.Entity<Customer>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<Customer>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.CustomerGrpCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
         b.Entity<Warehouse>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Product>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<StockDoc>(e =>

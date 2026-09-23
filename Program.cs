@@ -2530,6 +2530,82 @@ app.MapDelete("/api/areas/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+app.MapGet("/api/customer-groups", async (string? q, string? parentCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.CustomerGroupsReportAsync(q, parentCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/customer-groups/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetCustomerGroupAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy nhóm khách hàng." });
+});
+
+app.MapGet("/api/customer-groups/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetCustomerGroupByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy nhóm khách hàng." });
+});
+
+app.MapGet("/api/customer-groups/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetCustomerGroupDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy nhóm khách hàng." });
+});
+
+app.MapPost("/api/customer-groups", async (CreateCustomerGroupDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { success = false, message = "Cần tên nhóm khách hàng." });
+
+    var item = new CustomerGroup
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateCustomerGroupAsync(item);
+        return Results.Ok(new { success = true, id, code = item.Code, message = $"Đã tạo mới nhóm khách hàng '{item.Name}' ({item.Code}) thành công." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { success = false, message = ex.Message });
+    }
+});
+
+app.MapPut("/api/customer-groups/{id:int}", async (int id, UpdateCustomerGroupDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { success = false, message = "Cần tên nhóm khách hàng." });
+
+    var item = new CustomerGroup
+    {
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateCustomerGroupAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/customer-groups/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleCustomerGroupStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/customer-groups/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteCustomerGroupAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2599,3 +2675,5 @@ record CreateProductGroupDto(string? Code, string Name, string? Description, str
 record UpdateProductGroupDto(string Name, string? Description, string? ParentCode, string? BrandCode, bool? IsActive);
 record CreateAreaDto(string? Code, string Name, string? Description, string? ParentCode, bool? IsActive);
 record UpdateAreaDto(string Name, string? Description, string? ParentCode, bool? IsActive);
+record CreateCustomerGroupDto(string? Code, string Name, string? Description, string? ParentCode, bool? IsActive);
+record UpdateCustomerGroupDto(string Name, string? Description, string? ParentCode, bool? IsActive);

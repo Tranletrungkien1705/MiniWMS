@@ -1,0 +1,563 @@
+@model CustomerGroupReport
+@{
+    ViewData["Title"] = "Nhóm khách hàng & Đại lý";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var parentCodeFilter = (string)(ViewBag.ParentCode ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var rootGroups = ViewBag.RootGroups as List<CustomerGroup> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-person-lines-fill text-primary me-2"></i>Danh mục Nhóm khách hàng & Đại lý phân phối</h5>
+        <div class="text-muted small">Port từ <code>Mst_CustomerGroup</code> (Skycic) — Quản lý danh mục nhóm khách hàng & đại lý phân phối theo phân cấp cây cha-con (CustomerGrpCode, CustomerGrpName, CustomerGrpDesc, CustomerGrpCodeParent, FlagActive), liên kết phân loại đối tác xuất kho & tiêu thụ hàng hóa, thống kê số khách hàng trực thuộc và tổng lượng hàng xuất kho phân phối theo từng nhóm</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/CustomerGroup/ExportCsv?q=@keyword&parentCode=@parentCodeFilter&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <a href="/Customer" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-people me-1"></i> Khách hàng / Đại lý
+        </a>
+        <a href="/Doc?type=1" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-arrow-up me-1"></i> Phiếu xuất kho
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createCustomerGroupModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Nhóm khách hàng
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ NHÓM KHÁCH HÀNG</span>
+                    <i class="bi bi-person-lines-fill text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalGroups</div>
+                <div class="small text-muted">Nhóm phân loại kênh bán & phân phối</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NHÓM KÊNH GỐC (CẤP 1)</span>
+                    <i class="bi bi-diagram-2 text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.RootGroupsCount</div>
+                <div class="small text-muted">Kênh phân phối chiến lược chính</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">PHÂN NHÓM CON (CẤP 2)</span>
+                    <i class="bi bi-diagram-3 text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SubGroupsCount</div>
+                <div class="small text-muted">Cấp bậc / Nhóm trực thuộc kênh</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHÁCH HÀNG & LƯỢNG XUẤT</span>
+                    <i class="bi bi-truck text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.TotalCustomersAssigned <span class="fs-6 fw-normal text-muted">khách</span> / @Model.TotalDispatchedQty.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+                <div class="small text-muted">Tổng lượng hàng đã xuất phân phối</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã nhóm, tên nhóm khách hàng, mô tả chính sách..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="parentCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả nhóm cha --</option>
+                    <option value="ROOT" selected="@(parentCodeFilter == "ROOT")">★ Chỉ hiển thị Nhóm gốc (Cấp 1)</option>
+                    @foreach (var rg in rootGroups)
+                    {
+                        <option value="@rg.Code" selected="@(parentCodeFilter == rg.Code)">@rg.Name (@rg.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái --</option>
+                    <option value="true" selected="@(activeOnly == true)">Đang áp dụng</option>
+                    <option value="false" selected="@(activeOnly == false)">Tạm dừng</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(parentCodeFilter) || activeOnly.HasValue)
+                {
+                    <a href="/CustomerGroup" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Nhóm khách hàng -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 50px;">STT</th>
+                    <th style="width: 130px;">Mã nhóm</th>
+                    <th>Tên Nhóm khách hàng & Cấp bậc</th>
+                    <th>Nhóm trực thuộc cha</th>
+                    <th>Mô tả chính sách & Công nợ</th>
+                    <th class="text-center" style="width: 140px;">Khách hàng / Đại lý</th>
+                    <th class="text-end" style="width: 140px;">Xuất kho phân phối</th>
+                    <th class="text-center" style="width: 120px;">Trạng thái</th>
+                    <th class="text-end" style="width: 160px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    bool isRoot = r.Level == 1;
+                    <tr class="@(isRoot ? "table-light-subtle" : "")">
+                        <td class="text-center text-muted small">@idx</td>
+                        <td>
+                            <span class="badge @(isRoot ? "bg-primary text-white" : "bg-light text-dark border") font-monospace">
+                                @r.Code
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                @if (!isRoot)
+                                {
+                                    <span class="text-muted me-2 font-monospace">└─</span>
+                                }
+                                <div>
+                                    <div class="fw-bold @(isRoot ? "text-primary" : "text-dark")">@r.Name</div>
+                                    <div class="mt-1">
+                                        @if (isRoot)
+                                        {
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">
+                                                <i class="bi bi-diagram-2 me-1"></i>Cấp 1 — Nhóm kênh gốc
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;">
+                                                <i class="bi bi-diagram-3 me-1"></i>Cấp 2 — Phân nhóm con
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.ParentCode))
+                            {
+                                <div>
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                        @(r.ParentName ?? r.ParentCode)
+                                    </span>
+                                </div>
+                                <span class="small text-muted font-monospace" style="font-size: 10.5px;">@r.ParentCode</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small italic">— Nhóm gốc —</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-truncate" style="max-width: 260px;" title="@r.Description">
+                                @(r.Description ?? "—")
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            @if (r.CustomerCount > 0)
+                            {
+                                <a href="/Customer?customerGrpCode=@r.Code" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none px-2 py-1" title="Xem danh sách khách hàng trong nhóm">
+                                    <i class="bi bi-people me-1"></i>@r.CustomerCount khách
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-muted border px-2 py-1">0 khách</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (r.TotalDispatchedQty > 0)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-bold">
+                                    @r.TotalDispatchedQty.ToString("N0") <span class="fw-normal small">sp</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0 sp</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="bi bi-check-circle me-1"></i>Áp dụng
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" title="Xem chi tiết phân nhóm & khách hàng" onclick="openDetailModal(@r.Id)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa nhóm" onclick="openEditModal(@r.Id, '@Html.Raw(r.Code)', '@Html.Raw(r.Name)', '@Html.Raw(r.Description ?? "")', '@Html.Raw(r.ParentCode ?? "")', @(r.IsActive ? "true" : "false"))">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form asp-action="Toggle" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn @(r.IsActive ? "btn-outline-warning" : "btn-outline-success")" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt lại")">
+                                        <i class="bi @(r.IsActive ? "bi-pause" : "bi-play")"></i>
+                                    </button>
+                                </form>
+                                <form asp-action="Delete" method="post" class="d-inline" onsubmit="return confirm('Bạn chắc chắn muốn xóa nhóm khách hàng @r.Code? (Nếu nhóm đang có khách hàng hoặc phân nhóm con, hệ thống sẽ tự động chuyển sang trạng thái Ngừng áp dụng để bảo vệ dữ liệu).');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-danger" title="Xóa nhóm">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    idx++;
+                }
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="9" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                            Không tìm thấy nhóm khách hàng nào phù hợp với bộ lọc hiện tại.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Nhóm khách hàng -->
+<div class="modal fade" id="createCustomerGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="Create" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm mới Nhóm khách hàng & Đại lý</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã nhóm khách hàng <span class="text-muted">(để trống để hệ thống tự sinh mã GRP_xx)</span></label>
+                        <input type="text" name="code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="VD: GRP_DAILY, DAILY_CAP1, GRP_B2B..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên nhóm khách hàng <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-sm" required placeholder="VD: Hệ thống Đại lý phân phối, Đại lý Cấp 1..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Nhóm trực thuộc cha <span class="text-muted">(nếu là phân nhóm con Cấp 2)</span></label>
+                        <select name="parentCode" class="form-select form-select-sm">
+                            <option value="">-- Là nhóm gốc Cấp 1 (Không thuộc nhóm cha) --</option>
+                            @foreach (var rg in rootGroups)
+                            {
+                                <option value="@rg.Code">@rg.Name (@rg.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả chính sách chiết khấu, tín dụng & vận chuyển</label>
+                        <textarea name="description" class="form-control form-control-sm" rows="3" placeholder="Nhập các quy định về mức chiết khấu thương mại, hạn mức công nợ ngày, chính sách giao hàng..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary">Lưu Nhóm khách hàng</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Nhóm khách hàng -->
+<div class="modal fade" id="editCustomerGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="Update" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Chỉnh sửa Nhóm khách hàng</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã nhóm khách hàng</label>
+                        <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên nhóm khách hàng <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control form-control-sm" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Nhóm trực thuộc cha</label>
+                        <select name="parentCode" id="editParentCode" class="form-select form-select-sm">
+                            <option value="">-- Là nhóm gốc Cấp 1 (Không thuộc nhóm cha) --</option>
+                            @foreach (var rg in rootGroups)
+                            {
+                                <option value="@rg.Code">@rg.Name (@rg.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả chính sách chiết khấu, tín dụng & vận chuyển</label>
+                        <textarea name="description" id="editDescription" class="form-control form-control-sm" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small" for="editIsActive">Đang áp dụng hoạt động</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary">Lưu thay đổi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem Chi tiết Nhóm khách hàng -->
+<div class="modal fade" id="detailCustomerGroupModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-info-circle text-info me-2"></i>Chi tiết Nhóm khách hàng: <span id="detailGroupTitle" class="text-primary font-monospace"></span></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="p-2 border rounded bg-light">
+                            <div class="small text-muted">Tên nhóm khách hàng:</div>
+                            <div class="fw-bold" id="detailName"></div>
+                            <div class="small text-muted mt-2">Nhóm cha trực thuộc:</div>
+                            <div class="fw-semibold text-secondary" id="detailParent"></div>
+                            <div class="small text-muted mt-2">Mô tả / Chính sách:</div>
+                            <div class="small" id="detailDescription"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-2 border rounded bg-light">
+                            <div class="small text-muted">Trạng thái áp dụng:</div>
+                            <div id="detailStatus"></div>
+                            <div class="small text-muted mt-2">Ngày khởi tạo:</div>
+                            <div class="small font-monospace" id="detailCreatedAt"></div>
+                            <div class="small text-muted mt-2">Tổng số khách hàng & Đại lý:</div>
+                            <div class="fw-bold text-primary fs-6" id="detailCustomerCount"></div>
+                            <div class="small text-muted mt-1">Tổng lượng xuất kho phân phối:</div>
+                            <div class="fw-bold text-success fs-6" id="detailDispatchedQty"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <ul class="nav nav-tabs mb-3" id="detailTabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active small fw-semibold" data-bs-toggle="tab" data-bs-target="#tabSubGroups" type="button">
+                            <i class="bi bi-diagram-3 me-1"></i>Phân nhóm con (<span id="detailSubGroupCount">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small fw-semibold" data-bs-toggle="tab" data-bs-target="#tabCustomers" type="button">
+                            <i class="bi bi-people me-1"></i>Khách hàng & Đại lý (<span id="detailCustCountBadge">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small fw-semibold" data-bs-toggle="tab" data-bs-target="#tabDispatches" type="button">
+                            <i class="bi bi-truck me-1"></i>Xuất kho gần nhất
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="tabSubGroups">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mã phân nhóm</th>
+                                        <th>Tên phân nhóm con</th>
+                                        <th>Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailSubGroupsBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="tabCustomers">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mã KH</th>
+                                        <th>Tên khách hàng / Đại lý</th>
+                                        <th>Loại khách</th>
+                                        <th>Tỉnh / Thành</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailCustomersBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="tabDispatches">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mã phiếu xuất</th>
+                                        <th>Ngày xuất</th>
+                                        <th>Đối tác nhận hàng</th>
+                                        <th class="text-end">Số lượng</th>
+                                        <th class="text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailDispatchesBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditModal(id, code, name, description, parentCode, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editDescription').value = description;
+        document.getElementById('editParentCode').value = parentCode;
+        document.getElementById('editIsActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editCustomerGroupModal')).show();
+    }
+
+    async function openDetailModal(id) {
+        try {
+            const res = await fetch('/CustomerGroup/Detail/' + id);
+            if (!res.ok) {
+                alert('Không thể tải chi tiết nhóm khách hàng.');
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('detailGroupTitle').innerText = data.code + ' — ' + data.name;
+            document.getElementById('detailName').innerText = data.name;
+            document.getElementById('detailParent').innerText = data.parentName ? (data.parentName + ' (' + data.parentCode + ')') : '— Nhóm gốc Cấp 1 —';
+            document.getElementById('detailDescription').innerText = data.description || 'Chưa có mô tả chính sách';
+            document.getElementById('detailCreatedAt').innerText = data.createdAt;
+            document.getElementById('detailCustomerCount').innerText = data.totalCustomers + ' khách hàng / đại lý';
+            document.getElementById('detailDispatchedQty').innerText = Number(data.totalDispatchedQty).toLocaleString() + ' sp';
+            document.getElementById('detailSubGroupCount').innerText = (data.subGroups || []).length;
+            document.getElementById('detailCustCountBadge').innerText = (data.customers || []).length;
+
+            document.getElementById('detailStatus').innerHTML = data.isActive
+                ? '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-check-circle me-1"></i>Đang áp dụng</span>'
+                : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1"><i class="bi bi-pause-circle me-1"></i>Tạm dừng</span>';
+
+            // Sub groups
+            const subBody = document.getElementById('detailSubGroupsBody');
+            subBody.innerHTML = '';
+            if (data.subGroups && data.subGroups.length > 0) {
+                data.subGroups.forEach(s => {
+                    const statusBadge = s.isActive
+                        ? '<span class="badge bg-success-subtle text-success border border-success-subtle">Áp dụng</span>'
+                        : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Tạm dừng</span>';
+                    subBody.innerHTML += `<tr><td class="font-monospace fw-semibold">${s.code}</td><td>${s.name}</td><td>${statusBadge}</td></tr>`;
+                });
+            } else {
+                subBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Không có phân nhóm con nào trực thuộc</td></tr>';
+            }
+
+            // Customers
+            const custBody = document.getElementById('detailCustomersBody');
+            custBody.innerHTML = '';
+            if (data.customers && data.customers.length > 0) {
+                data.customers.forEach(c => {
+                    custBody.innerHTML += `<tr><td class="font-monospace">${c.code}</td><td class="fw-semibold">${c.name}</td><td><span class="badge bg-light text-dark border">${c.customerType}</span></td><td>${c.province || '—'}</td></tr>`;
+                });
+            } else {
+                custBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">Chưa có khách hàng nào được gán vào nhóm này</td></tr>';
+            }
+
+            // Dispatches
+            const dispBody = document.getElementById('detailDispatchesBody');
+            dispBody.innerHTML = '';
+            if (data.recentDispatches && data.recentDispatches.length > 0) {
+                data.recentDispatches.forEach(d => {
+                    dispBody.innerHTML += `<tr><td class="font-monospace"><a href="/Doc/Detail/${d.id}" class="text-decoration-none">${d.code}</a></td><td>${d.date}</td><td>${d.customerName || '—'}</td><td class="text-end fw-bold text-success">${Number(d.totalQty).toLocaleString()}</td><td class="text-center"><span class="badge bg-light text-dark border">${d.status}</span></td></tr>`;
+                });
+            } else {
+                dispBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Chưa có giao dịch xuất kho nào cho khách hàng thuộc nhóm này</td></tr>';
+            }
+
+            new bootstrap.Modal(document.getElementById('detailCustomerGroupModal')).show();
+        } catch (err) {
+            console.error(err);
+            alert('Lỗi kết nối khi lấy chi tiết nhóm khách hàng.');
+        }
+    }
+</script>
+}

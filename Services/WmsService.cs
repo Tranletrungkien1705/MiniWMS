@@ -114,7 +114,7 @@ public interface IWmsService
     Task<int> CreateSupplierAsync(Supplier supplier);
     Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier);
     Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id);
-    Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null);
+    Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null);
     Task<Customer?> GetCustomerAsync(int id);
     Task<Customer?> GetCustomerByCodeAsync(string code);
     Task<int> CreateCustomerAsync(Customer customer);
@@ -234,6 +234,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateAreaAsync(int id, Area item);
     Task<(bool ok, string msg)> ToggleAreaStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteAreaAsync(int id);
+    Task<CustomerGroupReport> CustomerGroupsReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null);
+    Task<List<CustomerGroup>> CustomerGroupsAsync(string? q = null, bool? activeOnly = null);
+    Task<CustomerGroup?> GetCustomerGroupAsync(int id);
+    Task<CustomerGroup?> GetCustomerGroupByCodeAsync(string code);
+    Task<CustomerGroupDetailDto?> GetCustomerGroupDetailAsync(int id);
+    Task<int> CreateCustomerGroupAsync(CustomerGroup item);
+    Task<(bool ok, string msg)> UpdateCustomerGroupAsync(int id, CustomerGroup item);
+    Task<(bool ok, string msg)> ToggleCustomerGroupStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteCustomerGroupAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -3895,16 +3904,18 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     /// <summary>Danh sách Danh mục Khách hàng, Đại lý phân phối (port từ Mst_Customer Skycic).</summary>
-    public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null)
+    public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null)
     {
         var query = db.Customers.AsQueryable();
         if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
         if (!string.IsNullOrWhiteSpace(customerType)) query = query.Where(c => c.CustomerType == customerType.Trim());
+        if (!string.IsNullOrWhiteSpace(customerGrpCode)) query = query.Where(c => c.CustomerGrpCode != null && c.CustomerGrpCode.ToLower() == customerGrpCode.Trim().ToLower());
         if (!string.IsNullOrWhiteSpace(q))
         {
             var kw = q.Trim().ToLower();
             query = query.Where(c => c.Code.ToLower().Contains(kw) ||
                                      c.Name.ToLower().Contains(kw) ||
+                                     (c.CustomerGrpCode != null && c.CustomerGrpCode.ToLower().Contains(kw)) ||
                                      (c.Phone != null && c.Phone.Contains(kw)) ||
                                      (c.Email != null && c.Email.ToLower().Contains(kw)) ||
                                      (c.ContactName != null && c.ContactName.ToLower().Contains(kw)) ||
@@ -3940,6 +3951,8 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.Email = customer.Email?.Trim();
         existing.Address = customer.Address?.Trim();
         existing.Province = customer.Province?.Trim();
+        existing.AreaCode = customer.AreaCode;
+        existing.CustomerGrpCode = customer.CustomerGrpCode;
         existing.TaxCode = customer.TaxCode?.Trim();
         existing.Note = customer.Note?.Trim();
         existing.IsActive = customer.IsActive;
@@ -7700,6 +7713,256 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Areas.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa khu vực '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Nhóm khách hàng & Đại lý phân phối kèm 4 thẻ KPI (port từ Mst_CustomerGroup Skycic).</summary>
+    public async Task<CustomerGroupReport> CustomerGroupsReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
+    {
+        var query = db.CustomerGroups.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode.Equals("ROOT", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(g => string.IsNullOrEmpty(g.ParentCode));
+            else
+                query = query.Where(g => g.ParentCode != null && g.ParentCode.ToLower() == parentCode.Trim().ToLower());
+        }
+
+        if (activeOnly.HasValue)
+            query = query.Where(g => g.IsActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(g => g.Code.ToLower().Contains(kw) ||
+                                     g.Name.ToLower().Contains(kw) ||
+                                     (g.Description != null && g.Description.ToLower().Contains(kw)));
+        }
+
+        var allGroups = await db.CustomerGroups.ToListAsync();
+        var groups = await query.ToListAsync();
+        var allCustomers = await db.Customers.ToListAsync();
+        var allOutDocs = await db.Docs.Where(d => d.Type == DocType.Out).Include(d => d.Lines).ToListAsync();
+
+        var groupDict = allGroups.ToDictionary(g => g.Code.ToUpperInvariant(), g => g.Name);
+
+        var rows = groups.Select(g =>
+        {
+            var codeUpper = g.Code.ToUpperInvariant();
+            var parentUpper = g.ParentCode?.ToUpperInvariant();
+
+            int level = string.IsNullOrWhiteSpace(g.ParentCode) ? 1 : 2;
+            string? parentName = (parentUpper != null && groupDict.TryGetValue(parentUpper, out var pName)) ? pName : null;
+
+            // Lấy mã tất cả phân nhóm con (nếu có)
+            var childGroupCodes = allGroups.Where(sub => sub.ParentCode != null && sub.ParentCode.Equals(g.Code, StringComparison.OrdinalIgnoreCase)).Select(sub => sub.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Các khách hàng thuộc nhóm này hoặc các phân nhóm con của nó
+            var relevantCusts = allCustomers.Where(c => !string.IsNullOrEmpty(c.CustomerGrpCode) && (c.CustomerGrpCode.Equals(g.Code, StringComparison.OrdinalIgnoreCase) || childGroupCodes.Contains(c.CustomerGrpCode))).ToList();
+            int custCount = relevantCusts.Count;
+
+            var custCodes = relevantCusts.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var custNames = relevantCusts.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Tổng lượng xuất kho phân phối giao cho các khách hàng thuộc nhóm
+            int totalDispatched = allOutDocs
+                .Where(d => (!string.IsNullOrEmpty(d.CustomerCode) && custCodes.Contains(d.CustomerCode)) ||
+                            (!string.IsNullOrEmpty(d.CustomerName) && custNames.Contains(d.CustomerName)))
+                .Sum(d => d.Lines.Sum(l => l.Quantity));
+
+            return new CustomerGroupRow(
+                g.Id,
+                g.Code,
+                g.Name,
+                g.Description,
+                g.ParentCode,
+                parentName,
+                g.IsActive,
+                g.CreatedAt,
+                level,
+                custCount,
+                totalDispatched
+            );
+        }).OrderBy(r => string.IsNullOrWhiteSpace(r.ParentCode) ? r.Code : r.ParentCode)
+          .ThenBy(r => r.Level)
+          .ThenBy(r => r.Code)
+          .ToList();
+
+        int totalGroups = allGroups.Count;
+        int rootGroupsCount = allGroups.Count(g => string.IsNullOrWhiteSpace(g.ParentCode));
+        int subGroupsCount = totalGroups - rootGroupsCount;
+
+        var allAssignedCusts = allCustomers.Where(c => !string.IsNullOrEmpty(c.CustomerGrpCode)).ToList();
+        int totalCustomersAssigned = allAssignedCusts.Count;
+
+        var allAssignedCustCodes = allAssignedCusts.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allAssignedCustNames = allAssignedCusts.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        int grandTotalDispatched = allOutDocs
+            .Where(d => (!string.IsNullOrEmpty(d.CustomerCode) && allAssignedCustCodes.Contains(d.CustomerCode)) ||
+                        (!string.IsNullOrEmpty(d.CustomerName) && allAssignedCustNames.Contains(d.CustomerName)))
+            .Sum(d => d.Lines.Sum(l => l.Quantity));
+
+        return new CustomerGroupReport(
+            q,
+            parentCode,
+            activeOnly,
+            totalGroups,
+            rootGroupsCount,
+            subGroupsCount,
+            totalCustomersAssigned,
+            grandTotalDispatched,
+            rows
+        );
+    }
+
+    public Task<List<CustomerGroup>> CustomerGroupsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.CustomerGroups.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(g => g.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(g => g.Code.ToLower().Contains(kw) || g.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(g => string.IsNullOrWhiteSpace(g.ParentCode) ? g.Code : g.ParentCode)
+                    .ThenBy(g => g.Code)
+                    .ToListAsync();
+    }
+
+    public Task<CustomerGroup?> GetCustomerGroupAsync(int id) =>
+        db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
+
+    public Task<CustomerGroup?> GetCustomerGroupByCodeAsync(string code) =>
+        db.CustomerGroups.FirstOrDefaultAsync(g => g.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<CustomerGroupDetailDto?> GetCustomerGroupDetailAsync(int id)
+    {
+        var item = await db.CustomerGroups.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.CustomerGroups.FirstOrDefaultAsync(g => g.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subGroups = await db.CustomerGroups
+            .Where(g => g.ParentCode != null && g.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(g => g.Code)
+            .ToListAsync();
+
+        var childCodes = subGroups.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var customers = await db.Customers
+            .Where(c => !string.IsNullOrEmpty(c.CustomerGrpCode) && (c.CustomerGrpCode.ToLower() == item.Code.Trim().ToLower() || childCodes.Contains(c.CustomerGrpCode)))
+            .OrderBy(c => c.Code)
+            .ToListAsync();
+
+        var custCodes = customers.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var custNames = customers.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var outDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && ((!string.IsNullOrEmpty(d.CustomerCode) && custCodes.Contains(d.CustomerCode)) || (!string.IsNullOrEmpty(d.CustomerName) && custNames.Contains(d.CustomerName))))
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.Lines).ThenInclude(l => l.Product)
+            .OrderByDescending(d => d.Date)
+            .ToListAsync();
+
+        int totalDispatched = outDocs.Sum(d => d.Lines.Sum(l => l.Quantity));
+        var recentDocs = outDocs.Take(5).ToList();
+
+        return new CustomerGroupDetailDto(item, parent, subGroups, customers, customers.Count, totalDispatched, recentDocs);
+    }
+
+    public async Task<int> CreateCustomerGroupAsync(CustomerGroup item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên nhóm khách hàng không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"GRP_{await db.CustomerGroups.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Nhóm cha không thể là chính nhóm này.");
+        }
+
+        bool exists = await db.CustomerGroups.AnyAsync(g => g.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã nhóm khách hàng '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.CustomerGroups.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCustomerGroupAsync(int id, CustomerGroup item)
+    {
+        var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên nhóm khách hàng không được để trống.");
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            var pCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+                return (false, "Nhóm cha không thể là chính nhóm này.");
+            existing.ParentCode = pCode;
+        }
+        else
+        {
+            existing.ParentCode = null;
+        }
+
+        existing.Name = item.Name.Trim();
+        existing.Description = item.Description?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin nhóm khách hàng '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleCustomerGroupStatusAsync(int id)
+    {
+        var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm khách hàng '{existing.Code}'." : $"Đã chuyển nhóm '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCustomerGroupAsync(int id)
+    {
+        var existing = await db.CustomerGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm khách hàng.");
+
+        bool hasCustomers = await db.Customers.AnyAsync(c => c.CustomerGrpCode != null && c.CustomerGrpCode.ToUpper() == existing.Code.ToUpper());
+        bool hasSubGroups = await db.CustomerGroups.AnyAsync(g => g.ParentCode != null && g.ParentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasCustomers || hasSubGroups)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            var reasons = new List<string>();
+            if (hasCustomers) reasons.Add("khách hàng/đại lý trực thuộc");
+            if (hasSubGroups) reasons.Add("phân nhóm nhánh con");
+            return (true, $"Nhóm khách hàng '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.CustomerGroups.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa nhóm khách hàng '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

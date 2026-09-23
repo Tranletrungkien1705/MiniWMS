@@ -2083,18 +2083,20 @@ public class SupplierController(IWmsService svc) : Controller
 
 public class CustomerController(IWmsService svc) : Controller
 {
-    public async Task<IActionResult> Index(string? q, string? customerType, bool? activeOnly)
+    public async Task<IActionResult> Index(string? q, string? customerType, bool? activeOnly, string? customerGrpCode)
     {
         ViewBag.Keyword = q ?? "";
         ViewBag.CustomerType = customerType ?? "";
+        ViewBag.CustomerGrpCode = customerGrpCode ?? "";
         ViewBag.ActiveOnly = activeOnly;
         ViewBag.Areas = await svc.AreasAsync(activeOnly: true);
-        var list = await svc.CustomersAsync(q, customerType, activeOnly);
+        ViewBag.CustomerGroups = await svc.CustomerGroupsAsync(activeOnly: true);
+        var list = await svc.CustomersAsync(q, customerType, activeOnly, customerGrpCode);
         return View(list);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? taxCode, string? note)
+    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? taxCode, string? note)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2114,6 +2116,7 @@ public class CustomerController(IWmsService svc) : Controller
             Address = address?.Trim(),
             Province = province?.Trim(),
             AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
+            CustomerGrpCode = string.IsNullOrWhiteSpace(customerGrpCode) ? null : customerGrpCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = true
@@ -2125,7 +2128,7 @@ public class CustomerController(IWmsService svc) : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? taxCode, string? note, bool isActive = true)
+    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? taxCode, string? note, bool isActive = true)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2144,6 +2147,7 @@ public class CustomerController(IWmsService svc) : Controller
             Address = address?.Trim(),
             Province = province?.Trim(),
             AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
+            CustomerGrpCode = string.IsNullOrWhiteSpace(customerGrpCode) ? null : customerGrpCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = isActive
@@ -4278,6 +4282,153 @@ public class AreaController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"VungKhuVucKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class CustomerGroupController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? parentCode, bool? activeOnly, string? q)
+    {
+        var allGroups = await svc.CustomerGroupsAsync();
+        ViewBag.RootGroups = allGroups.Where(g => string.IsNullOrWhiteSpace(g.ParentCode)).ToList();
+        ViewBag.ParentCode = parentCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.CustomerGroupsReportAsync(q, parentCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetCustomerGroupDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy nhóm khách hàng." });
+
+        return Json(new
+        {
+            id = detail.Group.Id,
+            code = detail.Group.Code,
+            name = detail.Group.Name,
+            description = detail.Group.Description,
+            parentCode = detail.Group.ParentCode,
+            parentName = detail.ParentGroup?.Name,
+            isActive = detail.Group.IsActive,
+            createdAt = detail.Group.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            totalCustomers = detail.TotalCustomers,
+            totalDispatchedQty = detail.TotalDispatchedQty,
+            subGroups = detail.SubGroups.Select(s => new { s.Id, s.Code, s.Name, s.IsActive }),
+            customers = detail.Customers.Select(c => new { c.Id, c.Code, c.Name, c.CustomerType, c.Province }),
+            recentDispatches = detail.RecentDispatches.Select(d => new
+            {
+                d.Id,
+                d.Code,
+                date = d.Date.ToString("dd/MM/yyyy"),
+                d.CustomerName,
+                totalQty = d.Lines.Sum(l => l.Quantity),
+                status = d.Status.ToString()
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? description, string? parentCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nhóm khách hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new CustomerGroup
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateCustomerGroupAsync(item);
+            TempData["Success"] = $"Đã tạo mới nhóm khách hàng '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? description, string? parentCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nhóm khách hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new CustomerGroup
+        {
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateCustomerGroupAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleCustomerGroupStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteCustomerGroupAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, bool? activeOnly, string? q)
+    {
+        var report = await svc.CustomerGroupsReportAsync(q, parentCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC NHÓM KHÁCH HÀNG & ĐẠI LÝ PHÂN PHỐI (MST_CUSTOMERGROUP)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc nhóm cha:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã nhóm;Tên nhóm khách hàng;Cấp bậc;Nhóm trực thuộc cha;Mô tả chính sách & công nợ;Số khách hàng - đại lý;Tổng xuất kho phân phối;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var levelStr = r.Level == 1 ? "Cấp 1 (Gốc)" : "Cấp 2 (Nhánh)";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{levelStr}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.Description?.Replace("\"", "\"\"")}\";{r.CustomerCount};{r.TotalDispatchedQty};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ NHÓM KHÁCH HÀNG:;{report.TotalGroups};;;;;;");
+        sb.AppendLine($";;NHÓM KÊNH GỐC CẤP 1:;{report.RootGroupsCount};;;;;;");
+        sb.AppendLine($";;PHÂN NHÓM CON CẤP 2:;{report.SubGroupsCount};;;;;;");
+        sb.AppendLine($";;TỔNG KHÁCH HÀNG ĐƯỢC PHÂN NHÓM:;{report.TotalCustomersAssigned};;;;;;");
+        sb.AppendLine($";;TỔNG LƯỢNG HÀNG XUẤT KHO:;{report.TotalDispatchedQty};;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"NhomKhachHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

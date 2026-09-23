@@ -330,6 +330,22 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.CustomerGroups.AnyAsync())
+        {
+            db.CustomerGroups.AddRange(
+                // Cấp 1: Kênh / Nhóm gốc (Root Customer Groups)
+                new CustomerGroup { Code = "GRP_DAILY", Name = "Hệ thống Đại lý phân phối", Description = "Mạng lưới đại lý ủy quyền và kênh phân phối chính thức, chính sách chiết khấu cấp đại lý", ParentCode = null, IsActive = true },
+                new CustomerGroup { Code = "GRP_B2B", Name = "Khách hàng Doanh nghiệp & Công trình", Description = "Khách hàng dự án thầu, công trình, cung ứng số lượng lớn theo hợp đồng dài hạn", ParentCode = null, IsActive = true },
+                new CustomerGroup { Code = "GRP_RETAIL", Name = "Khách hàng Tiêu dùng & Bán lẻ", Description = "Kênh bán lẻ trực tiếp tại kho hoặc quầy dịch vụ, giao nhận ngay", ParentCode = null, IsActive = true },
+                new CustomerGroup { Code = "GRP_OEM", Name = "Đối tác Sản xuất & Gia công OEM", Description = "Đối tác gia công liên kết thương hiệu, nguyên vật liệu & thành phẩm hoàn thiện", ParentCode = null, IsActive = true },
+                // Cấp 2: Nhóm nhánh (Sub-groups)
+                new CustomerGroup { Code = "DAILY_CAP1", Name = "Đại lý Cấp 1 — Tổng kho vùng", Description = "Đại lý cấp 1 quy mô lớn, bao tiêu sản lượng theo khu vực miền, hạn mức nợ 45 ngày", ParentCode = "GRP_DAILY", IsActive = true },
+                new CustomerGroup { Code = "DAILY_CAP2", Name = "Đại lý Cấp 2 — Cửa hàng ủy quyền", Description = "Đại lý cấp 2, điểm bán lẻ liên kết và chuỗi showroom theo tỉnh/thành", ParentCode = "GRP_DAILY", IsActive = true },
+                new CustomerGroup { Code = "B2B_DUAN", Name = "Dự án & Nhà thầu trọng điểm", Description = "Các hợp đồng cung ứng gói thầu lớn, yêu cầu hồ sơ KCS và tiến độ giao hàng", ParentCode = "GRP_B2B", IsActive = true },
+                new CustomerGroup { Code = "B2B_SI", Name = "Khách buôn sỉ quy mô lớn", Description = "Đối tác thương mại nhập hàng khối lượng lớn định kỳ hàng tháng", ParentCode = "GRP_B2B", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
@@ -509,6 +525,7 @@ public static class Seeder
                     Address = "261 Khánh Hội, Phường 2, Quận 4, TP.HCM",
                     Province = "TP.HCM",
                     AreaCode = "AREA_HCM",
+                    CustomerGrpCode = "DAILY_CAP1",
                     TaxCode = "0105777650",
                     IsActive = true,
                     Note = "Hệ thống đại lý phân phối thiết bị & thời trang cao cấp",
@@ -526,6 +543,7 @@ public static class Seeder
                     Address = "Lô T2-1.2, Đường D1, Khu Công nghệ cao, TP. Thủ Đức, TP.HCM",
                     Province = "TP.HCM",
                     AreaCode = "AREA_HCM",
+                    CustomerGrpCode = "DAILY_CAP1",
                     TaxCode = "0303217354",
                     IsActive = true,
                     Note = "Chuỗi siêu thị phân phối bán lẻ quy mô toàn quốc",
@@ -543,6 +561,7 @@ public static class Seeder
                     Address = "57 Huỳnh Thúc Kháng, Đống Đa, Hà Nội",
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
+                    CustomerGrpCode = "B2B_DUAN",
                     TaxCode = "0106869738",
                     IsActive = true,
                     Note = "Hợp đồng dự án cấp phát đồng phục & vật tư định kỳ",
@@ -560,6 +579,7 @@ public static class Seeder
                     Address = "18 Tam Trinh, Hoàng Mai, Hà Nội",
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
+                    CustomerGrpCode = "DAILY_CAP2",
                     TaxCode = "0107896541",
                     IsActive = true,
                     Note = "Đối tác lấy buôn phân phối cho mạng lưới cửa hàng bán buôn",
@@ -577,6 +597,7 @@ public static class Seeder
                     Address = "220 Nguyễn Văn Linh, Q. Hải Châu, TP. Đà Nẵng",
                     Province = "Đà Nẵng",
                     AreaCode = "AREA_DN",
+                    CustomerGrpCode = "DAILY_CAP2",
                     TaxCode = "0401889922",
                     IsActive = true,
                     Note = "Đại lý ủy quyền độc quyền khu vực Miền Trung",
@@ -594,6 +615,7 @@ public static class Seeder
                     Address = "Tại quầy nhận hàng kho trung tâm",
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
+                    CustomerGrpCode = "GRP_RETAIL",
                     TaxCode = "",
                     IsActive = true,
                     Note = "Khách mua lẻ trực tiếp thanh toán ngay",
@@ -618,6 +640,20 @@ public static class Seeder
                         "KH-BACHHOA" => "AREA_HN",
                         "KH-ANPHU" => "AREA_DN",
                         _ => "AREA_HN"
+                    };
+                    custChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(c.CustomerGrpCode))
+                {
+                    c.CustomerGrpCode = c.Code switch
+                    {
+                        "KH-FPT" => "DAILY_CAP1",
+                        "KH-MWG" => "DAILY_CAP1",
+                        "KH-VNPT" => "B2B_DUAN",
+                        "KH-BACHHOA" => "DAILY_CAP2",
+                        "KH-ANPHU" => "DAILY_CAP2",
+                        "KH-RETAIL" => "GRP_RETAIL",
+                        _ => "GRP_RETAIL"
                     };
                     custChanged = true;
                 }
@@ -2396,7 +2432,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2434,6 +2470,9 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"Areas\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"ParentCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Areas_OrgId_Code\" ON miniwms.\"Areas\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Areas_OrgId_ParentCode\" ON miniwms.\"Areas\" (\"OrgId\", \"ParentCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"CustomerGroups\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"ParentCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CustomerGroups_OrgId_Code\" ON miniwms.\"CustomerGroups\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_CustomerGroups_OrgId_ParentCode\" ON miniwms.\"CustomerGroups\" (\"OrgId\", \"ParentCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
@@ -2441,6 +2480,7 @@ public static class Seeder
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"AreaCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"Remark\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Customers\" ADD COLUMN IF NOT EXISTS \"AreaCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Customers\" ADD COLUMN IF NOT EXISTS \"CustomerGrpCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PartTypeCode\" text NULL");
@@ -3014,7 +3054,20 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Areas_OrgId_Code"" ON ""Areas"" (""OrgId"", ""Code"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_Areas_OrgId_ParentCode"" ON ""Areas"" (""OrgId"", ""ParentCode"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_Areas_OrgId_ParentCode"" ON ""Areas"" (""OrgId"", ""ParentCode"");",
+            @"ALTER TABLE ""Customers"" ADD COLUMN ""CustomerGrpCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""CustomerGroups"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""Description"" TEXT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CustomerGroups_OrgId_Code"" ON ""CustomerGroups"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_CustomerGroups_OrgId_ParentCode"" ON ""CustomerGroups"" (""OrgId"", ""ParentCode"");"
         };
         foreach (var s in sql)
         {

@@ -230,6 +230,7 @@ public class Customer : IOrgOwned
     public string? Address { get; set; }               // Địa chỉ nhận hàng / giao hàng (CustomerAddress)
     public string? Province { get; set; }              // Tỉnh / Thành phố (ProvinceCode)
     public string? AreaCode { get; set; }              // Vùng / Khu vực thị trường (port từ Mst_Area / Mst_CustomerInArea Skycic)
+    public string? CustomerGrpCode { get; set; }       // Nhóm khách hàng / đại lý (port từ Mst_CustomerGroup Skycic: CustomerGrpCode)
     public string? ContactName { get; set; }           // Người đại diện / liên hệ (ContactName)
     public string? ContactPhone { get; set; }          // Điện thoại người liên hệ (ContactPhone)
     public string? TaxCode { get; set; }               // Mã số thuế (TaxCode)
@@ -2286,6 +2287,58 @@ public record AreaDetailDto(
     int TotalWarehouses,
     int TotalCustomers,
     int TotalStockQty
+);
+
+/// <summary>Danh mục Nhóm khách hàng & Đại lý phân phối kho (port từ Mst_CustomerGroup Skycic: CustomerGrpCode, CustomerGrpName, CustomerGrpDesc, CustomerGrpCodeParent, FlagActive).</summary>
+public class CustomerGroup : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã nhóm khách hàng (CustomerGrpCode, vd: GRP_DAILY, DAILY_CAP1, DAILY_CAP2, GRP_B2B, B2B_DUAN, GRP_RETAIL...)
+    public string Name { get; set; } = "";             // Tên nhóm khách hàng (CustomerGrpName, vd: Hệ thống Đại lý phân phối, Đại lý Cấp 1...)
+    public string? Description { get; set; }          // Mô tả chính sách chiết khấu, hạn mức nợ & giao hàng (CustomerGrpDesc)
+    public string? ParentCode { get; set; }           // Mã nhóm cha (CustomerGrpCodeParent) - phân cấp cây nhóm Cấp 1 / Cấp 2
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị nhóm khách hàng kèm thông tin nhóm cha, số khách hàng/đại lý trực thuộc và tổng lượng hàng đã xuất kho phân phối.</summary>
+public record CustomerGroupRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Description,
+    string? ParentCode,
+    string? ParentName,
+    bool IsActive,
+    DateTime CreatedAt,
+    int Level, // 1 = Nhóm gốc (Root / Channel), 2 = Phân nhóm con (Sub-group)
+    int CustomerCount,
+    int TotalDispatchedQty
+);
+
+/// <summary>Báo cáo / Danh sách nhóm khách hàng tổng hợp kèm 4 thẻ KPI.</summary>
+public record CustomerGroupReport(
+    string? Keyword,
+    string? ParentFilter,
+    bool? ActiveFilter,
+    int TotalGroups,
+    int RootGroupsCount,
+    int SubGroupsCount,
+    int TotalCustomersAssigned,
+    int TotalDispatchedQty,
+    List<CustomerGroupRow> Rows
+);
+
+/// <summary>Chi tiết Nhóm khách hàng kèm danh sách các phân nhóm con, danh sách khách hàng trực thuộc và các giao dịch xuất kho gần nhất.</summary>
+public record CustomerGroupDetailDto(
+    CustomerGroup Group,
+    CustomerGroup? ParentGroup,
+    List<CustomerGroup> SubGroups,
+    List<Customer> Customers,
+    int TotalCustomers,
+    int TotalDispatchedQty,
+    List<StockDoc> RecentDispatches
 );
 
 

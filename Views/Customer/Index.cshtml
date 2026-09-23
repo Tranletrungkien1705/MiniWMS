@@ -3,9 +3,12 @@
     ViewData["Title"] = "Danh mục Khách hàng & Đại lý";
     var keyword = (string)(ViewBag.Keyword ?? "");
     var selectedType = (string)(ViewBag.CustomerType ?? "");
+    var selectedGrp = (string)(ViewBag.CustomerGrpCode ?? "");
     var activeOnly = (bool?)ViewBag.ActiveOnly;
     var areas = ViewBag.Areas as List<Area> ?? [];
     var areaDict = areas.ToDictionary(a => a.Code, a => a.Name, StringComparer.OrdinalIgnoreCase);
+    var custGroups = ViewBag.CustomerGroups as List<CustomerGroup> ?? [];
+    var custGrpDict = custGroups.ToDictionary(g => g.Code, g => g.Name, StringComparer.OrdinalIgnoreCase);
 
     int totalCount = Model.Count;
     int agentCount = Model.Count(c => c.CustomerType == "Đại lý phân phối");
@@ -19,6 +22,9 @@
         <div class="text-muted small">Port từ <code>Mst_Customer</code> (Skycic) — Quản lý hồ sơ khách hàng, đại lý phân phối, liên kết xuất bán hàng và nhập hàng khách trả lại</div>
     </div>
     <div class="d-flex gap-2">
+        <a href="/CustomerGroup" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-person-lines-fill me-1"></i> Nhóm khách hàng
+        </a>
         <a href="/Area" class="btn btn-sm btn-outline-info">
             <i class="bi bi-geo-alt me-1"></i> Vùng & Khu vực
         </a>
@@ -90,22 +96,31 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-3">
         <form method="get" class="row g-2 align-items-center">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm theo mã, tên, SĐT, email, tỉnh thành..." />
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm mã, tên, SĐT, nhóm..." />
                 </div>
             </div>
             <div class="col-md-3">
+                <select name="customerGrpCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhóm khách hàng —</option>
+                    @foreach (var cg in custGroups)
+                    {
+                        <option value="@cg.Code" selected="@(selectedGrp == cg.Code)">@cg.Name (@cg.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
                 <select name="customerType" class="form-select form-select-sm">
-                    <option value="">— Tất cả loại khách hàng —</option>
+                    <option value="">— Tất cả loại khách —</option>
                     <option value="Đại lý phân phối" selected="@(selectedType == "Đại lý phân phối")">Đại lý phân phối</option>
                     <option value="Bán buôn B2B" selected="@(selectedType == "Bán buôn B2B")">Bán buôn B2B</option>
                     <option value="Dự án / Công trình" selected="@(selectedType == "Dự án / Công trình")">Dự án / Công trình</option>
                     <option value="Khách lẻ" selected="@(selectedType == "Khách lẻ")">Khách lẻ</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select name="activeOnly" class="form-select form-select-sm">
                     <option value="">— Tất cả trạng thái —</option>
                     <option value="true" selected="@(activeOnly == true)">Đang hoạt động</option>
@@ -116,7 +131,7 @@
                 <button type="submit" class="btn btn-sm btn-primary w-100">
                     <i class="bi bi-funnel me-1"></i> Lọc
                 </button>
-                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(selectedType) || activeOnly.HasValue)
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(selectedType) || !string.IsNullOrEmpty(selectedGrp) || activeOnly.HasValue)
                 {
                     <a href="/Customer" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
                         <i class="bi bi-x-lg"></i>
@@ -162,7 +177,16 @@
                         </td>
                         <td>
                             <div class="fw-bold text-dark">@c.Name</div>
-                            <span class="badge @typeBadgeClass mt-1 small" style="font-size: 11px;">@c.CustomerType</span>
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                <span class="badge @typeBadgeClass small" style="font-size: 11px;">@c.CustomerType</span>
+                                @if (!string.IsNullOrEmpty(c.CustomerGrpCode))
+                                {
+                                    var gName = custGrpDict.TryGetValue(c.CustomerGrpCode, out var gn) ? gn : c.CustomerGrpCode;
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small" style="font-size: 11px;">
+                                        <i class="bi bi-person-lines-fill me-1"></i>@gName
+                                    </span>
+                                }
+                            </div>
                         </td>
                         <td>
                             @if (!string.IsNullOrEmpty(c.ContactName))
@@ -225,7 +249,7 @@
                                 <button type="button" class="btn btn-outline-info" title="Xem hồ sơ & Lịch sử xuất hàng" onclick="openDetailModal(@c.Id)">
                                     <i class="bi bi-clock-history"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.AreaCode ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.AreaCode ?? "")', '@Html.Raw(c.CustomerGrpCode ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <form asp-action="Toggle" method="post" class="d-inline">
@@ -297,6 +321,16 @@
                             @foreach (var ar in areas)
                             {
                                 <option value="@ar.Code">@ar.Name (@ar.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Nhóm khách hàng (Mst_CustomerGroup)</label>
+                        <select name="customerGrpCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Nhóm khách hàng --</option>
+                            @foreach (var cg in custGroups)
+                            {
+                                <option value="@cg.Code">@cg.Name (@cg.Code)</option>
                             }
                         </select>
                     </div>
@@ -378,6 +412,16 @@
                             @foreach (var ar in areas)
                             {
                                 <option value="@ar.Code">@ar.Name (@ar.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Nhóm khách hàng (Mst_CustomerGroup)</label>
+                        <select name="customerGrpCode" id="editCustomerGrpCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Nhóm khách hàng --</option>
+                            @foreach (var cg in custGroups)
+                            {
+                                <option value="@cg.Code">@cg.Name (@cg.Code)</option>
                             }
                         </select>
                     </div>
@@ -561,7 +605,7 @@
 
 @section Scripts {
 <script>
-function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, areaCode, taxCode, note, isActive) {
+function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, areaCode, customerGrpCode, taxCode, note, isActive) {
     document.getElementById('editId').value = id;
     document.getElementById('editCode').value = code;
     document.getElementById('editName').value = name;
@@ -573,6 +617,7 @@ function openEditModal(id, code, name, type, contactName, contactPhone, phone, e
     document.getElementById('editAddress').value = address;
     document.getElementById('editProvince').value = province;
     document.getElementById('editAreaCode').value = areaCode || '';
+    document.getElementById('editCustomerGrpCode').value = customerGrpCode || '';
     document.getElementById('editTaxCode').value = taxCode;
     document.getElementById('editNote').value = note;
     document.getElementById('editIsActive').checked = isActive;
