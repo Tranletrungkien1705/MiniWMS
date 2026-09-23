@@ -46,11 +46,18 @@ public class AppDbContext : DbContext
     public DbSet<InventoryLevelType> InventoryLevelTypes => Set<InventoryLevelType>();
     public DbSet<InventoryInType> InventoryInTypes => Set<InventoryInType>();
     public DbSet<InventoryOutType> InventoryOutTypes => Set<InventoryOutType>();
+    public DbSet<UserMapInventory> UserMapInventories => Set<UserMapInventory>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<UserMapInventory>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.UserCode }).IsUnique();
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
         b.Entity<InventoryOutType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryInType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryLevelType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

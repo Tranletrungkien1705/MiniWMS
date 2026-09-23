@@ -102,6 +102,124 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.UserMapInventories.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var whDn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-DN");
+            var today = DateTime.Today;
+
+            var maps = new List<UserMapInventory>();
+
+            if (whHn != null)
+            {
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHn.Id,
+                    UserCode = "admin",
+                    UserName = "Hệ thống Quản trị (Admin)",
+                    UserRole = "Trưởng kho / Quản lý",
+                    Email = "admin@miniwms.vn",
+                    Phone = "0901.888.999",
+                    IsActive = true,
+                    Remark = "Phụ trách điều phối tổng thể Kho Hà Nội và phê duyệt xuất nhập",
+                    AssignedBy = "system",
+                    AssignedAt = today.AddDays(-90)
+                });
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHn.Id,
+                    UserCode = "thukho_hn01",
+                    UserName = "Nguyễn Văn Hưng",
+                    UserRole = "Thủ kho chính",
+                    Email = "hung.nv@miniwms.vn",
+                    Phone = "0912.345.678",
+                    IsActive = true,
+                    Remark = "Quản lý bảo quản hàng hóa, chốt sổ tồn và giám sát thủ tục nhập xuất",
+                    AssignedBy = "admin",
+                    AssignedAt = today.AddDays(-60)
+                });
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHn.Id,
+                    UserCode = "nv_xuatkho_hn",
+                    UserName = "Trần Thị Mai Lan",
+                    UserRole = "Nhân viên xuất nhập",
+                    Email = "lan.ttm@miniwms.vn",
+                    Phone = "0988.112.233",
+                    IsActive = true,
+                    Remark = "Phụ trách tiếp nhận hàng NCC và soạn đơn xuất bán sỉ",
+                    AssignedBy = "thukho_hn01",
+                    AssignedAt = today.AddDays(-45)
+                });
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHn.Id,
+                    UserCode = "kiemke_hn",
+                    UserName = "Lê Hoàng Quân",
+                    UserRole = "Kiểm kê viên",
+                    Email = "quan.lh@miniwms.vn",
+                    Phone = "0977.556.677",
+                    IsActive = true,
+                    Remark = "Định kỳ đối soát tồn thực tế, kiểm tra số lô và serial",
+                    AssignedBy = "admin",
+                    AssignedAt = today.AddDays(-30)
+                });
+            }
+
+            if (whHcm != null)
+            {
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHcm.Id,
+                    UserCode = "thukho_sg01",
+                    UserName = "Võ Minh Trí",
+                    UserRole = "Trưởng kho / Quản lý",
+                    Email = "tri.vm@miniwms.vn",
+                    Phone = "0933.224.466",
+                    IsActive = true,
+                    Remark = "Tổng chỉ huy kho miền Nam, điều chuyển phân phối đại lý",
+                    AssignedBy = "admin",
+                    AssignedAt = today.AddDays(-75)
+                });
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whHcm.Id,
+                    UserCode = "nv_kho_sg",
+                    UserName = "Phạm Hồng Ngọc",
+                    UserRole = "Thủ kho chính",
+                    Email = "ngoc.ph@miniwms.vn",
+                    Phone = "0908.776.543",
+                    IsActive = true,
+                    Remark = "Trực ca vận hành xuất nhập và quét mã vạch",
+                    AssignedBy = "thukho_sg01",
+                    AssignedAt = today.AddDays(-40)
+                });
+            }
+
+            if (whDn != null)
+            {
+                maps.Add(new UserMapInventory
+                {
+                    WarehouseId = whDn.Id,
+                    UserCode = "thukho_dn",
+                    UserName = "Đặng Hải Đăng",
+                    UserRole = "Thủ kho chính",
+                    Email = "dang.dh@miniwms.vn",
+                    Phone = "0966.331.122",
+                    IsActive = true,
+                    Remark = "Quản lý Hub trung chuyển miền Trung",
+                    AssignedBy = "admin",
+                    AssignedAt = today.AddDays(-50)
+                });
+            }
+
+            if (maps.Count > 0)
+            {
+                db.UserMapInventories.AddRange(maps);
+                await db.SaveChangesAsync();
+            }
+        }
         if (!await db.PartTypes.AnyAsync())
         {
             db.PartTypes.AddRange(
@@ -2196,7 +2314,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2224,6 +2342,9 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryInTypes_OrgId_Code\" ON miniwms.\"InventoryInTypes\" (\"OrgId\", \"Code\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryOutTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"FlagStatistic\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryOutTypes_OrgId_Code\" ON miniwms.\"InventoryOutTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"UserMapInventories\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"WarehouseId\" integer NOT NULL, \"UserCode\" text NOT NULL, \"UserName\" text NOT NULL, \"UserRole\" text NOT NULL DEFAULT 'Thủ kho chính', \"Email\" text NULL, \"Phone\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"AssignedBy\" text NOT NULL DEFAULT 'admin', \"AssignedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserMapInventories_OrgId_WarehouseId_UserCode\" ON miniwms.\"UserMapInventories\" (\"OrgId\", \"WarehouseId\", \"UserCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_UserMapInventories_OrgId_UserCode\" ON miniwms.\"UserMapInventories\" (\"OrgId\", \"UserCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
@@ -2755,7 +2876,24 @@ public static class Seeder
                 ""Remark"" TEXT NULL,
                 ""CreatedAt"" TEXT NOT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryOutTypes_OrgId_Code"" ON ""InventoryOutTypes"" (""OrgId"", ""Code"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryOutTypes_OrgId_Code"" ON ""InventoryOutTypes"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""UserMapInventories"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""UserCode"" TEXT NOT NULL,
+                ""UserName"" TEXT NOT NULL,
+                ""UserRole"" TEXT NOT NULL DEFAULT 'Thủ kho chính',
+                ""Email"" TEXT NULL,
+                ""Phone"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""AssignedBy"" TEXT NOT NULL DEFAULT 'admin',
+                ""AssignedAt"" TEXT NOT NULL,
+                CONSTRAINT ""FK_UserMapInventories_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserMapInventories_OrgId_WarehouseId_UserCode"" ON ""UserMapInventories"" (""OrgId"", ""WarehouseId"", ""UserCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_UserMapInventories_OrgId_UserCode"" ON ""UserMapInventories"" (""OrgId"", ""UserCode"");"
         };
         foreach (var s in sql)
         {

@@ -2218,6 +2218,150 @@ app.MapDelete("/api/inventory-out-types/{id:int}", async (int id, IWmsService sv
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Phân quyền người dùng quản lý kho / Gán thủ kho phụ trách (port từ Mst_UserMapInventory Skycic)
+app.MapGet("/api/user-map-inventories", async (int? warehouseId, string? userRole, bool? activeOnly, string? q, IWmsService svc) =>
+{
+    var report = await svc.UserMapInventoriesReportAsync(warehouseId, userRole, activeOnly, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/user-map-inventories/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetUserMapInventoryAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy bản ghi phân quyền kho." });
+    return Results.Ok(new
+    {
+        item.Id,
+        Warehouse = item.Warehouse.Name,
+        WarehouseCode = item.Warehouse.Code,
+        item.WarehouseId,
+        item.UserCode,
+        item.UserName,
+        item.UserRole,
+        item.Email,
+        item.Phone,
+        item.IsActive,
+        item.Remark,
+        item.AssignedBy,
+        item.AssignedAt
+    });
+});
+
+app.MapGet("/api/user-map-inventories/by-warehouse/{warehouseId:int}", async (int warehouseId, IWmsService svc) =>
+{
+    var list = await svc.GetUserMapsByWarehouseAsync(warehouseId);
+    return Results.Ok(list.Select(m => new
+    {
+        m.Id,
+        m.WarehouseId,
+        WarehouseCode = m.Warehouse.Code,
+        WarehouseName = m.Warehouse.Name,
+        m.UserCode,
+        m.UserName,
+        m.UserRole,
+        m.Email,
+        m.Phone,
+        m.IsActive,
+        m.Remark,
+        m.AssignedBy,
+        m.AssignedAt
+    }));
+});
+
+app.MapGet("/api/user-map-inventories/by-user/{userCode}", async (string userCode, IWmsService svc) =>
+{
+    var list = await svc.GetUserMapsByUserCodeAsync(userCode);
+    return Results.Ok(list.Select(m => new
+    {
+        m.Id,
+        m.WarehouseId,
+        WarehouseCode = m.Warehouse.Code,
+        WarehouseName = m.Warehouse.Name,
+        m.UserCode,
+        m.UserName,
+        m.UserRole,
+        m.Email,
+        m.Phone,
+        m.IsActive,
+        m.Remark,
+        m.AssignedBy,
+        m.AssignedAt
+    }));
+});
+
+app.MapGet("/api/user-map-inventories/warehouse-summaries", async (IWmsService svc) =>
+{
+    var summaries = await svc.GetWarehouseAssignmentSummariesAsync();
+    return Results.Ok(summaries);
+});
+
+app.MapPost("/api/user-map-inventories", async (CreateUserMapInventoryDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần chọn kho hợp lệ (WarehouseId)." });
+    if (string.IsNullOrWhiteSpace(dto.UserCode)) return Results.BadRequest(new { error = "Cần mã tài khoản / mã nhân viên." });
+    if (string.IsNullOrWhiteSpace(dto.UserName)) return Results.BadRequest(new { error = "Cần họ và tên nhân sự." });
+
+    try
+    {
+        var item = new UserMapInventory
+        {
+            WarehouseId = dto.WarehouseId,
+            UserCode = dto.UserCode.Trim().ToLowerInvariant(),
+            UserName = dto.UserName.Trim(),
+            UserRole = string.IsNullOrWhiteSpace(dto.UserRole) ? "Thủ kho chính" : dto.UserRole.Trim(),
+            Email = dto.Email?.Trim(),
+            Phone = dto.Phone?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true,
+            AssignedBy = string.IsNullOrWhiteSpace(dto.AssignedBy) ? "admin" : dto.AssignedBy.Trim(),
+            AssignedAt = DateTime.Now
+        };
+        var id = await svc.CreateUserMapInventoryAsync(item);
+        return Results.Ok(new { id, userCode = item.UserCode, userName = item.UserName, warehouseId = item.WarehouseId });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/user-map-inventories/{id:int}", async (int id, UpdateUserMapInventoryDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.UserName)) return Results.BadRequest(new { error = "Cần họ và tên nhân sự." });
+    var item = new UserMapInventory
+    {
+        UserName = dto.UserName.Trim(),
+        UserRole = string.IsNullOrWhiteSpace(dto.UserRole) ? "Thủ kho chính" : dto.UserRole.Trim(),
+        Email = dto.Email?.Trim(),
+        Phone = dto.Phone?.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive
+    };
+    var (ok, msg) = await svc.UpdateUserMapInventoryAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/user-map-inventories/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleUserMapInventoryStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/user-map-inventories/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteUserMapInventoryAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/user-map-inventories/batch-map", async (BatchMapUserDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần chọn kho hợp lệ (WarehouseId)." });
+    if (dto.Users == null || dto.Users.Count == 0) return Results.BadRequest(new { error = "Danh sách nhân viên không được rỗng." });
+
+    var (ok, msg, count) = await svc.BatchMapUsersToWarehouseAsync(dto.WarehouseId, dto.Users, dto.AssignedBy ?? "admin");
+    return ok ? Results.Ok(new { success = true, message = msg, count }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2280,3 +2424,6 @@ record CreateInventoryInTypeDto(string? Code, string Name, bool? FlagStatistic, 
 record UpdateInventoryInTypeDto(string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
 record CreateInventoryOutTypeDto(string? Code, string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
 record UpdateInventoryOutTypeDto(string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
+record CreateUserMapInventoryDto(int WarehouseId, string UserCode, string UserName, string? UserRole, string? Email, string? Phone, string? Remark, bool? IsActive, string? AssignedBy);
+record UpdateUserMapInventoryDto(string UserName, string? UserRole, string? Email, string? Phone, string? Remark, bool IsActive);
+record BatchMapUserDto(int WarehouseId, List<BatchMapUserItemDto> Users, string? AssignedBy);

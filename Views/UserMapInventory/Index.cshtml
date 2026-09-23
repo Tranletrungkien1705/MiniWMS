@@ -1,0 +1,581 @@
+@model UserMapInventoryReport
+@{
+    ViewData["Title"] = "Phân quyền kho";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var selectedWhId = (int?)ViewBag.WarehouseId;
+    var selectedRole = (string)(ViewBag.UserRole ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var warehouses = ViewBag.Warehouses as List<Warehouse> ?? new List<Warehouse>();
+    var summaries = ViewBag.Summaries as List<WarehouseAssignmentSummary> ?? new List<WarehouseAssignmentSummary>();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-person-check-fill text-primary me-2"></i>Phân quyền Thủ kho & Quản lý kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_UserMapInventory</code> (Skycic) — Quản lý phân quyền gán người dùng phụ trách từng kho hàng (Trưởng kho, Thủ kho chính, Nhân viên xuất nhập, Kiểm kê viên), phân định thẩm quyền và trách nhiệm quản lý vật tư tài sản</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/UserMapInventory/ExportCsv?warehouseId=@selectedWhId&userRole=@selectedRole&activeOnly=@activeOnly&q=@keyword" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#warehouseSummaryModal">
+            <i class="bi bi-buildings me-1"></i> Tổng hợp theo kho
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#batchMapModal">
+            <i class="bi bi-people-fill me-1"></i> Gán hàng loạt theo kho
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createUserMapModal">
+            <i class="bi bi-plus-lg me-1"></i> Phân công thủ kho
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG LƯỢT PHÂN CÔNG</span>
+                    <i class="bi bi-shield-lock-fill text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalAssignments</div>
+                <div class="small text-muted">Lượt gán quyền nhân sự vào kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG HIỆU LỰC</span>
+                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveAssignments</div>
+                <div class="small text-muted">Nhân sự có quyền thao tác kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NHÂN SỰ VẬN HÀNH</span>
+                    <i class="bi bi-people text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.TotalUsersAssigned</div>
+                <div class="small text-muted">Số tài khoản nhân viên phụ trách</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHO CHƯA PHÂN CÔNG</span>
+                    <i class="bi bi-exclamation-triangle-fill @(Model.UnassignedWarehousesCount > 0 ? "text-danger" : "text-secondary") fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold @(Model.UnassignedWarehousesCount > 0 ? "text-danger" : "text-muted")">@Model.UnassignedWarehousesCount</div>
+                <div class="small text-muted">Kho khuyết thủ kho phụ trách</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã NV, họ tên, kho, email, SĐT..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">-- Tất cả kho hàng --</option>
+                    @foreach (var w in warehouses)
+                    {
+                        <!option value="@w.Id" @(selectedWhId == w.Id ? "selected" : "")>@w.Code - @w.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="userRole" class="form-select form-select-sm">
+                    <option value="">-- Tất cả vai trò --</option>
+                    <!option value="Trưởng kho / Quản lý" @(selectedRole == "Trưởng kho / Quản lý" ? "selected" : "")>Trưởng kho / Quản lý</!option>
+                    <!option value="Thủ kho chính" @(selectedRole == "Thủ kho chính" ? "selected" : "")>Thủ kho chính</!option>
+                    <!option value="Nhân viên xuất nhập" @(selectedRole == "Nhân viên xuất nhập" ? "selected" : "")>Nhân viên xuất nhập</!option>
+                    <!option value="Kiểm kê viên" @(selectedRole == "Kiểm kê viên" ? "selected" : "")>Kiểm kê viên</!option>
+                    <!option value="Giám sát an toàn" @(selectedRole == "Giám sát an toàn" ? "selected" : "")>Giám sát an toàn</!option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang hiệu lực</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng</!option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Lọc dữ liệu">
+                    <i class="bi bi-filter"></i>
+                </button>
+                <a href="/UserMapInventory" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Phân quyền Thủ kho -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 220px;">Nhân sự phụ trách</th>
+                        <th style="width: 220px;">Kho hàng quản lý</th>
+                        <th style="width: 170px;">Vai trò phụ trách</th>
+                        <th style="width: 200px;">Thông tin liên hệ</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th>Ghi chú phân công</th>
+                        <th style="width: 150px;">Ngày gán</th>
+                        <th class="text-end pe-3" style="width: 130px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                Không tìm thấy bản ghi phân quyền kho nào phù hợp điều kiện lọc.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            var roleBadge = row.UserRole switch
+                            {
+                                "Trưởng kho / Quản lý" => "bg-primary text-white",
+                                "Thủ kho chính" => "bg-success text-white",
+                                "Nhân viên xuất nhập" => "bg-info text-dark",
+                                "Kiểm kê viên" => "bg-warning text-dark",
+                                "Giám sát an toàn" => "bg-danger text-white",
+                                _ => "bg-secondary text-white"
+                            };
+
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-sm rounded-circle bg-light text-primary d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
+                                            <i class="bi bi-person-fill"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold text-dark">@row.UserName</div>
+                                            <code class="small text-muted">@row.UserCode</code>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.WarehouseName</div>
+                                    <div class="d-flex gap-1 align-items-center mt-1 flex-wrap">
+                                        <span class="badge bg-light text-secondary border font-monospace">@row.WarehouseCode</span>
+                                        @if (!string.IsNullOrWhiteSpace(row.InvTypeCode))
+                                        {
+                                            <span class="badge bg-secondary-subtle text-secondary small">@row.InvTypeCode</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(row.InvLevelTypeCode))
+                                        {
+                                            <span class="badge bg-info-subtle text-info small">@row.InvLevelTypeCode</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge @roleBadge px-2 py-1">@row.UserRole</span>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(row.Email))
+                                    {
+                                        <div class="small text-truncate" style="max-width: 180px;"><i class="bi bi-envelope me-1 text-muted"></i>@row.Email</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(row.Phone))
+                                    {
+                                        <div class="small text-muted"><i class="bi bi-telephone me-1"></i>@row.Phone</div>
+                                    }
+                                    @if (string.IsNullOrWhiteSpace(row.Email) && string.IsNullOrWhiteSpace(row.Phone))
+                                    {
+                                        <span class="text-muted small">Chưa cập nhật</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" action="/UserMapInventory/Toggle" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@row.Id" />
+                                        <button type="submit" class="btn btn-sm border-0 p-0" title="Bấm để chuyển trạng thái">
+                                            @if (row.IsActive)
+                                            {
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                    <i class="bi bi-check-circle me-1"></i> Hiệu lực
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                                    <i class="bi bi-pause-circle me-1"></i> Tạm dừng
+                                                </span>
+                                            }
+                                        </button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <span class="small text-muted text-break">@(string.IsNullOrWhiteSpace(row.Remark) ? "—" : row.Remark)</span>
+                                </td>
+                                <td>
+                                    <div class="small text-dark">@row.AssignedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                                    <div class="text-muted" style="font-size: 11px;">Bởi: @row.AssignedBy</div>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="openEditModal(@row.Id, '@row.UserName', '@row.UserRole', '@(row.Email ?? "")', '@(row.Phone ?? "")', '@(row.Remark ?? "")', @(row.IsActive ? "true" : "false"))" title="Sửa phân công">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" action="/UserMapInventory/Delete" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn hủy gán nhân sự \'@row.UserName\' khỏi kho \'@row.WarehouseName\'?');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@row.Id" />
+                                            <button type="submit" class="btn btn-outline-danger" title="Hủy phân quyền kho">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm Phân công mới -->
+<div class="modal fade" id="createUserMapModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/UserMapInventory/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-person-plus-fill text-primary me-2"></i>Phân công Thủ kho / Quản lý kho</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Kho hàng phân quyền <span class="text-danger">*</span></label>
+                        <select name="warehouseId" class="form-select" required>
+                            <option value="">-- Chọn kho hàng --</option>
+                            @foreach (var w in warehouses)
+                            {
+                                <!option value="@w.Id" @(selectedWhId == w.Id ? "selected" : "")>@w.Code - @w.Name</!option>
+                            }
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã tài khoản / Mã NV <span class="text-danger">*</span></label>
+                            <input type="text" name="userCode" class="form-control" placeholder="vd: thukho_hn02" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Họ và tên nhân sự <span class="text-danger">*</span></label>
+                            <input type="text" name="userName" class="form-control" placeholder="vd: Hoàng Đức Anh" required />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Vai trò phụ trách <span class="text-danger">*</span></label>
+                        <select name="userRole" class="form-select" required>
+                            <option value="Thủ kho chính" selected>Thủ kho chính (Quản lý bảo quản & ký phiếu)</option>
+                            <option value="Trưởng kho / Quản lý">Trưởng kho / Quản lý (Điều phối tổng & duyệt xuất nhập)</option>
+                            <option value="Nhân viên xuất nhập">Nhân viên xuất nhập (Tiếp nhận hàng & soạn hàng)</option>
+                            <option value="Kiểm kê viên">Kiểm kê viên (Đối soát tồn & kiểm đếm định kỳ)</option>
+                            <option value="Giám sát an toàn">Giám sát an toàn (Giám sát PCCC, bảo quản, an ninh kho)</option>
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email liên hệ</label>
+                            <input type="email" name="email" class="form-control" placeholder="vd: anh.hd@miniwms.vn" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Số điện thoại</label>
+                            <input type="text" name="phone" class="form-control" placeholder="vd: 0912.999.888" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú / Quyết định phân công</label>
+                        <textarea name="remark" class="form-control" rows="2" placeholder="Ghi chú trách nhiệm, ca làm việc hoặc số quyết định điều chuyển"></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked>
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt hiệu lực phân quyền ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu phân công</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Phân công -->
+<div class="modal fade" id="editUserMapModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/UserMapInventory/Update">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Cập nhật phân quyền nhân sự</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Họ và tên nhân sự <span class="text-danger">*</span></label>
+                        <input type="text" name="userName" id="editUserName" class="form-control" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Vai trò phụ trách <span class="text-danger">*</span></label>
+                        <select name="userRole" id="editUserRole" class="form-select" required>
+                            <option value="Trưởng kho / Quản lý">Trưởng kho / Quản lý (Điều phối tổng & duyệt xuất nhập)</option>
+                            <option value="Thủ kho chính">Thủ kho chính (Quản lý bảo quản & ký phiếu)</option>
+                            <option value="Nhân viên xuất nhập">Nhân viên xuất nhập (Tiếp nhận hàng & soạn hàng)</option>
+                            <option value="Kiểm kê viên">Kiểm kê viên (Đối soát tồn & kiểm đếm định kỳ)</option>
+                            <option value="Giám sát an toàn">Giám sát an toàn (Giám sát PCCC, bảo quản, an ninh kho)</option>
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email liên hệ</label>
+                            <input type="email" name="email" id="editEmail" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Số điện thoại</label>
+                            <input type="text" name="phone" id="editPhone" class="form-control" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú / Trách nhiệm</label>
+                        <textarea name="remark" id="editRemark" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive">
+                        <label class="form-check-label small fw-semibold" for="editIsActive">Đang hiệu lực phân quyền</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Gán hàng loạt theo kho (Batch Map Modal - port theo mẫu GetUserMapInventory.cshtml Skycic) -->
+<div class="modal fade" id="batchMapModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/UserMapInventory/BatchMap">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-people-fill text-primary me-2"></i>Gán danh sách nhân sự phụ trách kho hàng loạt</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle me-1"></i> Chọn kho hàng đích và đánh dấu các nhân sự cần gán quyền phụ trách kho (theo logic màn hình <code>GetUserMapInventory</code> của hệ thống Skycic).
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Kho hàng tiếp nhận <span class="text-danger">*</span></label>
+                        <select name="warehouseId" class="form-select" required>
+                            <option value="">-- Chọn kho hàng đích --</option>
+                            @foreach (var w in warehouses)
+                            {
+                                <!option value="@w.Id" @(selectedWhId == w.Id ? "selected" : "")>@w.Code - @w.Name</!option>
+                            }
+                        </select>
+                    </div>
+
+                    <label class="form-label small fw-semibold mb-1">Danh sách nhân sự kho khả dụng:</label>
+                    <div class="table-responsive border rounded mb-3" style="max-height: 280px;">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th style="width: 40px;" class="text-center">
+                                        <input type="checkbox" id="checkAllBatch" class="form-check-input" onclick="toggleAllBatch(this)">
+                                    </th>
+                                    <th>Mã NV</th>
+                                    <th>Họ và tên</th>
+                                    <th>Vai trò đề xuất</th>
+                                    <th>Email</th>
+                                    <th>Số ĐT</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    var sampleUsers = new[]
+                                    {
+                                        new { Code = "admin", Name = "Hệ thống Quản trị (Admin)", Role = "Trưởng kho / Quản lý", Email = "admin@miniwms.vn", Phone = "0901.888.999" },
+                                        new { Code = "thukho_hn01", Name = "Nguyễn Văn Hưng", Role = "Thủ kho chính", Email = "hung.nv@miniwms.vn", Phone = "0912.345.678" },
+                                        new { Code = "nv_xuatkho_hn", Name = "Trần Thị Mai Lan", Role = "Nhân viên xuất nhập", Email = "lan.ttm@miniwms.vn", Phone = "0988.112.233" },
+                                        new { Code = "kiemke_hn", Name = "Lê Hoàng Quân", Role = "Kiểm kê viên", Email = "quan.lh@miniwms.vn", Phone = "0977.556.677" },
+                                        new { Code = "thukho_sg01", Name = "Võ Minh Trí", Role = "Trưởng kho / Quản lý", Email = "tri.vm@miniwms.vn", Phone = "0933.224.466" },
+                                        new { Code = "nv_kho_sg", Name = "Phạm Hồng Ngọc", Role = "Thủ kho chính", Email = "ngoc.ph@miniwms.vn", Phone = "0908.776.543" },
+                                        new { Code = "thukho_dn", Name = "Đặng Hải Đăng", Role = "Thủ kho chính", Email = "dang.dh@miniwms.vn", Phone = "0966.331.122" },
+                                        new { Code = "giamsat_kho", Name = "Bùi Anh Tuấn", Role = "Giám sát an toàn", Email = "tuan.ba@miniwms.vn", Phone = "0944.556.789" },
+                                        new { Code = "nv_kho_hp", Name = "Đỗ Quỳnh Chi", Role = "Nhân viên xuất nhập", Email = "chi.dq@miniwms.vn", Phone = "0918.223.344" },
+                                        new { Code = "nv_kho_ct", Name = "Lâm Thanh Phong", Role = "Thủ kho chính", Email = "phong.lt@miniwms.vn", Phone = "0922.334.455" }
+                                    };
+                                }
+                                @for (int i = 0; i < sampleUsers.Length; i++)
+                                {
+                                    var u = sampleUsers[i];
+                                    <tr>
+                                        <td class="text-center">
+                                            <input type="checkbox" name="userCodes" value="@u.Code" class="form-check-input batch-user-cb">
+                                            <input type="hidden" name="userNames" value="@u.Name">
+                                            <input type="hidden" name="userRoles" value="@u.Role">
+                                            <input type="hidden" name="emails" value="@u.Email">
+                                            <input type="hidden" name="phones" value="@u.Phone">
+                                        </td>
+                                        <td><code>@u.Code</code></td>
+                                        <td class="fw-semibold">@u.Name</td>
+                                        <td><span class="badge bg-light text-dark border">@u.Role</span></td>
+                                        <td class="small text-muted">@u.Email</td>
+                                        <td class="small text-muted">@u.Phone</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú phân công chung</label>
+                        <input type="text" name="remark" class="form-control" value="Phân công đợt theo quyết định vận hành kho" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2-all me-1"></i> Xác nhận gán nhân sự</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Tổng hợp tình trạng phân công theo kho -->
+<div class="modal fade" id="warehouseSummaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-buildings text-info me-2"></i>Tổng hợp Tình trạng Phân công Nhân sự theo Kho</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 50px;">STT</th>
+                                <th style="width: 140px;">Mã kho</th>
+                                <th>Tên kho hàng</th>
+                                <th class="text-center" style="width: 130px;">Số thủ kho</th>
+                                <th>Danh sách nhân sự đang phụ trách</th>
+                                <th class="text-end pe-3" style="width: 100px;">Lọc kho</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int sumIdx = 1;
+                            }
+                            @foreach (var s in summaries)
+                            {
+                                <tr>
+                                    <td class="ps-3 text-muted">@(sumIdx++)</td>
+                                    <td><code class="fw-bold">@s.WarehouseCode</code></td>
+                                    <td class="fw-semibold">@s.WarehouseName</td>
+                                    <td class="text-center">
+                                        @if (s.AssignedUsersCount > 0)
+                                        {
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">@s.AssignedUsersCount nhân sự</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Chưa phân công</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (s.AssignedUserNames.Count > 0)
+                                        {
+                                            <div class="d-flex gap-1 flex-wrap">
+                                                @foreach (var un in s.AssignedUserNames)
+                                                {
+                                                    <span class="badge bg-light text-dark border small">@un</span>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-danger small"><i class="bi bi-exclamation-circle me-1"></i>Cần bổ nhiệm thủ kho phụ trách</span>
+                                        }
+                                    </td>
+                                    <td class="text-end pe-3">
+                                        <a href="/UserMapInventory?warehouseId=@s.WarehouseId" class="btn btn-sm btn-outline-primary py-0 px-2" title="Xem phân quyền kho này">
+                                            <i class="bi bi-arrow-right-short"></i> Xem
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditModal(id, userName, userRole, email, phone, remark, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editUserName').value = userName;
+        document.getElementById('editUserRole').value = userRole;
+        document.getElementById('editEmail').value = email;
+        document.getElementById('editPhone').value = phone;
+        document.getElementById('editRemark').value = remark;
+        document.getElementById('editIsActive').checked = isActive;
+
+        var modal = new bootstrap.Modal(document.getElementById('editUserMapModal'));
+        modal.show();
+    }
+
+    function toggleAllBatch(source) {
+        var checkboxes = document.querySelectorAll('.batch-user-cb');
+        for (var i = 0; i < checkboxes.length; i++) {
+            checkboxes[i].checked = source.checked;
+        }
+    }
+</script>
+}

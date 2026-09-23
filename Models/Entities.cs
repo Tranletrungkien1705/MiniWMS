@@ -2105,6 +2105,76 @@ public record InventoryLevelTypeDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Phân quyền người dùng quản lý kho / Gán thủ kho phụ trách kho (port từ Mst_UserMapInventory Skycic: OrgID, UserCode, InvCode, Remark, LogLUBy, LogLUDTimeUTC).</summary>
+public class UserMapInventory : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int WarehouseId { get; set; }                                  // Kho được phân quyền quản lý (InvCode)
+    public string UserCode { get; set; } = "";                             // Mã người dùng / Mã nhân viên (UserCode, vd: admin, thukho_hn01, nv_xuatkho...)
+    public string UserName { get; set; } = "";                             // Họ tên nhân viên phụ trách kho
+    public string UserRole { get; set; } = "Thủ kho chính";               // Vai trò phụ trách: Trưởng kho, Thủ kho chính, Nhân viên xuất nhập, Kiểm kê viên, Giám sát an toàn
+    public string? Email { get; set; }                                    // Email liên lạc
+    public string? Phone { get; set; }                                    // Số điện thoại liên hệ
+    public bool IsActive { get; set; } = true;                             // Trạng thái hiệu lực phân quyền (FlagActive: 1 - Hiệu lực, 0 - Tạm dừng)
+    public string? Remark { get; set; }                                    // Ghi chú / Quyết định phân công nhiệm vụ
+    public string AssignedBy { get; set; } = "admin";                     // Người phân công (LogLUBy)
+    public DateTime AssignedAt { get; set; } = DateTime.Now;               // Thời điểm phân quyền (LogLUDTimeUTC)
+
+    public Warehouse Warehouse { get; set; } = null!;
+}
+
+/// <summary>Dòng thông tin hiển thị phân quyền thủ kho kèm chi tiết kho và nhân viên.</summary>
+public record UserMapInventoryRow(
+    int Id,
+    int WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string? InvTypeCode,
+    string? InvLevelTypeCode,
+    string UserCode,
+    string UserName,
+    string UserRole,
+    string? Email,
+    string? Phone,
+    bool IsActive,
+    string? Remark,
+    string AssignedBy,
+    DateTime AssignedAt
+);
+
+/// <summary>Báo cáo / Danh sách phân quyền người dùng quản lý kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record UserMapInventoryReport(
+    int? WarehouseId,
+    string? UserRole,
+    bool? ActiveFilter,
+    string? Keyword,
+    int TotalAssignments,
+    int ActiveAssignments,
+    int TotalUsersAssigned,
+    int UnassignedWarehousesCount,
+    List<UserMapInventoryRow> Rows
+);
+
+/// <summary>Tổng hợp thông tin phân công nhân sự theo từng kho.</summary>
+public record WarehouseAssignmentSummary(
+    int WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    int AssignedUsersCount,
+    List<string> AssignedUserNames
+);
+
+/// <summary>Dữ liệu gán hàng loạt nhân viên vào kho.</summary>
+public record BatchMapUserItemDto(
+    string UserCode,
+    string UserName,
+    string UserRole,
+    string? Email,
+    string? Phone,
+    string? Remark
+);
+
 
 
 

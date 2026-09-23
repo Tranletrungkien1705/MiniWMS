@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0, int TotalInventoryLevelTypes = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0, int TotalInventoryLevelTypes = 0, int TotalUserMapInventories = 0);
 
 public interface IWmsService
 {
@@ -204,6 +204,17 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleInventoryOutTypeStatusAsync(int id);
     Task<(bool ok, string msg)> ToggleInventoryOutTypeStatisticAsync(int id);
     Task<(bool ok, string msg)> DeleteInventoryOutTypeAsync(int id);
+    Task<UserMapInventoryReport> UserMapInventoriesReportAsync(int? warehouseId = null, string? userRole = null, bool? activeOnly = null, string? q = null);
+    Task<List<UserMapInventory>> UserMapInventoriesAsync(int? warehouseId = null, bool? activeOnly = null);
+    Task<UserMapInventory?> GetUserMapInventoryAsync(int id);
+    Task<List<UserMapInventory>> GetUserMapsByWarehouseAsync(int warehouseId);
+    Task<List<UserMapInventory>> GetUserMapsByUserCodeAsync(string userCode);
+    Task<List<WarehouseAssignmentSummary>> GetWarehouseAssignmentSummariesAsync();
+    Task<int> CreateUserMapInventoryAsync(UserMapInventory item);
+    Task<(bool ok, string msg)> UpdateUserMapInventoryAsync(int id, UserMapInventory item);
+    Task<(bool ok, string msg)> ToggleUserMapInventoryStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteUserMapInventoryAsync(int id);
+    Task<(bool ok, string msg, int count)> BatchMapUsersToWarehouseAsync(int warehouseId, List<BatchMapUserItemDto> users, string assignedBy);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1458,6 +1469,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalPartTypes = await db.PartTypes.CountAsync(p => p.IsActive);
         var totalInventoryTypes = await db.InventoryTypes.CountAsync(t => t.IsActive);
         var totalInventoryLevelTypes = await db.InventoryLevelTypes.CountAsync(t => t.IsActive);
+        var totalUserMapInventories = await db.UserMapInventories.CountAsync(m => m.IsActive);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1482,7 +1494,8 @@ public class WmsService(AppDbContext db) : IWmsService
             pendingOutFGs,
             totalPartTypes,
             totalInventoryTypes,
-            totalInventoryLevelTypes);
+            totalInventoryLevelTypes,
+            totalUserMapInventories);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -6995,6 +7008,196 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryOutTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại xuất kho '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh sách phân quyền người dùng quản lý kho tổng hợp kèm 4 thẻ KPI (port từ Mst_UserMapInventory Skycic: OrgID, UserCode, InvCode, Remark, LogLUBy, LogLUDTimeUTC).</summary>
+    public async Task<UserMapInventoryReport> UserMapInventoriesReportAsync(int? warehouseId = null, string? userRole = null, bool? activeOnly = null, string? q = null)
+    {
+        var query = db.UserMapInventories.Include(m => m.Warehouse).AsQueryable();
+
+        if (warehouseId.HasValue && warehouseId.Value > 0)
+            query = query.Where(m => m.WarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(userRole))
+            query = query.Where(m => m.UserRole.ToLower() == userRole.Trim().ToLower());
+
+        if (activeOnly.HasValue)
+            query = query.Where(m => m.IsActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(m => m.UserCode.ToLower().Contains(kw)
+                                  || m.UserName.ToLower().Contains(kw)
+                                  || m.Warehouse.Code.ToLower().Contains(kw)
+                                  || m.Warehouse.Name.ToLower().Contains(kw)
+                                  || (m.Email != null && m.Email.ToLower().Contains(kw))
+                                  || (m.Phone != null && m.Phone.ToLower().Contains(kw))
+                                  || (m.Remark != null && m.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(m => m.Warehouse.Code).ThenBy(m => m.UserName).ToListAsync();
+
+        var rows = list.Select(m => new UserMapInventoryRow(
+            m.Id,
+            m.WarehouseId,
+            m.Warehouse.Code,
+            m.Warehouse.Name,
+            m.Warehouse.InvTypeCode,
+            m.Warehouse.InvLevelTypeCode,
+            m.UserCode,
+            m.UserName,
+            m.UserRole,
+            m.Email,
+            m.Phone,
+            m.IsActive,
+            m.Remark,
+            m.AssignedBy,
+            m.AssignedAt
+        )).ToList();
+
+        int totalAssignments = await db.UserMapInventories.CountAsync();
+        int activeAssignments = await db.UserMapInventories.CountAsync(m => m.IsActive);
+        int totalUsersAssigned = await db.UserMapInventories.Where(m => m.IsActive).Select(m => m.UserCode).Distinct().CountAsync();
+
+        var assignedWarehouseIds = await db.UserMapInventories.Where(m => m.IsActive).Select(m => m.WarehouseId).Distinct().ToListAsync();
+        int totalWarehouses = await db.Warehouses.CountAsync();
+        int unassignedWarehousesCount = Math.Max(0, totalWarehouses - assignedWarehouseIds.Count);
+
+        return new UserMapInventoryReport(warehouseId, userRole, activeOnly, q, totalAssignments, activeAssignments, totalUsersAssigned, unassignedWarehousesCount, rows);
+    }
+
+    public Task<List<UserMapInventory>> UserMapInventoriesAsync(int? warehouseId = null, bool? activeOnly = null)
+    {
+        var query = db.UserMapInventories.Include(m => m.Warehouse).AsQueryable();
+        if (warehouseId.HasValue && warehouseId.Value > 0) query = query.Where(m => m.WarehouseId == warehouseId.Value);
+        if (activeOnly.HasValue) query = query.Where(m => m.IsActive == activeOnly.Value);
+        return query.OrderBy(m => m.Warehouse.Code).ThenBy(m => m.UserName).ToListAsync();
+    }
+
+    public Task<UserMapInventory?> GetUserMapInventoryAsync(int id) =>
+        db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
+
+    public Task<List<UserMapInventory>> GetUserMapsByWarehouseAsync(int warehouseId) =>
+        db.UserMapInventories.Include(m => m.Warehouse).Where(m => m.WarehouseId == warehouseId).OrderBy(m => m.UserName).ToListAsync();
+
+    public Task<List<UserMapInventory>> GetUserMapsByUserCodeAsync(string userCode) =>
+        db.UserMapInventories.Include(m => m.Warehouse).Where(m => m.UserCode.ToLower() == userCode.Trim().ToLower()).OrderBy(m => m.Warehouse.Code).ToListAsync();
+
+    public async Task<List<WarehouseAssignmentSummary>> GetWarehouseAssignmentSummariesAsync()
+    {
+        var warehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var maps = await db.UserMapInventories.Where(m => m.IsActive).ToListAsync();
+
+        return warehouses.Select(w =>
+        {
+            var userNames = maps.Where(m => m.WarehouseId == w.Id).Select(m => $"{m.UserName} ({m.UserRole})").ToList();
+            return new WarehouseAssignmentSummary(w.Id, w.Code, w.Name, userNames.Count, userNames);
+        }).ToList();
+    }
+
+    public async Task<int> CreateUserMapInventoryAsync(UserMapInventory item)
+    {
+        var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == item.WarehouseId);
+        if (wh == null) throw new InvalidOperationException($"Không tìm thấy kho có ID {item.WarehouseId}.");
+
+        item.UserCode = item.UserCode.Trim().ToLowerInvariant();
+        item.UserName = item.UserName.Trim();
+        item.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thủ kho chính" : item.UserRole.Trim();
+
+        bool exists = await db.UserMapInventories.AnyAsync(m => m.WarehouseId == item.WarehouseId && m.UserCode == item.UserCode);
+        if (exists) throw new InvalidOperationException($"Người dùng '{item.UserCode}' đã được phân quyền tại kho '{wh.Name}'.");
+
+        db.UserMapInventories.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateUserMapInventoryAsync(int id, UserMapInventory item)
+    {
+        var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+
+        if (string.IsNullOrWhiteSpace(item.UserName)) return (false, "Họ tên người dùng không được để trống.");
+
+        existing.UserName = item.UserName.Trim();
+        existing.UserRole = string.IsNullOrWhiteSpace(item.UserRole) ? "Thủ kho chính" : item.UserRole.Trim();
+        existing.Email = item.Email?.Trim();
+        existing.Phone = item.Phone?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật phân quyền người dùng '{existing.UserCode}' tại kho '{existing.Warehouse.Name}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleUserMapInventoryStatusAsync(int id)
+    {
+        var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive
+            ? $"Đã kích hoạt lại phân quyền quản lý kho '{existing.Warehouse.Name}' cho nhân viên '{existing.UserName}'."
+            : $"Đã tạm dừng phân quyền quản lý kho '{existing.Warehouse.Name}' của nhân viên '{existing.UserName}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteUserMapInventoryAsync(int id)
+    {
+        var existing = await db.UserMapInventories.Include(m => m.Warehouse).FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bản ghi phân quyền kho.");
+
+        db.UserMapInventories.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã hủy gán phân quyền thủ kho '{existing.UserName}' ({existing.UserCode}) khỏi kho '{existing.Warehouse.Name}'.");
+    }
+
+    public async Task<(bool ok, string msg, int count)> BatchMapUsersToWarehouseAsync(int warehouseId, List<BatchMapUserItemDto> users, string assignedBy)
+    {
+        var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId);
+        if (wh == null) return (false, $"Không tìm thấy kho có ID {warehouseId}.", 0);
+
+        if (users == null || users.Count == 0) return (false, "Không có nhân viên nào được chọn.", 0);
+
+        int addedCount = 0;
+        foreach (var u in users)
+        {
+            var uCode = u.UserCode.Trim().ToLowerInvariant();
+            var existing = await db.UserMapInventories.FirstOrDefaultAsync(m => m.WarehouseId == warehouseId && m.UserCode == uCode);
+            if (existing != null)
+            {
+                existing.IsActive = true;
+                if (!string.IsNullOrWhiteSpace(u.UserName)) existing.UserName = u.UserName.Trim();
+                if (!string.IsNullOrWhiteSpace(u.UserRole)) existing.UserRole = u.UserRole.Trim();
+                if (!string.IsNullOrWhiteSpace(u.Email)) existing.Email = u.Email.Trim();
+                if (!string.IsNullOrWhiteSpace(u.Phone)) existing.Phone = u.Phone.Trim();
+                if (!string.IsNullOrWhiteSpace(u.Remark)) existing.Remark = u.Remark.Trim();
+                existing.AssignedBy = assignedBy;
+                existing.AssignedAt = DateTime.Now;
+                addedCount++;
+            }
+            else
+            {
+                db.UserMapInventories.Add(new UserMapInventory
+                {
+                    WarehouseId = warehouseId,
+                    UserCode = uCode,
+                    UserName = string.IsNullOrWhiteSpace(u.UserName) ? uCode : u.UserName.Trim(),
+                    UserRole = string.IsNullOrWhiteSpace(u.UserRole) ? "Thủ kho chính" : u.UserRole.Trim(),
+                    Email = u.Email?.Trim(),
+                    Phone = u.Phone?.Trim(),
+                    Remark = u.Remark?.Trim() ?? "Phân công quản lý kho hàng loạt",
+                    IsActive = true,
+                    AssignedBy = assignedBy,
+                    AssignedAt = DateTime.Now
+                });
+                addedCount++;
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã phân công thành công {addedCount} nhân sự quản lý cho kho '{wh.Name}'.", addedCount);
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

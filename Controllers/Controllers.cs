@@ -3766,6 +3766,213 @@ public class InventoryOutTypeController(IWmsService svc) : Controller
     }
 }
 
+public class UserMapInventoryController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, string? userRole, bool? activeOnly, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.UserRole = userRole ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Summaries = await svc.GetWarehouseAssignmentSummariesAsync();
+
+        var report = await svc.UserMapInventoriesReportAsync(warehouseId, userRole, activeOnly, q);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var item = await svc.GetUserMapInventoryAsync(id);
+        if (item == null) return NotFound(new { error = "Không tìm thấy bản ghi phân quyền kho." });
+        return Json(new
+        {
+            id = item.Id,
+            warehouseId = item.WarehouseId,
+            warehouseName = item.Warehouse.Name,
+            warehouseCode = item.Warehouse.Code,
+            userCode = item.UserCode,
+            userName = item.UserName,
+            userRole = item.UserRole,
+            email = item.Email,
+            phone = item.Phone,
+            remark = item.Remark,
+            isActive = item.IsActive,
+            assignedBy = item.AssignedBy,
+            assignedAt = item.AssignedAt.ToString("dd/MM/yyyy HH:mm")
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ByWarehouse(int warehouseId)
+    {
+        var list = await svc.GetUserMapsByWarehouseAsync(warehouseId);
+        return Json(list.Select(m => new
+        {
+            m.Id,
+            m.UserCode,
+            m.UserName,
+            m.UserRole,
+            m.Email,
+            m.Phone,
+            m.IsActive,
+            m.Remark,
+            AssignedAt = m.AssignedAt.ToString("dd/MM/yyyy HH:mm")
+        }));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string userCode, string userName, string? userRole, string? email, string? phone, string? remark, bool isActive = true)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho hàng muốn phân quyền.";
+            return RedirectToAction(nameof(Index));
+        }
+        if (string.IsNullOrWhiteSpace(userCode))
+        {
+            TempData["Error"] = "Cần mã tài khoản / mã nhân viên.";
+            return RedirectToAction(nameof(Index));
+        }
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            TempData["Error"] = "Cần họ và tên nhân sự phụ trách.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new UserMapInventory
+        {
+            WarehouseId = warehouseId,
+            UserCode = userCode.Trim().ToLowerInvariant(),
+            UserName = userName.Trim(),
+            UserRole = string.IsNullOrWhiteSpace(userRole) ? "Thủ kho chính" : userRole.Trim(),
+            Email = email?.Trim(),
+            Phone = phone?.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive,
+            AssignedBy = "admin",
+            AssignedAt = DateTime.Now
+        };
+
+        try
+        {
+            await svc.CreateUserMapInventoryAsync(item);
+            TempData["Success"] = $"Đã phân quyền nhân sự '{item.UserName}' ({item.UserCode}) phụ trách kho thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index), new { warehouseId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string userName, string? userRole, string? email, string? phone, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            TempData["Error"] = "Cần họ và tên nhân sự.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new UserMapInventory
+        {
+            UserName = userName.Trim(),
+            UserRole = string.IsNullOrWhiteSpace(userRole) ? "Thủ kho chính" : userRole.Trim(),
+            Email = email?.Trim(),
+            Phone = phone?.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateUserMapInventoryAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleUserMapInventoryStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteUserMapInventoryAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> BatchMap(int warehouseId, string[]? userCodes, string[]? userNames, string[]? userRoles, string[]? emails, string[]? phones, string? remark, string? assignedBy)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho hàng cần gán nhân sự.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (userCodes == null || userCodes.Length == 0)
+        {
+            TempData["Error"] = "Không có nhân sự nào được chọn để gán vào kho.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var users = new List<BatchMapUserItemDto>();
+        for (int i = 0; i < userCodes.Length; i++)
+        {
+            var code = userCodes[i]?.Trim();
+            if (string.IsNullOrWhiteSpace(code)) continue;
+
+            var name = (userNames != null && i < userNames.Length) ? userNames[i] : code;
+            var role = (userRoles != null && i < userRoles.Length) ? userRoles[i] : "Thủ kho chính";
+            var email = (emails != null && i < emails.Length) ? emails[i] : null;
+            var phone = (phones != null && i < phones.Length) ? phones[i] : null;
+
+            users.Add(new BatchMapUserItemDto(code, name, role, email, phone, remark));
+        }
+
+        var (ok, msg, _) = await svc.BatchMapUsersToWarehouseAsync(warehouseId, users, assignedBy ?? "admin");
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index), new { warehouseId });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? userRole, bool? activeOnly, string? q)
+    {
+        var report = await svc.UserMapInventoriesReportAsync(warehouseId, userRole, activeOnly, q);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH SÁCH PHÂN QUYỀN THỦ KHO & GÁN NGƯỜI DÙNG QUẢN LÝ KHO (MST_USERMAPINVENTORY)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc kho:;{(warehouseId.HasValue ? report.Rows.FirstOrDefault()?.WarehouseName ?? warehouseId.ToString() : "Tất cả kho")}");
+        sb.AppendLine($"Bộ lọc vai trò:;{(string.IsNullOrWhiteSpace(userRole) ? "Tất cả vai trò" : userRole)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang hiệu lực" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã nhân viên;Họ và tên nhân sự;Vai trò phụ trách;Mã kho;Tên kho;Loại kho;Cấp kho;Email;Số điện thoại;Trạng thái;Người phân công;Ngày phân công;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang hiệu lực" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.UserCode}\";\"{r.UserName.Replace("\"", "\"\"")}\";\"{r.UserRole}\";\"{r.WarehouseCode}\";\"{r.WarehouseName.Replace("\"", "\"\"")}\";\"{r.InvTypeCode ?? ""}\";\"{r.InvLevelTypeCode ?? ""}\";\"{r.Email ?? ""}\";\"{r.Phone ?? ""}\";\"{statusStr}\";\"{r.AssignedBy}\";{r.AssignedAt:dd/MM/yyyy HH:mm};\"{r.Remark?.Replace("\"", "\"\"")}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG LƯỢT PHÂN CÔNG:;{report.TotalAssignments};;;;;;;;;;");
+        sb.AppendLine($";;ĐANG HIỆU LỰC:;{report.ActiveAssignments};;;;;;;;;;");
+        sb.AppendLine($";;SỐ NHÂN SỰ VẬN HÀNH KHO:;{report.TotalUsersAssigned};;;;;;;;;;");
+        sb.AppendLine($";;KHO CHƯA CÓ NGƯỜI PHỤ TRÁCH:;{report.UnassignedWarehousesCount};;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"PhanQuyenKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 
 
 
