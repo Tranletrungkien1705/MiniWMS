@@ -1344,15 +1344,18 @@ app.MapPost("/api/suppliers/{id:int}/toggle", async (int id, IWmsService svc) =>
 });
 
 // API Danh mục Khách hàng & Đại lý phân phối (port từ Mst_Customer Skycic)
-app.MapGet("/api/customers", async (string? q, string? customerType, bool? activeOnly, IWmsService svc) =>
+app.MapGet("/api/customers", async (string? q, string? customerType, bool? activeOnly, string? customerGrpCode, string? customerSourceCode, IWmsService svc) =>
 {
-    var list = await svc.CustomersAsync(q, customerType, activeOnly);
+    var list = await svc.CustomersAsync(q, customerType, activeOnly, customerGrpCode, customerSourceCode);
     return Results.Ok(list.Select(c => new
     {
         c.Id,
         c.Code,
         c.Name,
         c.CustomerType,
+        c.CustomerSourceCode,
+        c.CustomerGrpCode,
+        c.AreaCode,
         c.ContactName,
         c.ContactPhone,
         c.Phone,
@@ -1396,6 +1399,9 @@ app.MapPost("/api/customers", async (CreateCustomerDto dto, IWmsService svc) =>
             Email = dto.Email?.Trim(),
             Address = dto.Address?.Trim(),
             Province = dto.Province?.Trim(),
+            AreaCode = string.IsNullOrWhiteSpace(dto.AreaCode) ? null : dto.AreaCode.Trim().ToUpperInvariant(),
+            CustomerGrpCode = string.IsNullOrWhiteSpace(dto.CustomerGrpCode) ? null : dto.CustomerGrpCode.Trim().ToUpperInvariant(),
+            CustomerSourceCode = string.IsNullOrWhiteSpace(dto.CustomerSourceCode) ? null : dto.CustomerSourceCode.Trim().ToUpperInvariant(),
             TaxCode = dto.TaxCode?.Trim(),
             Note = dto.Note?.Trim(),
             IsActive = dto.IsActive ?? true
@@ -1422,6 +1428,9 @@ app.MapPut("/api/customers/{id:int}", async (int id, UpdateCustomerDto dto, IWms
         Email = dto.Email?.Trim(),
         Address = dto.Address?.Trim(),
         Province = dto.Province?.Trim(),
+        AreaCode = string.IsNullOrWhiteSpace(dto.AreaCode) ? null : dto.AreaCode.Trim().ToUpperInvariant(),
+        CustomerGrpCode = string.IsNullOrWhiteSpace(dto.CustomerGrpCode) ? null : dto.CustomerGrpCode.Trim().ToUpperInvariant(),
+        CustomerSourceCode = string.IsNullOrWhiteSpace(dto.CustomerSourceCode) ? null : dto.CustomerSourceCode.Trim().ToUpperInvariant(),
         TaxCode = dto.TaxCode?.Trim(),
         Note = dto.Note?.Trim(),
         IsActive = dto.IsActive ?? true
@@ -2689,6 +2698,85 @@ app.MapDelete("/api/departments/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== NGUỒN KHÁCH HÀNG & KÊNH TIẾP NHẬN KHO (Mst_CustomerSource Skycic) ====================
+app.MapGet("/api/customer-sources", async (string? q, string? parentCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.CustomerSourcesReportAsync(q, parentCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/customer-sources/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetCustomerSourceAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy nguồn khách hàng." });
+});
+
+app.MapGet("/api/customer-sources/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetCustomerSourceByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy nguồn khách hàng." });
+});
+
+app.MapGet("/api/customer-sources/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetCustomerSourceDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy nguồn khách hàng." });
+});
+
+app.MapPost("/api/customer-sources", async (CreateCustomerSourceDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên nguồn khách hàng." });
+
+    var item = new CustomerSource
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        Description = dto.Description?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateCustomerSourceAsync(item);
+        return Results.Created($"/api/customer-sources/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/customer-sources/{id:int}", async (int id, UpdateCustomerSourceDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập tên nguồn khách hàng." });
+
+    var item = new CustomerSource
+    {
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        Description = dto.Description?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateCustomerSourceAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/customer-sources/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleCustomerSourceStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/customer-sources/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteCustomerSourceAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2731,8 +2819,8 @@ record InventoryOutFGLineDto(int ProductId, int Qty, decimal UnitPrice, decimal 
 record InventoryOutFGSerialDto(int ProductId, string SerialNo, string? Note);
 record CreateSupplierDto(string? Code, string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);
 record UpdateSupplierDto(string Name, string? ContactName, string? Phone, string? Email, string? Address, string? TaxCode, string? Note, bool? IsActive);
-record CreateCustomerDto(string? Code, string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? TaxCode, string? Note, bool? IsActive);
-record UpdateCustomerDto(string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? TaxCode, string? Note, bool? IsActive);
+record CreateCustomerDto(string? Code, string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? AreaCode, string? CustomerGrpCode, string? CustomerSourceCode, string? TaxCode, string? Note, bool? IsActive);
+record UpdateCustomerDto(string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? AreaCode, string? CustomerGrpCode, string? CustomerSourceCode, string? TaxCode, string? Note, bool? IsActive);
 record CreatePartTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
 record UpdatePartTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark, bool? IsActive);
@@ -2762,3 +2850,5 @@ record CreateCustomerGroupDto(string? Code, string Name, string? Description, st
 record UpdateCustomerGroupDto(string Name, string? Description, string? ParentCode, bool? IsActive);
 record CreateDepartmentDto(string? Code, string Name, string? ParentCode, string? BUCode, int? Level, string? MST, string? Description, bool? IsActive);
 record UpdateDepartmentDto(string Name, string? ParentCode, string? BUCode, int? Level, string? MST, string? Description, bool? IsActive);
+record CreateCustomerSourceDto(string? Code, string Name, string? ParentCode, string? BUCode, string? Description, bool? IsActive);
+record UpdateCustomerSourceDto(string Name, string? ParentCode, string? BUCode, string? Description, bool? IsActive);

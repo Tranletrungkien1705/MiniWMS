@@ -114,7 +114,7 @@ public interface IWmsService
     Task<int> CreateSupplierAsync(Supplier supplier);
     Task<(bool ok, string msg)> UpdateSupplierAsync(int id, Supplier supplier);
     Task<(bool ok, string msg)> ToggleSupplierStatusAsync(int id);
-    Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null);
+    Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null, string? customerSourceCode = null);
     Task<Customer?> GetCustomerAsync(int id);
     Task<Customer?> GetCustomerByCodeAsync(string code);
     Task<int> CreateCustomerAsync(Customer customer);
@@ -252,6 +252,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateDepartmentAsync(int id, Department item);
     Task<(bool ok, string msg)> ToggleDepartmentStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteDepartmentAsync(int id);
+    Task<CustomerSourceReport> CustomerSourcesReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null);
+    Task<List<CustomerSource>> CustomerSourcesAsync(string? q = null, bool? activeOnly = null);
+    Task<CustomerSource?> GetCustomerSourceAsync(int id);
+    Task<CustomerSource?> GetCustomerSourceByCodeAsync(string code);
+    Task<CustomerSourceDetailDto?> GetCustomerSourceDetailAsync(int id);
+    Task<int> CreateCustomerSourceAsync(CustomerSource item);
+    Task<(bool ok, string msg)> UpdateCustomerSourceAsync(int id, CustomerSource item);
+    Task<(bool ok, string msg)> ToggleCustomerSourceStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteCustomerSourceAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -3913,18 +3922,20 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     /// <summary>Danh sách Danh mục Khách hàng, Đại lý phân phối (port từ Mst_Customer Skycic).</summary>
-    public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null)
+    public async Task<List<Customer>> CustomersAsync(string? q = null, string? customerType = null, bool? activeOnly = null, string? customerGrpCode = null, string? customerSourceCode = null)
     {
         var query = db.Customers.AsQueryable();
         if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
         if (!string.IsNullOrWhiteSpace(customerType)) query = query.Where(c => c.CustomerType == customerType.Trim());
         if (!string.IsNullOrWhiteSpace(customerGrpCode)) query = query.Where(c => c.CustomerGrpCode != null && c.CustomerGrpCode.ToLower() == customerGrpCode.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(customerSourceCode)) query = query.Where(c => c.CustomerSourceCode != null && c.CustomerSourceCode.ToLower() == customerSourceCode.Trim().ToLower());
         if (!string.IsNullOrWhiteSpace(q))
         {
             var kw = q.Trim().ToLower();
             query = query.Where(c => c.Code.ToLower().Contains(kw) ||
                                      c.Name.ToLower().Contains(kw) ||
                                      (c.CustomerGrpCode != null && c.CustomerGrpCode.ToLower().Contains(kw)) ||
+                                     (c.CustomerSourceCode != null && c.CustomerSourceCode.ToLower().Contains(kw)) ||
                                      (c.Phone != null && c.Phone.Contains(kw)) ||
                                      (c.Email != null && c.Email.ToLower().Contains(kw)) ||
                                      (c.ContactName != null && c.ContactName.ToLower().Contains(kw)) ||
@@ -3962,6 +3973,7 @@ public class WmsService(AppDbContext db) : IWmsService
         existing.Province = customer.Province?.Trim();
         existing.AreaCode = customer.AreaCode;
         existing.CustomerGrpCode = customer.CustomerGrpCode;
+        existing.CustomerSourceCode = customer.CustomerSourceCode;
         existing.TaxCode = customer.TaxCode?.Trim();
         existing.Note = customer.Note?.Trim();
         existing.IsActive = customer.IsActive;
@@ -8223,6 +8235,238 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Departments.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa bộ phận '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Nguồn khách hàng & Kênh tiếp nhận đối tác kho kèm 4 thẻ KPI (port từ Mst_CustomerSource Skycic).</summary>
+    public async Task<CustomerSourceReport> CustomerSourcesReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
+    {
+        var query = db.CustomerSources.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(s => s.Code.ToLower().Contains(kw) || s.Name.ToLower().Contains(kw) || (s.Description != null && s.Description.ToLower().Contains(kw)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode == "__ROOT__")
+            {
+                query = query.Where(s => string.IsNullOrEmpty(s.ParentCode));
+            }
+            else
+            {
+                query = query.Where(s => s.ParentCode != null && s.ParentCode.ToLower() == parentCode.Trim().ToLower());
+            }
+        }
+
+        if (activeOnly.HasValue)
+        {
+            query = query.Where(s => s.IsActive == activeOnly.Value);
+        }
+
+        var allSources = await db.CustomerSources.ToListAsync();
+        var sources = await query.ToListAsync();
+
+        var customers = await db.Customers.ToListAsync();
+        var outDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && d.CustomerCode != null)
+            .Include(d => d.Lines)
+            .ThenInclude(l => l.Product)
+            .ToListAsync();
+
+        var rows = sources
+            .OrderBy(s => string.IsNullOrEmpty(s.ParentCode) ? 0 : 1)
+            .ThenBy(s => s.ParentCode ?? "")
+            .ThenBy(s => s.Code)
+            .Select(s =>
+            {
+                var parent = !string.IsNullOrWhiteSpace(s.ParentCode)
+                    ? allSources.FirstOrDefault(p => p.Code.Equals(s.ParentCode, StringComparison.OrdinalIgnoreCase))
+                    : null;
+
+                var subCount = allSources.Count(c => c.ParentCode != null && c.ParentCode.Equals(s.Code, StringComparison.OrdinalIgnoreCase));
+                var assignedCusts = customers.Where(c => c.CustomerSourceCode != null && c.CustomerSourceCode.Equals(s.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+                var custCount = assignedCusts.Count;
+                var custCodes = assignedCusts.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var channelDocs = outDocs.Where(d => d.CustomerCode != null && custCodes.Contains(d.CustomerCode)).ToList();
+                var docsCount = channelDocs.Count;
+                var totalQty = channelDocs.Sum(d => d.Lines.Sum(l => l.Quantity));
+                var totalAmount = channelDocs.Sum(d => d.Lines.Sum(l => l.Quantity * (l.Product?.CostPrice > 0 ? l.Product.CostPrice : 150000m)));
+
+                int level = string.IsNullOrWhiteSpace(s.ParentCode) ? 1 : 2;
+
+                return new CustomerSourceRow(
+                    s.Id,
+                    s.Code,
+                    s.Name,
+                    s.Description,
+                    s.ParentCode,
+                    parent?.Name,
+                    s.BUCode,
+                    s.IsActive,
+                    s.CreatedAt,
+                    level,
+                    custCount,
+                    docsCount,
+                    totalQty,
+                    totalAmount
+                );
+            }).ToList();
+
+        int totalSources = allSources.Count;
+        int rootSourcesCount = allSources.Count(s => string.IsNullOrWhiteSpace(s.ParentCode));
+        int subSourcesCount = allSources.Count(s => !string.IsNullOrWhiteSpace(s.ParentCode));
+        int totalCustomersAssigned = customers.Count(c => !string.IsNullOrWhiteSpace(c.CustomerSourceCode));
+
+        var topByVol = rows.OrderByDescending(r => r.TotalShippedQty).FirstOrDefault();
+        string topSourceByVolume = topByVol != null && topByVol.TotalShippedQty > 0 ? $"{topByVol.Name} ({topByVol.Code})" : "Chưa có phát sinh xuất";
+        int topVolumeQty = topByVol?.TotalShippedQty ?? 0;
+        decimal totalAllShippedAmount = rows.Sum(r => r.TotalShippedAmount);
+
+        return new CustomerSourceReport(
+            q,
+            parentCode,
+            activeOnly,
+            totalSources,
+            rootSourcesCount,
+            subSourcesCount,
+            totalCustomersAssigned,
+            topSourceByVolume,
+            topVolumeQty,
+            totalAllShippedAmount,
+            rows
+        );
+    }
+
+    public Task<List<CustomerSource>> CustomerSourcesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.CustomerSources.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(s => s.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(s => s.Code.ToLower().Contains(kw) || s.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(s => string.IsNullOrEmpty(s.ParentCode) ? 0 : 1).ThenBy(s => s.Code).ToListAsync();
+    }
+
+    public Task<CustomerSource?> GetCustomerSourceAsync(int id) =>
+        db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
+
+    public Task<CustomerSource?> GetCustomerSourceByCodeAsync(string code) =>
+        db.CustomerSources.FirstOrDefaultAsync(s => s.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<CustomerSourceDetailDto?> GetCustomerSourceDetailAsync(int id)
+    {
+        var item = await db.CustomerSources.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.CustomerSources.FirstOrDefaultAsync(s => s.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subSources = await db.CustomerSources
+            .Where(s => s.ParentCode != null && s.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(s => s.Code)
+            .ToListAsync();
+
+        var customers = await db.Customers
+            .Where(c => c.CustomerSourceCode != null && c.CustomerSourceCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(c => c.Code)
+            .ToListAsync();
+
+        var custCodes = customers.Select(c => c.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var recentDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && d.CustomerCode != null && custCodes.Contains(d.CustomerCode))
+            .Include(d => d.Lines)
+            .ThenInclude(l => l.Product)
+            .Include(d => d.FromWarehouse)
+            .OrderByDescending(d => d.Date)
+            .Take(10)
+            .ToListAsync();
+
+        int totalShippedQty = recentDocs.Sum(d => d.Lines.Sum(l => l.Quantity));
+        decimal totalShippedAmount = recentDocs.Sum(d => d.Lines.Sum(l => l.Quantity * (l.Product?.CostPrice > 0 ? l.Product.CostPrice : 150000m)));
+
+        return new CustomerSourceDetailDto(item, parent, subSources, customers, customers.Count, recentDocs.Count, totalShippedQty, totalShippedAmount, recentDocs);
+    }
+
+    public async Task<int> CreateCustomerSourceAsync(CustomerSource item)
+    {
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"SRC_{await db.CustomerSources.CountAsync() + 1:D2}";
+        }
+        item.Name = item.Name.Trim();
+        item.ParentCode = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
+        item.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
+        item.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+
+        bool exists = await db.CustomerSources.AnyAsync(s => s.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã nguồn khách hàng '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.CustomerSources.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCustomerSourceAsync(int id, CustomerSource item)
+    {
+        var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+
+        existing.Name = item.Name.Trim();
+        var newParent = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
+        if (newParent != null && newParent.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Không thể chọn chính nguồn này làm nguồn cấp trên.");
+        }
+        existing.ParentCode = newParent;
+        existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
+        existing.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin nguồn khách hàng '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleCustomerSourceStatusAsync(int id)
+    {
+        var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt nguồn khách hàng '{existing.Code}'." : $"Đã chuyển nguồn khách hàng '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCustomerSourceAsync(int id)
+    {
+        var existing = await db.CustomerSources.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nguồn khách hàng.");
+
+        bool hasCustomers = await db.Customers.AnyAsync(c => c.CustomerSourceCode != null && c.CustomerSourceCode.ToUpper() == existing.Code.ToUpper());
+        bool hasSubSources = await db.CustomerSources.AnyAsync(s => s.ParentCode != null && s.ParentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasCustomers || hasSubSources)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            var reasons = new List<string>();
+            if (hasCustomers) reasons.Add("khách hàng đang liên kết");
+            if (hasSubSources) reasons.Add("kênh nhánh trực thuộc");
+            return (true, $"Nguồn khách hàng '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.CustomerSources.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa nguồn khách hàng '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

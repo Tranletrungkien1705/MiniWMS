@@ -51,6 +51,7 @@ public class AppDbContext : DbContext
     public DbSet<Area> Areas => Set<Area>();
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<CustomerSource> CustomerSources => Set<CustomerSource>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -67,6 +68,12 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ParentCode });
             e.HasIndex(x => new { x.OrgId, x.Level });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<CustomerSource>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<ProductGroup>(e =>
@@ -102,6 +109,7 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.CustomerGrpCode });
+            e.HasIndex(x => new { x.OrgId, x.CustomerSourceCode });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<Warehouse>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

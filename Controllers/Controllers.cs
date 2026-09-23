@@ -2083,20 +2083,22 @@ public class SupplierController(IWmsService svc) : Controller
 
 public class CustomerController(IWmsService svc) : Controller
 {
-    public async Task<IActionResult> Index(string? q, string? customerType, bool? activeOnly, string? customerGrpCode)
+    public async Task<IActionResult> Index(string? q, string? customerType, bool? activeOnly, string? customerGrpCode, string? customerSourceCode)
     {
         ViewBag.Keyword = q ?? "";
         ViewBag.CustomerType = customerType ?? "";
         ViewBag.CustomerGrpCode = customerGrpCode ?? "";
+        ViewBag.CustomerSourceCode = customerSourceCode ?? "";
         ViewBag.ActiveOnly = activeOnly;
         ViewBag.Areas = await svc.AreasAsync(activeOnly: true);
         ViewBag.CustomerGroups = await svc.CustomerGroupsAsync(activeOnly: true);
-        var list = await svc.CustomersAsync(q, customerType, activeOnly, customerGrpCode);
+        ViewBag.CustomerSources = await svc.CustomerSourcesAsync(activeOnly: true);
+        var list = await svc.CustomersAsync(q, customerType, activeOnly, customerGrpCode, customerSourceCode);
         return View(list);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? taxCode, string? note)
+    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? customerSourceCode, string? taxCode, string? note)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2117,6 +2119,7 @@ public class CustomerController(IWmsService svc) : Controller
             Province = province?.Trim(),
             AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
             CustomerGrpCode = string.IsNullOrWhiteSpace(customerGrpCode) ? null : customerGrpCode.Trim().ToUpperInvariant(),
+            CustomerSourceCode = string.IsNullOrWhiteSpace(customerSourceCode) ? null : customerSourceCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = true
@@ -2128,7 +2131,7 @@ public class CustomerController(IWmsService svc) : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? taxCode, string? note, bool isActive = true)
+    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? customerGrpCode, string? customerSourceCode, string? taxCode, string? note, bool isActive = true)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2148,6 +2151,7 @@ public class CustomerController(IWmsService svc) : Controller
             Province = province?.Trim(),
             AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
             CustomerGrpCode = string.IsNullOrWhiteSpace(customerGrpCode) ? null : customerGrpCode.Trim().ToUpperInvariant(),
+            CustomerSourceCode = string.IsNullOrWhiteSpace(customerSourceCode) ? null : customerSourceCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = isActive
@@ -2237,20 +2241,24 @@ public class CustomerController(IWmsService svc) : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> ExportCsv(string? q, string? customerType, bool? activeOnly)
+    public async Task<IActionResult> ExportCsv(string? q, string? customerType, bool? activeOnly, string? customerGrpCode, string? customerSourceCode)
     {
-        var list = await svc.CustomersAsync(q, customerType, activeOnly);
+        var list = await svc.CustomersAsync(q, customerType, activeOnly, customerGrpCode, customerSourceCode);
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("STT,MaKH,TenKhachHang,LoaiKhachHang,NguoiLienHe,SDTLienHe,DienThoai,Email,DiaChi,TinhThanh,MaSoThue,TrangThai,GhiChu,NgayTao");
+        sb.Append('\uFEFF');
+        sb.AppendLine("STT;MaKH;TenKhachHang;LoaiKhachHang;NguonKhachHang;NhomKhachHang;KhuVuc;NguoiLienHe;SDTLienHe;DienThoai;Email;DiaChi;TinhThanh;MaSoThue;TrangThai;GhiChu;NgayTao");
 
         int stt = 1;
         foreach (var c in list)
         {
-            sb.AppendLine(string.Join(",",
+            sb.AppendLine(string.Join(";",
                 stt++,
                 EscapeCsv(c.Code),
                 EscapeCsv(c.Name),
                 EscapeCsv(c.CustomerType),
+                EscapeCsv(c.CustomerSourceCode ?? ""),
+                EscapeCsv(c.CustomerGrpCode ?? ""),
+                EscapeCsv(c.AreaCode ?? ""),
                 EscapeCsv(c.ContactName ?? ""),
                 EscapeCsv(c.ContactPhone ?? ""),
                 EscapeCsv(c.Phone ?? ""),
@@ -2264,8 +2272,7 @@ public class CustomerController(IWmsService svc) : Controller
             ));
         }
 
-        var preamble = System.Text.Encoding.UTF8.GetPreamble();
-        var bytes = preamble.Concat(System.Text.Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"KhachHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 
@@ -4603,6 +4610,174 @@ public class DepartmentController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"BoPhanPhongBan_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class CustomerSourceController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, string? parentCode, bool? activeOnly)
+    {
+        var report = await svc.CustomerSourcesReportAsync(q, parentCode, activeOnly);
+        var allSources = await svc.CustomerSourcesAsync();
+        ViewBag.RootSources = allSources.Where(s => string.IsNullOrEmpty(s.ParentCode)).ToList();
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string name, string? code, string? parentCode, string? buCode, string? description, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nguồn khách hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new CustomerSource
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            BUCode = string.IsNullOrWhiteSpace(buCode) ? null : buCode.Trim().ToUpperInvariant(),
+            Description = description?.Trim(),
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateCustomerSourceAsync(item);
+            TempData["Success"] = $"Đã tạo mới nguồn khách hàng '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? parentCode, string? buCode, string? description, bool isActive)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nguồn khách hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new CustomerSource
+        {
+            Name = name.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            BUCode = string.IsNullOrWhiteSpace(buCode) ? null : buCode.Trim().ToUpperInvariant(),
+            Description = description?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateCustomerSourceAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleCustomerSourceStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteCustomerSourceAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DetailJson(int id)
+    {
+        var detail = await svc.GetCustomerSourceDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy nguồn khách hàng." });
+
+        return Json(new
+        {
+            source = new
+            {
+                detail.Source.Id,
+                detail.Source.Code,
+                detail.Source.Name,
+                detail.Source.Description,
+                detail.Source.ParentCode,
+                ParentName = detail.ParentSource?.Name,
+                detail.Source.BUCode,
+                detail.Source.IsActive,
+                CreatedAt = detail.Source.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            subSources = detail.SubSources.Select(s => new { s.Id, s.Code, s.Name, s.IsActive }),
+            customers = detail.Customers.Select(c => new
+            {
+                c.Id,
+                c.Code,
+                c.Name,
+                c.CustomerType,
+                c.ContactName,
+                c.Phone,
+                c.Province,
+                c.IsActive
+            }),
+            recentDispatches = detail.RecentDispatches.Select(d => new
+            {
+                d.Id,
+                d.Code,
+                d.Date,
+                DateStr = d.Date.ToString("dd/MM/yyyy"),
+                WarehouseName = d.FromWarehouse?.Name ?? "—",
+                d.CustomerCode,
+                d.CustomerName,
+                TotalQty = d.Lines.Sum(l => l.Quantity),
+                TotalAmount = d.Lines.Sum(l => l.Quantity * (l.Product?.CostPrice > 0 ? l.Product.CostPrice : 150000m)),
+                Status = d.Status.ToString()
+            }),
+            totalCustomers = detail.TotalCustomers,
+            totalShippedDocsCount = detail.TotalShippedDocsCount,
+            totalShippedQty = detail.TotalShippedQty,
+            totalShippedAmount = detail.TotalShippedAmount
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, bool? activeOnly, string? q)
+    {
+        var report = await svc.CustomerSourcesReportAsync(q, parentCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC NGUỒN KHÁCH HÀNG & KÊNH TIẾP NHẬN KHO (MST_CUSTOMERSOURCE)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc kênh cấp trên:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã nguồn kênh;Tên nguồn - kênh tiếp nhận;Phân cấp;Kênh cấp trên;Đơn vị BU;Mô tả chính sách & phân phối;Số KH trực thuộc;Số phiếu xuất;Tổng sản lượng xuất;Tổng doanh số xuất (VNĐ);Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var levelStr = r.Level == 1 ? "Kênh gốc" : "Kênh nhánh";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{levelStr}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.BUCode ?? ""}\";\"{r.Description?.Replace("\"", "\"\"")}\";{r.CustomerCount};{r.TotalShippedDocsCount};{r.TotalShippedQty};{r.TotalShippedAmount:F0};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ NGUỒN KÊNH:;{report.TotalSources};;;;;;;;;");
+        sb.AppendLine($";;KÊNH GỐC CẤP 1:;{report.RootSourcesCount};;;;;;;;;");
+        sb.AppendLine($";;KÊNH NHÁNH CẤP 2:;{report.SubSourcesCount};;;;;;;;;");
+        sb.AppendLine($";;TỔNG KHÁCH HÀNG GẮN NGUỒN:;{report.TotalCustomersAssigned};;;;;;;;;");
+        sb.AppendLine($";;KÊNH XUẤT CHỦ LỰC:;\"{report.TopSourceByVolume}\";;;;;;;;;");
+        sb.AppendLine($";;TỔNG SẢN LƯỢNG KÊNH DẪN ĐẦU:;{report.TopVolumeQty};;;;;;;;;");
+        sb.AppendLine($";;TỔNG DOANH SỐ TOÀN BỘ KÊNH:;{report.TotalAllShippedAmount:F0};;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"NguonKhachHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

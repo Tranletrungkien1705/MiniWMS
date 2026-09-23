@@ -9,6 +9,9 @@
     var areaDict = areas.ToDictionary(a => a.Code, a => a.Name, StringComparer.OrdinalIgnoreCase);
     var custGroups = ViewBag.CustomerGroups as List<CustomerGroup> ?? [];
     var custGrpDict = custGroups.ToDictionary(g => g.Code, g => g.Name, StringComparer.OrdinalIgnoreCase);
+    var custSources = ViewBag.CustomerSources as List<CustomerSource> ?? [];
+    var custSourceDict = custSources.ToDictionary(s => s.Code, s => s.Name, StringComparer.OrdinalIgnoreCase);
+    var selectedSource = (string)(ViewBag.CustomerSourceCode ?? "");
 
     int totalCount = Model.Count;
     int agentCount = Model.Count(c => c.CustomerType == "Đại lý phân phối");
@@ -25,10 +28,13 @@
         <a href="/CustomerGroup" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-person-lines-fill me-1"></i> Nhóm khách hàng
         </a>
+        <a href="/CustomerSource" class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-diagram-3 me-1"></i> Nguồn khách hàng
+        </a>
         <a href="/Area" class="btn btn-sm btn-outline-info">
             <i class="bi bi-geo-alt me-1"></i> Vùng & Khu vực
         </a>
-        <a href="/Customer/ExportCsv?q=@keyword&customerType=@selectedType&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+        <a href="/Customer/ExportCsv?q=@keyword&customerType=@selectedType&activeOnly=@activeOnly&customerGrpCode=@selectedGrp&customerSourceCode=@selectedSource" class="btn btn-sm btn-outline-success">
             <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
         </a>
         <a href="/Doc?type=1" class="btn btn-sm btn-outline-secondary">
@@ -102,9 +108,18 @@
                     <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm mã, tên, SĐT, nhóm..." />
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <select name="customerSourceCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả nguồn KH —</option>
+                    @foreach (var cs in custSources)
+                    {
+                        <option value="@cs.Code" selected="@(selectedSource == cs.Code)">@cs.Name (@cs.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
                 <select name="customerGrpCode" class="form-select form-select-sm">
-                    <option value="">— Tất cả nhóm khách hàng —</option>
+                    <option value="">— Tất cả nhóm KH —</option>
                     @foreach (var cg in custGroups)
                     {
                         <option value="@cg.Code" selected="@(selectedGrp == cg.Code)">@cg.Name (@cg.Code)</option>
@@ -120,18 +135,18 @@
                     <option value="Khách lẻ" selected="@(selectedType == "Khách lẻ")">Khách lẻ</option>
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-1">
                 <select name="activeOnly" class="form-select form-select-sm">
-                    <option value="">— Tất cả trạng thái —</option>
-                    <option value="true" selected="@(activeOnly == true)">Đang hoạt động</option>
-                    <option value="false" selected="@(activeOnly == false)">Tạm dừng giao dịch</option>
+                    <option value="">— Trạng thái —</option>
+                    <option value="true" selected="@(activeOnly == true)">Hoạt động</option>
+                    <option value="false" selected="@(activeOnly == false)">Tạm dừng</option>
                 </select>
             </div>
             <div class="col-md-2 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100">
                     <i class="bi bi-funnel me-1"></i> Lọc
                 </button>
-                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(selectedType) || !string.IsNullOrEmpty(selectedGrp) || activeOnly.HasValue)
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(selectedType) || !string.IsNullOrEmpty(selectedGrp) || !string.IsNullOrEmpty(selectedSource) || activeOnly.HasValue)
                 {
                     <a href="/Customer" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
                         <i class="bi bi-x-lg"></i>
@@ -179,6 +194,13 @@
                             <div class="fw-bold text-dark">@c.Name</div>
                             <div class="d-flex flex-wrap gap-1 mt-1">
                                 <span class="badge @typeBadgeClass small" style="font-size: 11px;">@c.CustomerType</span>
+                                @if (!string.IsNullOrEmpty(c.CustomerSourceCode))
+                                {
+                                    var sName = custSourceDict.TryGetValue(c.CustomerSourceCode, out var sn) ? sn : c.CustomerSourceCode;
+                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small" style="font-size: 11px;">
+                                        <i class="bi bi-diagram-3 me-1"></i>@sName
+                                    </span>
+                                }
                                 @if (!string.IsNullOrEmpty(c.CustomerGrpCode))
                                 {
                                     var gName = custGrpDict.TryGetValue(c.CustomerGrpCode, out var gn) ? gn : c.CustomerGrpCode;
@@ -249,7 +271,7 @@
                                 <button type="button" class="btn btn-outline-info" title="Xem hồ sơ & Lịch sử xuất hàng" onclick="openDetailModal(@c.Id)">
                                     <i class="bi bi-clock-history"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.AreaCode ?? "")', '@Html.Raw(c.CustomerGrpCode ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.AreaCode ?? "")', '@Html.Raw(c.CustomerGrpCode ?? "")', '@Html.Raw(c.CustomerSourceCode ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <form asp-action="Toggle" method="post" class="d-inline">
@@ -331,6 +353,16 @@
                             @foreach (var cg in custGroups)
                             {
                                 <option value="@cg.Code">@cg.Name (@cg.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Nguồn khách hàng (Mst_CustomerSource)</label>
+                        <select name="customerSourceCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Nguồn khách hàng --</option>
+                            @foreach (var cs in custSources)
+                            {
+                                <option value="@cs.Code">@cs.Name (@cs.Code)</option>
                             }
                         </select>
                     </div>
@@ -422,6 +454,16 @@
                             @foreach (var cg in custGroups)
                             {
                                 <option value="@cg.Code">@cg.Name (@cg.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Nguồn khách hàng (Mst_CustomerSource)</label>
+                        <select name="customerSourceCode" id="editCustomerSourceCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Nguồn khách hàng --</option>
+                            @foreach (var cs in custSources)
+                            {
+                                <option value="@cs.Code">@cs.Name (@cs.Code)</option>
                             }
                         </select>
                     </div>
@@ -605,7 +647,7 @@
 
 @section Scripts {
 <script>
-function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, areaCode, customerGrpCode, taxCode, note, isActive) {
+function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, areaCode, customerGrpCode, customerSourceCode, taxCode, note, isActive) {
     document.getElementById('editId').value = id;
     document.getElementById('editCode').value = code;
     document.getElementById('editName').value = name;
@@ -618,6 +660,7 @@ function openEditModal(id, code, name, type, contactName, contactPhone, phone, e
     document.getElementById('editProvince').value = province;
     document.getElementById('editAreaCode').value = areaCode || '';
     document.getElementById('editCustomerGrpCode').value = customerGrpCode || '';
+    document.getElementById('editCustomerSourceCode').value = customerSourceCode || '';
     document.getElementById('editTaxCode').value = taxCode;
     document.getElementById('editNote').value = note;
     document.getElementById('editIsActive').checked = isActive;

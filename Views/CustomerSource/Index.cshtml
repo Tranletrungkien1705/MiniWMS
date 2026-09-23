@@ -1,0 +1,609 @@
+@model CustomerSourceReport
+@{
+    ViewData["Title"] = "Danh mục Nguồn khách hàng & Kênh tiếp nhận kho";
+    var rootSources = ViewBag.RootSources as List<CustomerSource> ?? [];
+    var keyword = Model.Keyword ?? "";
+    var parentFilter = Model.ParentFilter ?? "";
+    var activeFilter = Model.ActiveFilter;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1">
+            <i class="bi bi-diagram-3 text-primary me-2"></i>Danh mục Nguồn khách hàng & Kênh tiếp nhận kho
+        </h5>
+        <div class="text-muted small">
+            Port từ <code>Mst_CustomerSource</code> (Skycic) — Quản lý các kênh phát sinh đơn hàng, xuất bán buôn, đại lý, TMĐT và phân bổ giao nhận kho
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Customer" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-person-badge me-1"></i> Khách hàng / Đại lý
+        </a>
+        <a href="/CustomerGroup" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-person-lines-fill me-1"></i> Nhóm khách hàng
+        </a>
+        <a href="/Area" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-geo-alt me-1"></i> Vùng & Khu vực
+        </a>
+        <a href="/CustomerSource/ExportCsv?q=@keyword&parentCode=@parentFilter&activeOnly=@activeFilter" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createSourceModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Nguồn khách hàng
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG NGUỒN KÊNH</span>
+                    <i class="bi bi-diagram-3 text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalSources</div>
+                <div class="small text-muted">@Model.RootSourcesCount kênh gốc · @Model.SubSourcesCount kênh nhánh</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KÊNH ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.Rows.Count(r => r.IsActive)</div>
+                <div class="small text-muted">Sẵn sàng phân bổ giao dịch xuất kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KH ĐÃ GẮN NGUỒN</span>
+                    <i class="bi bi-people text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.TotalCustomersAssigned</div>
+                <div class="small text-muted">Đối tác mua hàng được định danh kênh</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KÊNH XUẤT CHỦ LỰC</span>
+                    <i class="bi bi-graph-up-arrow text-warning fs-5"></i>
+                </div>
+                <div class="fs-6 fw-bold text-dark text-truncate" title="@Model.TopSourceByVolume">@Model.TopSourceByVolume</div>
+                <div class="small text-muted">Sản lượng: <strong>@Model.TopVolumeQty.ToString("N0")</strong> sp · Doanh số: <strong>@Model.TotalAllShippedAmount.ToString("N0")</strong> đ</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm theo mã, tên nguồn hoặc mô tả..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="parentCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả phân cấp kênh —</option>
+                    <option value="__ROOT__" selected="@(parentFilter == "__ROOT__")">Chỉ xem kênh gốc cấp 1</option>
+                    @foreach (var p in rootSources)
+                    {
+                        <option value="@p.Code" selected="@(parentFilter == p.Code)">Kênh nhánh thuộc: @p.Name (@p.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">— Tất cả trạng thái —</option>
+                    <option value="true" selected="@(activeFilter == true)">Đang áp dụng</option>
+                    <option value="false" selected="@(activeFilter == false)">Tạm dừng áp dụng</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(parentFilter) || activeFilter.HasValue)
+                {
+                    <a href="/CustomerSource" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Nguồn khách hàng -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 50px;">STT</th>
+                    <th style="width: 140px;">Mã nguồn kênh</th>
+                    <th>Tên nguồn & Kênh tiếp nhận</th>
+                    <th>Phân cấp / Kênh cha</th>
+                    <th>Đơn vị BU</th>
+                    <th class="text-center" style="width: 110px;">Khách hàng</th>
+                    <th class="text-end" style="width: 130px;">Lượng xuất kho</th>
+                    <th class="text-end" style="width: 140px;">Doanh số xuất</th>
+                    <th class="text-center" style="width: 130px;">Trạng thái</th>
+                    <th class="text-end" style="width: 160px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    <tr>
+                        <td class="text-center text-muted small">@idx</td>
+                        <td>
+                            <span class="badge bg-light text-dark border font-monospace">@r.Code</span>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-dark">
+                                @if (r.Level == 2)
+                                {
+                                    <span class="text-muted me-1">└─</span>
+                                }
+                                @r.Name
+                            </div>
+                            @if (!string.IsNullOrEmpty(r.Description))
+                            {
+                                <div class="small text-muted text-truncate" style="max-width: 320px;" title="@r.Description">
+                                    @r.Description
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            @if (r.Level == 1)
+                            {
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                                    <i class="bi bi-folder me-1"></i>Kênh gốc cấp 1
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1">
+                                    <i class="bi bi-arrow-return-right me-1"></i>@(r.ParentName ?? r.ParentCode)
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.BUCode))
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border font-monospace">@r.BUCode</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.CustomerCount > 0)
+                            {
+                                <button type="button" class="btn btn-sm btn-link p-0 fw-bold text-decoration-none text-primary" onclick="openDetailModal(@r.Id)">
+                                    <i class="bi bi-person-check me-1"></i>@r.CustomerCount KH
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0 KH</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (r.TotalShippedQty > 0)
+                            {
+                                <span class="fw-bold text-dark">@r.TotalShippedQty.ToString("N0")</span>
+                                <div class="text-muted small" style="font-size: 11px;">@r.TotalShippedDocsCount phiếu</div>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (r.TotalShippedAmount > 0)
+                            {
+                                <span class="fw-semibold text-success">@r.TotalShippedAmount.ToString("N0") đ</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="bi bi-check-circle me-1"></i>Áp dụng
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" title="Xem chi tiết & Lịch sử giao dịch" onclick="openDetailModal(@r.Id)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa nguồn khách hàng" onclick="openEditModal(@r.Id, '@Html.Raw(r.Code)', '@Html.Raw(r.Name)', '@Html.Raw(r.ParentCode ?? "")', '@Html.Raw(r.BUCode ?? "")', '@Html.Raw(r.Description ?? "")', @(r.IsActive ? "true" : "false"))">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form asp-action="Toggle" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn @(r.IsActive ? "btn-outline-warning" : "btn-outline-success")" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt lại")">
+                                        <i class="bi @(r.IsActive ? "bi-pause" : "bi-play")"></i>
+                                    </button>
+                                </form>
+                                <form asp-action="Delete" method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa hoặc ngừng áp dụng nguồn khách hàng này?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-danger" title="Xóa nguồn">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    idx++;
+                }
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                            Không tìm thấy nguồn khách hàng nào phù hợp với điều kiện tìm kiếm.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm Nguồn khách hàng mới -->
+<div class="modal fade" id="createSourceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="Create" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold text-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Thêm Nguồn khách hàng mới
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Mã nguồn / Kênh khách hàng</label>
+                    <input type="text" name="code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="Tự sinh nếu để trống (vd: SRC_EXPORT)" />
+                    <div class="form-text small" style="font-size: 11px;">Mã định danh nguồn khách hàng duy nhất trong hệ thống kho</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Tên nguồn / Kênh tiếp nhận <span class="text-danger">*</span></label>
+                    <input type="text" name="name" class="form-control form-control-sm" placeholder="Ví dụ: Kênh Sàn TMĐT Shopee/Tiki" required />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Kênh cấp trên (Nếu là kênh nhánh)</label>
+                    <select name="parentCode" class="form-select form-select-sm">
+                        <option value="">— Là kênh gốc cấp 1 (Không có kênh cha) —</option>
+                        @foreach (var p in rootSources)
+                        {
+                            <option value="@p.Code">@p.Name (@p.Code)</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Khối kinh doanh / Đơn vị BU</label>
+                    <input type="text" name="buCode" class="form-control form-control-sm font-monospace text-uppercase" placeholder="Ví dụ: BU_SALES, BU_SCM, BU_MFG" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Mô tả đặc điểm kênh & Chính sách phân phối</label>
+                    <textarea name="description" rows="3" class="form-control form-control-sm" placeholder="Mô tả chính sách chiết khấu, quy chuẩn giao nhận kho, đóng gói thùng carton..."></textarea>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                    <label class="form-check-label small" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu nguồn</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Nguồn khách hàng -->
+<div class="modal fade" id="editSourceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="Update" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="editId" />
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold text-primary">
+                    <i class="bi bi-pencil-square me-1"></i> Cập nhật Nguồn khách hàng
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Mã nguồn khách hàng</label>
+                    <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Tên nguồn / Kênh tiếp nhận <span class="text-danger">*</span></label>
+                    <input type="text" name="name" id="editName" class="form-control form-control-sm" required />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Kênh cấp trên</label>
+                    <select name="parentCode" id="editParentCode" class="form-select form-select-sm">
+                        <option value="">— Là kênh gốc cấp 1 (Không có kênh cha) —</option>
+                        @foreach (var p in rootSources)
+                        {
+                            <option value="@p.Code">@p.Name (@p.Code)</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Khối kinh doanh / Đơn vị BU</label>
+                    <input type="text" name="buCode" id="editBUCode" class="form-control form-control-sm font-monospace text-uppercase" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Mô tả đặc điểm kênh</label>
+                    <textarea name="description" id="editDescription" rows="3" class="form-control form-control-sm"></textarea>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                    <label class="form-check-label small" for="editIsActive">Đang áp dụng</label>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu thay đổi</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Xem Chi tiết Nguồn khách hàng & Lịch sử xuất hàng -->
+<div class="modal fade" id="detailSourceModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h6 class="modal-title fw-bold text-primary mb-0">
+                        <i class="bi bi-info-circle me-1"></i> Chi tiết Nguồn khách hàng: <span id="dtlTitle"></span>
+                    </h6>
+                    <div class="text-muted small" id="dtlSubTitle"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <div class="p-2 border rounded bg-light text-center">
+                            <span class="text-muted small">Số KH trực thuộc</span>
+                            <div class="fs-5 fw-bold text-primary" id="dtlCustCount">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-2 border rounded bg-light text-center">
+                            <span class="text-muted small">Phiếu xuất giao dịch</span>
+                            <div class="fs-5 fw-bold text-dark" id="dtlDocsCount">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-2 border rounded bg-light text-center">
+                            <span class="text-muted small">Tổng lượng xuất kho</span>
+                            <div class="fs-5 fw-bold text-success" id="dtlTotalQty">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-2 border rounded bg-light text-center">
+                            <span class="text-muted small">Tổng doanh số xuất</span>
+                            <div class="fs-5 fw-bold text-warning" id="dtlTotalAmount">0 đ</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs Khách hàng & Phiếu xuất kho -->
+                <ul class="nav nav-tabs" id="sourceDetailTab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="cust-tab" data-bs-toggle="tab" data-bs-target="#cust-pane" type="button">
+                            <i class="bi bi-people me-1"></i> Danh sách Khách hàng (<span id="dtlCustTabBadge">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="doc-tab" data-bs-toggle="tab" data-bs-target="#doc-pane" type="button">
+                            <i class="bi bi-box-arrow-up me-1"></i> Phiếu xuất kho gần nhất (<span id="dtlDocTabBadge">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="sub-tab" data-bs-toggle="tab" data-bs-target="#sub-pane" type="button">
+                            <i class="bi bi-diagram-2 me-1"></i> Kênh nhánh trực thuộc (<span id="dtlSubTabBadge">0</span>)
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content pt-3" id="sourceDetailTabContent">
+                    <div class="tab-pane fade show active" id="cust-pane">
+                        <div class="table-responsive" style="max-height: 350px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mã KH</th>
+                                        <th>Tên Khách hàng / Đại lý</th>
+                                        <th>Phân loại</th>
+                                        <th>Người đại diện</th>
+                                        <th>Điện thoại</th>
+                                        <th>Tỉnh / Thành</th>
+                                        <th class="text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dtlCustTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="doc-pane">
+                        <div class="table-responsive" style="max-height: 350px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Số phiếu xuất</th>
+                                        <th>Ngày xuất</th>
+                                        <th>Kho xuất hàng</th>
+                                        <th>Mã KH</th>
+                                        <th>Tên khách nhận hàng</th>
+                                        <th class="text-end">Số lượng xuất</th>
+                                        <th class="text-end">Thành tiền (VNĐ)</th>
+                                        <th class="text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dtlDocTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="sub-pane">
+                        <div class="table-responsive" style="max-height: 350px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mã kênh nhánh</th>
+                                        <th>Tên kênh nhánh</th>
+                                        <th class="text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dtlSubTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openEditModal(id, code, name, parentCode, buCode, desc, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editParentCode').value = parentCode || '';
+        document.getElementById('editBUCode').value = buCode || '';
+        document.getElementById('editDescription').value = desc || '';
+        document.getElementById('editIsActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editSourceModal')).show();
+    }
+
+    async function openDetailModal(id) {
+        try {
+            const res = await fetch('/CustomerSource/DetailJson/' + id);
+            if (!res.ok) {
+                alert('Không thể tải thông tin chi tiết nguồn khách hàng.');
+                return;
+            }
+            const data = await res.json();
+            const s = data.source;
+
+            document.getElementById('dtlTitle').innerText = `${s.name} (${s.code})`;
+            document.getElementById('dtlSubTitle').innerText = `Tạo ngày: ${s.createdAt} · BU: ${s.buCode || '—'} · Kênh cha: ${s.parentName || 'Là kênh gốc'}`;
+            document.getElementById('dtlCustCount').innerText = data.totalCustomers;
+            document.getElementById('dtlDocsCount').innerText = data.totalShippedDocsCount;
+            document.getElementById('dtlTotalQty').innerText = Number(data.totalShippedQty).toLocaleString('vi-VN');
+            document.getElementById('dtlTotalAmount').innerText = Number(data.totalShippedAmount).toLocaleString('vi-VN') + ' đ';
+
+            document.getElementById('dtlCustTabBadge').innerText = data.customers.length;
+            document.getElementById('dtlDocTabBadge').innerText = data.recentDispatches.length;
+            document.getElementById('dtlSubTabBadge').innerText = data.subSources.length;
+
+            // Render Customers
+            const custBody = document.getElementById('dtlCustTableBody');
+            custBody.innerHTML = '';
+            if (data.customers.length === 0) {
+                custBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Chưa có khách hàng nào thuộc nguồn này.</td></tr>';
+            } else {
+                data.customers.forEach(c => {
+                    const statusBadge = c.isActive 
+                        ? '<span class="badge bg-success-subtle text-success border border-success-subtle">Hoạt động</span>' 
+                        : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Tạm dừng</span>';
+                    custBody.innerHTML += `<tr>
+                        <td><span class="badge bg-light text-dark border font-monospace">${c.code}</span></td>
+                        <td class="fw-semibold text-dark">${c.name}</td>
+                        <td><span class="badge bg-primary-subtle text-primary border">${c.customerType}</span></td>
+                        <td>${c.contactName || '—'}</td>
+                        <td>${c.phone || '—'}</td>
+                        <td>${c.province || '—'}</td>
+                        <td class="text-center">${statusBadge}</td>
+                    </tr>`;
+                });
+            }
+
+            // Render Docs
+            const docBody = document.getElementById('dtlDocTableBody');
+            docBody.innerHTML = '';
+            if (data.recentDispatches.length === 0) {
+                docBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Chưa có phiếu xuất kho nào phát sinh từ các khách hàng thuộc nguồn này.</td></tr>';
+            } else {
+                data.recentDispatches.forEach(d => {
+                    docBody.innerHTML += `<tr>
+                        <td><a href="/Doc/Detail/${d.id}" class="badge bg-light text-primary border text-decoration-none font-monospace">${d.code}</a></td>
+                        <td>${d.dateStr}</td>
+                        <td>${d.warehouseName}</td>
+                        <td><span class="badge bg-light text-dark border font-monospace">${d.customerCode || '—'}</span></td>
+                        <td>${d.customerName || '—'}</td>
+                        <td class="text-end fw-bold text-dark">${Number(d.totalQty).toLocaleString('vi-VN')}</td>
+                        <td class="text-end fw-semibold text-success">${Number(d.totalAmount).toLocaleString('vi-VN')} đ</td>
+                        <td class="text-center"><span class="badge bg-info-subtle text-info border">${d.status}</span></td>
+                    </tr>`;
+                });
+            }
+
+            // Render SubSources
+            const subBody = document.getElementById('dtlSubTableBody');
+            subBody.innerHTML = '';
+            if (data.subSources.length === 0) {
+                subBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Không có kênh nhánh trực thuộc.</td></tr>';
+            } else {
+                data.subSources.forEach(sub => {
+                    const statusBadge = sub.isActive 
+                        ? '<span class="badge bg-success-subtle text-success border">Áp dụng</span>' 
+                        : '<span class="badge bg-secondary-subtle text-secondary border">Tạm dừng</span>';
+                    subBody.innerHTML += `<tr>
+                        <td><span class="badge bg-light text-dark border font-monospace">${sub.code}</span></td>
+                        <td class="fw-semibold text-dark">${sub.name}</td>
+                        <td class="text-center">${statusBadge}</td>
+                    </tr>`;
+                });
+            }
+
+            new bootstrap.Modal(document.getElementById('detailSourceModal')).show();
+        } catch (e) {
+            console.error(e);
+            alert('Lỗi kết nối khi nạp dữ liệu chi tiết nguồn khách hàng.');
+        }
+    }
+</script>

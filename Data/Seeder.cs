@@ -398,6 +398,27 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.CustomerSources.AnyAsync())
+        {
+            db.CustomerSources.AddRange(
+                // Cấp 1: Kênh / Nguồn gốc (Root Channels)
+                new CustomerSource { Code = "SRC_DIRECT", Name = "Kênh Trực tiếp tại Tổng kho", ParentCode = null, BUCode = "BU_SCM", Description = "Bán lẻ và giao nhận trực tiếp tại quầy tiếp nhận tổng kho hoặc chi nhánh", IsActive = true },
+                new CustomerSource { Code = "SRC_DEALER", Name = "Kênh Mạng lưới Đại lý & NPP", ParentCode = null, BUCode = "BU_SALES", Description = "Hệ thống nhà phân phối, đại lý ủy quyền cấp 1 & cấp 2 trên toàn quốc", IsActive = true },
+                new CustomerSource { Code = "SRC_ECOMMERCE", Name = "Kênh Sàn Thương mại Điện tử", ParentCode = null, BUCode = "BU_SALES", Description = "Kênh bán lẻ qua sàn TMĐT (Shopee, Lazada, TikTok Shop, Tiki) xuất kho theo kiện", IsActive = true },
+                new CustomerSource { Code = "SRC_PROJECT", Name = "Kênh Dự án & Đấu thầu B2B", ParentCode = null, BUCode = "BU_SALES", Description = "Hợp đồng dự án thầu, cung ứng vật tư, đồng phục doanh nghiệp lớn và cơ quan nhà nước", IsActive = true },
+                new CustomerSource { Code = "SRC_SHOWROOM", Name = "Kênh Chuỗi Showroom & Cửa hàng", ParentCode = null, BUCode = "BU_SALES", Description = "Mạng lưới cửa hàng thời trang bán lẻ, showroom trưng bày và giới thiệu sản phẩm", IsActive = true },
+                new CustomerSource { Code = "SRC_EXPORT", Name = "Kênh Xuất khẩu & Quốc tế", ParentCode = null, BUCode = "BU_SCM", Description = "Ủy thác xuất khẩu và đối tác thương mại thị trường quốc tế, quy chuẩn đóng thùng WMS", IsActive = true },
+                new CustomerSource { Code = "SRC_ONLINE", Name = "Kênh Hotline & Đặt hàng Online", ParentCode = null, BUCode = "BU_SALES", Description = "Đơn đặt hàng từ website thương mại, tổng đài hotline tư vấn và bán buôn từ xa", IsActive = true },
+                new CustomerSource { Code = "SRC_OEM", Name = "Kênh Đối tác Sản xuất & OEM", ParentCode = null, BUCode = "BU_MFG", Description = "Khách hàng liên kết hợp tác sản xuất nhượng quyền, cung ứng NVL và gia công thành phẩm", IsActive = true },
+
+                // Cấp 2: Kênh nhánh (Sub-channels)
+                new CustomerSource { Code = "SRC_DEALER_MB", Name = "Đại lý Kênh Miền Bắc", ParentCode = "SRC_DEALER", BUCode = "BU_SALES", Description = "Mạng lưới đại lý và kho trung chuyển khu vực các tỉnh phía Bắc", IsActive = true },
+                new CustomerSource { Code = "SRC_DEALER_MN", Name = "Đại lý Kênh Miền Nam", ParentCode = "SRC_DEALER", BUCode = "BU_SALES", Description = "Mạng lưới đại lý và NPP các tỉnh Đông Nam Bộ & Tây Nam Bộ", IsActive = true },
+                new CustomerSource { Code = "SRC_ECOM_TIKI", Name = "Gian hàng TMĐT Tiki & Lazada", ParentCode = "SRC_ECOMMERCE", BUCode = "BU_SALES", Description = "Gian hàng chính hãng LazMall & TikiNow kho phân phối nhanh", IsActive = true },
+                new CustomerSource { Code = "SRC_ECOM_SHOPEE", Name = "Gian hàng TMĐT Shopee & TikTok", ParentCode = "SRC_ECOMMERCE", BUCode = "BU_SALES", Description = "Kênh livestream và đơn hàng Shopee Mall giao hỏa tốc", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
@@ -578,6 +599,7 @@ public static class Seeder
                     Province = "TP.HCM",
                     AreaCode = "AREA_HCM",
                     CustomerGrpCode = "DAILY_CAP1",
+                    CustomerSourceCode = "SRC_DEALER_MN",
                     TaxCode = "0105777650",
                     IsActive = true,
                     Note = "Hệ thống đại lý phân phối thiết bị & thời trang cao cấp",
@@ -596,6 +618,7 @@ public static class Seeder
                     Province = "TP.HCM",
                     AreaCode = "AREA_HCM",
                     CustomerGrpCode = "DAILY_CAP1",
+                    CustomerSourceCode = "SRC_DEALER_MN",
                     TaxCode = "0303217354",
                     IsActive = true,
                     Note = "Chuỗi siêu thị phân phối bán lẻ quy mô toàn quốc",
@@ -614,6 +637,7 @@ public static class Seeder
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
                     CustomerGrpCode = "B2B_DUAN",
+                    CustomerSourceCode = "SRC_PROJECT",
                     TaxCode = "0106869738",
                     IsActive = true,
                     Note = "Hợp đồng dự án cấp phát đồng phục & vật tư định kỳ",
@@ -632,6 +656,7 @@ public static class Seeder
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
                     CustomerGrpCode = "DAILY_CAP2",
+                    CustomerSourceCode = "SRC_DEALER_MB",
                     TaxCode = "0107896541",
                     IsActive = true,
                     Note = "Đối tác lấy buôn phân phối cho mạng lưới cửa hàng bán buôn",
@@ -650,6 +675,7 @@ public static class Seeder
                     Province = "Đà Nẵng",
                     AreaCode = "AREA_DN",
                     CustomerGrpCode = "DAILY_CAP2",
+                    CustomerSourceCode = "SRC_SHOWROOM",
                     TaxCode = "0401889922",
                     IsActive = true,
                     Note = "Đại lý ủy quyền độc quyền khu vực Miền Trung",
@@ -668,6 +694,7 @@ public static class Seeder
                     Province = "Hà Nội",
                     AreaCode = "AREA_HN",
                     CustomerGrpCode = "GRP_RETAIL",
+                    CustomerSourceCode = "SRC_DIRECT",
                     TaxCode = "",
                     IsActive = true,
                     Note = "Khách mua lẻ trực tiếp thanh toán ngay",
@@ -706,6 +733,20 @@ public static class Seeder
                         "KH-ANPHU" => "DAILY_CAP2",
                         "KH-RETAIL" => "GRP_RETAIL",
                         _ => "GRP_RETAIL"
+                    };
+                    custChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(c.CustomerSourceCode))
+                {
+                    c.CustomerSourceCode = c.Code switch
+                    {
+                        "KH-FPT" => "SRC_DEALER_MN",
+                        "KH-MWG" => "SRC_DEALER_MN",
+                        "KH-VNPT" => "SRC_PROJECT",
+                        "KH-BACHHOA" => "SRC_DEALER_MB",
+                        "KH-ANPHU" => "SRC_SHOWROOM",
+                        "KH-RETAIL" => "SRC_DIRECT",
+                        _ => "SRC_DIRECT"
                     };
                     custChanged = true;
                 }

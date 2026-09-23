@@ -233,6 +233,7 @@ public class Customer : IOrgOwned
     public string? Province { get; set; }              // Tỉnh / Thành phố (ProvinceCode)
     public string? AreaCode { get; set; }              // Vùng / Khu vực thị trường (port từ Mst_Area / Mst_CustomerInArea Skycic)
     public string? CustomerGrpCode { get; set; }       // Nhóm khách hàng / đại lý (port từ Mst_CustomerGroup Skycic: CustomerGrpCode)
+    public string? CustomerSourceCode { get; set; }    // Nguồn khách hàng / Kênh tiếp nhận (port từ Mst_CustomerSource Skycic: CustomerSourceCode)
     public string? ContactName { get; set; }           // Người đại diện / liên hệ (ContactName)
     public string? ContactPhone { get; set; }          // Điện thoại người liên hệ (ContactPhone)
     public string? TaxCode { get; set; }               // Mã số thuế (TaxCode)
@@ -2403,6 +2404,66 @@ public record DepartmentDetailDto(
     int TotalSubDepartments,
     int TotalAssignedUsers,
     int TotalDispatchedQty,
+    List<StockDoc> RecentDispatches
+);
+
+/// <summary>Danh mục Nguồn khách hàng & Kênh tiếp nhận đối tác kho (port từ Mst_CustomerSource Skycic: CustomerSourceCode, CustomerSourceName, CustomerSourceDesc, CustomerSourceCodeParent, CustomerSourceBUCode, FlagActive).</summary>
+public class CustomerSource : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã nguồn / Kênh khách hàng (CustomerSourceCode, vd: SRC_DIRECT, SRC_DEALER, SRC_ECOMMERCE, SRC_PROJECT...)
+    public string Name { get; set; } = "";             // Tên nguồn / Kênh khách hàng (CustomerSourceName, vd: Kênh Đại lý & NPP, Kênh Sàn TMĐT...)
+    public string? ParentCode { get; set; }           // Mã nguồn kênh cha (CustomerSourceCodeParent) - phân cấp kênh gốc / kênh nhánh
+    public string? BUCode { get; set; }               // Khối kinh doanh / Đơn vị phụ trách kênh (CustomerSourceBUCode)
+    public string? Description { get; set; }          // Mô tả đặc điểm kênh, chính sách phân phối, giao nhận (CustomerSourceDesc)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị nguồn khách hàng kèm thông tin nguồn cha, số khách hàng trực thuộc và sản lượng/doanh số xuất kho theo kênh.</summary>
+public record CustomerSourceRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Description,
+    string? ParentCode,
+    string? ParentName,
+    string? BUCode,
+    bool IsActive,
+    DateTime CreatedAt,
+    int Level, // 1 = Kênh gốc (Root Channel), 2 = Kênh nhánh (Sub-channel)
+    int CustomerCount,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    decimal TotalShippedAmount
+);
+
+/// <summary>Báo cáo / Danh sách nguồn khách hàng tổng hợp kèm 4 thẻ KPI.</summary>
+public record CustomerSourceReport(
+    string? Keyword,
+    string? ParentFilter,
+    bool? ActiveFilter,
+    int TotalSources,
+    int RootSourcesCount,
+    int SubSourcesCount,
+    int TotalCustomersAssigned,
+    string TopSourceByVolume,
+    int TopVolumeQty,
+    decimal TotalAllShippedAmount,
+    List<CustomerSourceRow> Rows
+);
+
+/// <summary>Chi tiết Nguồn khách hàng kèm danh sách các kênh nhánh, danh sách khách hàng trực thuộc và các phiếu xuất kho giao dịch gần nhất.</summary>
+public record CustomerSourceDetailDto(
+    CustomerSource Source,
+    CustomerSource? ParentSource,
+    List<CustomerSource> SubSources,
+    List<Customer> Customers,
+    int TotalCustomers,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    decimal TotalShippedAmount,
     List<StockDoc> RecentDispatches
 );
 
