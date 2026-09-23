@@ -33,6 +33,7 @@ public class Product : IOrgOwned
     public string Name { get; set; } = "";
     public string? PartTypeCode { get; set; } // Phân loại loại mặt hàng (port từ Mst_PartType: TP, BTP, NVL, PTLK, BBDG, CCDC, HHTM)
     public string? BrandCode { get; set; }    // Thương hiệu / Nhãn hiệu hàng hóa (port từ Mst_Brand: MAY10, VIETTIEN, ANPHUOC, LEVI...)
+    public string? ModelCode { get; set; }    // Dòng sản phẩm / Model hàng hóa (port từ Mst_Model / OS_PrdCenter_Mst_Model: MD-M10-SLIM, MD-LV-501...)
     public string? PMType { get; set; }       // Nhóm chất liệu / Loại vật liệu hàng hóa (port từ Mst_PartMaterialType Skycic: COTTON, KAKI, LEATHER...)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
@@ -1866,6 +1867,56 @@ public record PartMaterialTypeReport(
 /// <summary>Chi tiết Nhóm chất liệu kèm danh sách sản phẩm thuộc nhóm chất liệu này.</summary>
 public record PartMaterialTypeDetailDto(
     PartMaterialType Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
+/// <summary>Danh mục Dòng sản phẩm / Model hàng hóa kho (port từ Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
+public class ProductModel : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã model / dòng sản phẩm (ModelCode, vd: MD-M10-SLIM, MD-LV-501, MD-AP-LEATHER...)
+    public string Name { get; set; } = "";          // Tên model / dòng sản phẩm (ModelName, vd: Sơ mi Slimfit Oxford, Quần Jeans 501 Iconic...)
+    public string? BrandCode { get; set; }          // Mã thương hiệu sở hữu dòng sản phẩm (BrandCode: MAY10, VIETTIEN, ANPHUOC, LEVI, NEM...)
+    public string? OrgModelCode { get; set; }       // Mã model gốc của nhà sản xuất / OEM (OrgModelCode)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mô tả đặc trưng dòng sản phẩm (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị dòng sản phẩm kèm thương hiệu, số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record ProductModelRow(
+    int Id,
+    string Code,
+    string Name,
+    string? BrandCode,
+    string? BrandName,
+    string? OrgModelCode,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách dòng sản phẩm tổng hợp kèm 4 thẻ KPI.</summary>
+public record ProductModelReport(
+    string? Keyword,
+    string? BrandCodeFilter,
+    bool? ActiveFilter,
+    int TotalModels,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<ProductModelRow> Rows
+);
+
+/// <summary>Chi tiết Dòng sản phẩm kèm thương hiệu và danh sách sản phẩm thuộc dòng này.</summary>
+public record ProductModelDetailDto(
+    ProductModel Item,
+    Brand? Brand,
     List<Product> Products,
     int TotalProducts,
     int TotalStockQty

@@ -30,13 +30,14 @@ public class ProductController(IWmsService svc) : Controller
     {
         ViewBag.PartTypes = await svc.PartTypesAsync(activeOnly: true);
         ViewBag.Brands = await svc.BrandsAsync(activeOnly: true);
+        ViewBag.ProductModels = await svc.ProductModelsAsync(activeOnly: true);
         ViewBag.PartUnits = await svc.PartUnitsAsync(activeOnly: true);
         ViewBag.MaterialTypes = await svc.PartMaterialTypesAsync(activeOnly: true);
         return View(await svc.ProductsAsync());
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string? brandCode, string? pmType, string uom, int minStock, int maxStock = 0)
+    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string? brandCode, string? modelCode, string? pmType, string uom, int minStock, int maxStock = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên hàng."; return RedirectToAction(nameof(Index)); }
         await svc.CreateProductAsync(new Product
@@ -45,6 +46,7 @@ public class ProductController(IWmsService svc) : Controller
             Code = code ?? "",
             PartTypeCode = string.IsNullOrWhiteSpace(partTypeCode) ? null : partTypeCode.Trim().ToUpperInvariant(),
             BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
+            ModelCode = string.IsNullOrWhiteSpace(modelCode) ? null : modelCode.Trim().ToUpperInvariant(),
             PMType = string.IsNullOrWhiteSpace(pmType) ? null : pmType.Trim().ToUpperInvariant(),
             Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom,
             MinStock = minStock,
@@ -3030,6 +3032,154 @@ public class PartMaterialTypeController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"ChatLieuVatLieu_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class ProductModelController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, string? brandCode, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.BrandCode = brandCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Brands = await svc.BrandsAsync(activeOnly: true);
+
+        var report = await svc.ProductModelsReportAsync(q, brandCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetProductModelDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy dòng sản phẩm / model." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            brandCode = detail.Item.BrandCode,
+            brandName = detail.Brand?.Name ?? detail.Item.BrandCode,
+            orgModelCode = detail.Item.OrgModelCode,
+            remark = detail.Item.Remark,
+            isActive = detail.Item.IsActive,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                p.PartTypeCode,
+                p.BrandCode,
+                p.ModelCode,
+                p.PMType,
+                p.MinStock,
+                p.MaxStock,
+                p.CostPrice
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? brandCode = null, string? orgModelCode = null, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên dòng sản phẩm / model.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new ProductModel
+            {
+                Code = code?.Trim().ToUpperInvariant() ?? "",
+                Name = name.Trim(),
+                BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
+                OrgModelCode = string.IsNullOrWhiteSpace(orgModelCode) ? null : orgModelCode.Trim(),
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreateProductModelAsync(item);
+            TempData["Success"] = $"Đã tạo mới dòng sản phẩm / model '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? brandCode = null, string? orgModelCode = null, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên dòng sản phẩm / model.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new ProductModel
+        {
+            Name = name.Trim(),
+            BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
+            OrgModelCode = string.IsNullOrWhiteSpace(orgModelCode) ? null : orgModelCode.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateProductModelAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleProductModelStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteProductModelAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? brandCode, bool? activeOnly)
+    {
+        var report = await svc.ProductModelsReportAsync(q, brandCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC DÒNG SẢN PHẨM / MODEL HÀNG HÓA KHO (MST_MODEL)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc thương hiệu:;{(string.IsNullOrEmpty(brandCode) ? "Tất cả" : brandCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã Model;Tên dòng sản phẩm / Model;Thương hiệu;Mã OrgModel (Hãng);Trạng thái;Số lượng SP;Tổng tồn kho;Ghi chú / Đặc tính dòng;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            var brandStr = !string.IsNullOrEmpty(r.BrandName) ? $"{r.BrandName} ({r.BrandCode})" : (r.BrandCode ?? "—");
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{brandStr.Replace("\"", "\"\"")}\";\"{r.OrgModelCode?.Replace("\"", "\"\"")}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ MODEL:;{report.TotalModels};;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;");
+        sb.AppendLine($";;NGỪNG ÁP DỤNG:;{report.InactiveCount};;;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG ĐÃ GÁN:;{report.TotalProductsMapped};;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DongSanPham_Model_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

@@ -78,13 +78,26 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.ProductModels.AnyAsync())
+        {
+            db.ProductModels.AddRange(
+                new ProductModel { Code = "MD-M10-SLIM", Name = "Sơ mi Nam Slimfit Oxford", BrandCode = "MAY10", OrgModelCode = "M10-SL26", IsActive = true, Remark = "Dòng sơ mi dáng ôm vừa trẻ trung, chất liệu cotton thoáng mát cao cấp" },
+                new ProductModel { Code = "MD-M10-CLASSIC", Name = "Sơ mi Nam Classic Công sở", BrandCode = "MAY10", OrgModelCode = "M10-CL26", IsActive = true, Remark = "Dòng sơ mi dáng suông cổ điển, phong cách lịch lãm quý phái" },
+                new ProductModel { Code = "MD-LV-501", Name = "Quần Jeans 501 Original Fit", BrandCode = "LEVI", OrgModelCode = "LV-501-STD", IsActive = true, Remark = "Dòng quần jeans kinh điển phong cách Mỹ, độ bền vượt trội" },
+                new ProductModel { Code = "MD-AP-LEATHER", Name = "Phụ kiện Thắt lưng Da Mill Grain", BrandCode = "ANPHUOC", OrgModelCode = "AP-LG26", IsActive = true, Remark = "Dòng phụ kiện thắt lưng da thủ công cao cấp nguyên miếng" },
+                new ProductModel { Code = "MD-NEM-LUX", Name = "Váy đầm dạ hội & Công sở Luxury", BrandCode = "NEM", OrgModelCode = "NEM-LX08", IsActive = true, Remark = "Dòng thời trang dạ tiệc lụa sang trọng thanh lịch" },
+                new ProductModel { Code = "MD-VT-SMART", Name = "Sơ mi & Âu phục Smart Casual", BrandCode = "VIETTIEN", OrgModelCode = "VT-SC26", IsActive = true, Remark = "Dòng sản phẩm văn phòng công sở hiện đại, co giãn thoải mái" },
+                new ProductModel { Code = "MD-CNF-DAILY", Name = "Trang phục dạo phố Everyday Active", BrandCode = "CANIFA", OrgModelCode = "CNF-EA01", IsActive = true, Remark = "Dòng thời trang gia đình chất liệu len sợi tự nhiên ứng dụng hằng ngày" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", PMType = "COTTON", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", PMType = "DENIM", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", PMType = "LEATHER", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
-                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", PMType = "SILK", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", ModelCode = "MD-M10-SLIM", PMType = "COTTON", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", ModelCode = "MD-LV-501", PMType = "DENIM", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", ModelCode = "MD-AP-LEATHER", PMType = "LEATHER", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", ModelCode = "MD-NEM-LUX", PMType = "SILK", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
         }
         else
@@ -139,6 +152,18 @@ public static class Seeder
                         "PK-001" => "LEATHER",
                         "VAY-001" => "SILK",
                         _ => "COTTON"
+                    };
+                    hasChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(p.ModelCode))
+                {
+                    p.ModelCode = p.Code switch
+                    {
+                        "AO-001" => "MD-M10-SLIM",
+                        "QUAN-001" => "MD-LV-501",
+                        "PK-001" => "MD-AP-LEATHER",
+                        "VAY-001" => "MD-NEM-LUX",
+                        _ => null
                     };
                     hasChanged = true;
                 }
@@ -1701,7 +1726,7 @@ public static class Seeder
                 {
                     Type = DocType.In,
                     ToWarehouseId = whHn.Id,
-                    Code = "PNSEED-005",
+                    Code = "PNSEED-FG01",
                     Status = DocStatus.Posted,
                     Date = today.AddDays(-3),
                     RefNo = "IFFG2603-001",
@@ -2092,7 +2117,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2107,12 +2132,19 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Brands_OrgId_Code\" ON miniwms.\"Brands\" (\"OrgId\", \"Code\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"PartUnits\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"IsStandard\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartUnits_OrgId_Code\" ON miniwms.\"PartUnits\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PartMaterialTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartMaterialTypes_OrgId_Code\" ON miniwms.\"PartMaterialTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"ProductModels\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"BrandCode\" text NULL, \"OrgModelCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ProductModels_OrgId_Code\" ON miniwms.\"ProductModels\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_ProductModels_OrgId_BrandCode\" ON miniwms.\"ProductModels\" (\"OrgId\", \"BrandCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PartTypeCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"BrandCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PMType\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"ModelCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierName\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"CustomerCode\" text NULL");
@@ -2563,7 +2595,32 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartUnits_OrgId_Code"" ON ""PartUnits"" (""OrgId"", ""Code"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""PartTypeCode"" TEXT NULL;",
-            @"ALTER TABLE ""Products"" ADD COLUMN ""BrandCode"" TEXT NULL;"
+            @"ALTER TABLE ""Products"" ADD COLUMN ""BrandCode"" TEXT NULL;",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""PMType"" TEXT NULL;",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""ModelCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""PartMaterialTypes"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartMaterialTypes_OrgId_Code"" ON ""PartMaterialTypes"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""ProductModels"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""BrandCode"" TEXT NULL,
+                ""OrgModelCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProductModels_OrgId_Code"" ON ""ProductModels"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_ProductModels_OrgId_BrandCode"" ON ""ProductModels"" (""OrgId"", ""BrandCode"");"
         };
         foreach (var s in sql)
         {

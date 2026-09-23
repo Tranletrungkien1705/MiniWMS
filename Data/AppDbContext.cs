@@ -41,12 +41,14 @@ public class AppDbContext : DbContext
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<PartUnit> PartUnits => Set<PartUnit>();
     public DbSet<PartMaterialType> PartMaterialTypes => Set<PartMaterialType>();
+    public DbSet<ProductModel> ProductModels => Set<ProductModel>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
         b.Entity<PartMaterialType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<ProductModel>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasIndex(x => new { x.OrgId, x.BrandCode }); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartUnit>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Brand>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

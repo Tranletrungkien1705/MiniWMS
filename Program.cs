@@ -1828,6 +1828,84 @@ app.MapDelete("/api/part-material-types/{id:int}", async (int id, IWmsService sv
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Dòng sản phẩm / Model hàng hóa kho (port từ Mst_Model / OS_PrdCenter_Mst_Model Skycic)
+app.MapGet("/api/product-models", async (string? q, string? brandCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.ProductModelsReportAsync(q, brandCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/product-models/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetProductModelAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy dòng sản phẩm / model." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/product-models/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetProductModelByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy dòng sản phẩm / model." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/product-models/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetProductModelDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy dòng sản phẩm / model." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/product-models", async (CreateProductModelDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên dòng sản phẩm / model." });
+    try
+    {
+        var item = new ProductModel
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            BrandCode = string.IsNullOrWhiteSpace(dto.BrandCode) ? null : dto.BrandCode.Trim().ToUpperInvariant(),
+            OrgModelCode = string.IsNullOrWhiteSpace(dto.OrgModelCode) ? null : dto.OrgModelCode.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateProductModelAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/product-models/{id:int}", async (int id, UpdateProductModelDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên dòng sản phẩm / model." });
+    var item = new ProductModel
+    {
+        Name = dto.Name.Trim(),
+        BrandCode = string.IsNullOrWhiteSpace(dto.BrandCode) ? null : dto.BrandCode.Trim().ToUpperInvariant(),
+        OrgModelCode = string.IsNullOrWhiteSpace(dto.OrgModelCode) ? null : dto.OrgModelCode.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateProductModelAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/product-models/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleProductModelStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/product-models/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteProductModelAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -1880,3 +1958,5 @@ record CreatePartUnitDto(string? Code, string Name, bool? IsStandard, string? Re
 record UpdatePartUnitDto(string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record CreatePartMaterialTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
 record UpdatePartMaterialTypeDto(string Name, string? Remark, bool? IsActive);
+record CreateProductModelDto(string? Code, string Name, string? BrandCode, string? OrgModelCode, string? Remark, bool? IsActive);
+record UpdateProductModelDto(string Name, string? BrandCode, string? OrgModelCode, string? Remark, bool? IsActive);

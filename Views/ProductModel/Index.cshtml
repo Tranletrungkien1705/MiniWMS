@@ -1,0 +1,465 @@
+@model ProductModelReport
+@{
+    ViewData["Title"] = "Dòng sản phẩm (Model)";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var brandCodeFilter = (string)(ViewBag.BrandCode ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var brands = ViewBag.Brands as List<Brand> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-diagram-3 text-primary me-2"></i>Danh mục Dòng sản phẩm / Model hàng hóa kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_Model</code> / <code>OS_PrdCenter_Mst_Model</code> (Skycic) — Quản lý phân loại dòng sản phẩm (ModelCode, ModelName, BrandCode, OrgModelCode), liên kết thương hiệu và chuẩn hóa phả hệ mặt hàng, theo dõi số lượng mặt hàng và tổng tồn kho thực tế theo từng model</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/ProductModel/ExportCsv?q=@keyword&brandCode=@brandCodeFilter&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/Brand" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-award me-1"></i> Thương hiệu
+        </a>
+        <a href="/Product" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-seam me-1"></i> Mặt hàng
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createModelModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Dòng sản phẩm
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ MODEL / DÒNG SP</span>
+                    <i class="bi bi-diagram-3 text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalModels</div>
+                <div class="small text-muted">Dòng sản phẩm thiết lập trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng gán cho mặt hàng và phiếu kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NGỪNG ÁP DỤNG</span>
+                    <i class="bi bi-pause-circle text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-muted">@Model.InactiveCount</div>
+                <div class="small text-muted">Tạm ngưng phân loại cho sản phẩm mới</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẶT HÀNG ĐÃ GÁN</span>
+                    <i class="bi bi-boxes text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.TotalProductsMapped</div>
+                <div class="small text-muted">Sản phẩm trong kho đã gắn dòng model</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm kiếm theo mã model, tên model, mã hãng hoặc ghi chú..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="brandCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả thương hiệu --</option>
+                    @foreach (var b in brands)
+                    {
+                        <!option value="@b.Code" @(string.Equals(brandCodeFilter, b.Code, StringComparison.OrdinalIgnoreCase) ? "selected" : "")>@b.Code — @b.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Ngừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/ProductModel" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Dòng sản phẩm / Model -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 150px;">Mã Model</th>
+                        <th>Tên dòng sản phẩm / Model</th>
+                        <th style="width: 160px;">Thương hiệu</th>
+                        <th style="width: 140px;">Mã hãng (OrgModel)</th>
+                        <th>Ghi chú / Đặc tính dòng</th>
+                        <th class="text-center" style="width: 130px;">Số mặt hàng</th>
+                        <th class="text-end" style="width: 130px;">Tổng tồn kho</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 160px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="10" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy dòng sản phẩm nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">@row.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.Name</div>
+                                    <div class="small text-muted">Ngày tạo: @row.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(row.BrandCode))
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                            <i class="bi bi-award me-1"></i>@(row.BrandName ?? row.BrandCode)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(row.OrgModelCode))
+                                    {
+                                        <span class="badge bg-light text-dark border font-monospace">@row.OrgModelCode</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="text-secondary small">@(string.IsNullOrWhiteSpace(row.Remark) ? "—" : row.Remark)</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.ProductCount > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-0" onclick="viewModelProducts(@row.Id, '@row.Code', '@row.Name')">
+                                            <i class="bi bi-box me-1"></i>@row.ProductCount sp
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">0 sp</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <span class="fw-bold @(row.TotalStockQty > 0 ? "text-dark" : "text-muted")">@row.TotalStockQty.ToString("N0")</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                            <i class="bi bi-dash-circle me-1"></i>Ngừng áp dụng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin" onclick="editModel(@row.Id, '@row.Code', '@row.Name', '@(row.BrandCode ?? "")', '@(row.OrgModelCode ?? "")', '@(row.Remark?.Replace("'", "\\'") ?? "")', @(row.IsActive.ToString().ToLower()))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" asp-action="Toggle" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái dòng model @row.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-@(row.IsActive ? "warning" : "success")" title="@(row.IsActive ? "Ngừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(row.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Delete" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa model @row.Code? (Nếu đã có sản phẩm sẽ chuyển sang Ngừng áp dụng)');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa dòng sản phẩm">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Dòng sản phẩm / Model -->
+<div class="modal fade" id="createModelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-action="Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Dòng sản phẩm / Model mới</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã dòng sản phẩm / Model (ModelCode)</label>
+                        <input type="text" name="code" class="form-control font-monospace" placeholder="VD: MD-M10-SLIM, MD-LV-501, MD-AP-LEATHER... (để trống tự sinh)" />
+                        <div class="form-text">Mã định danh viết hoa không dấu, duy nhất trong hệ thống kho.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên dòng sản phẩm / Model (ModelName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="VD: Sơ mi Slimfit Oxford, Quần Jeans 501 Original..." required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Thương hiệu sở hữu (Mst_Brand)</label>
+                        <select name="brandCode" class="form-select">
+                            <option value="">-- Chọn thương hiệu liên kết --</option>
+                            @foreach (var b in brands)
+                            {
+                                <option value="@b.Code">@b.Code — @b.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã Model Hãng / Nhà sản xuất (OrgModelCode)</label>
+                        <input type="text" name="orgModelCode" class="form-control font-monospace" placeholder="VD: M10-SL26, LV-501-STD, AP-LG26..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú / Đặc tính dòng sản phẩm (Remark)</label>
+                        <textarea name="remark" class="form-control" rows="3" placeholder="Mô tả phân khúc thị trường, form dáng, tiêu chuẩn kỹ thuật thiết kế..."></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" id="createIsActive" value="true" checked>
+                        <label class="form-check-label fw-semibold small" for="createIsActive">Kích hoạt áp dụng ngay (FlagActive)</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu dòng sản phẩm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Dòng sản phẩm / Model -->
+<div class="modal fade" id="editModelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-action="Update" id="editModelForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editModelId" />
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Cập nhật Dòng sản phẩm / Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã dòng sản phẩm / Model</label>
+                        <input type="text" id="editModelCode" class="form-control font-monospace bg-light" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên dòng sản phẩm / Model <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editModelName" class="form-control" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Thương hiệu sở hữu (Mst_Brand)</label>
+                        <select name="brandCode" id="editModelBrandCode" class="form-select">
+                            <option value="">-- Không gán thương hiệu --</option>
+                            @foreach (var b in brands)
+                            {
+                                <option value="@b.Code">@b.Code — @b.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã Model Hãng / Nhà sản xuất (OrgModelCode)</label>
+                        <input type="text" name="orgModelCode" id="editModelOrgCode" class="form-control font-monospace" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ghi chú / Đặc tính dòng sản phẩm</label>
+                        <textarea name="remark" id="editModelRemark" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" id="editModelIsActive" value="true">
+                        <label class="form-check-label fw-semibold small" for="editModelIsActive">Đang áp dụng (FlagActive)</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách sản phẩm thuộc Dòng sản phẩm -->
+<div class="modal fade" id="modelProductsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title fw-bold mb-0"><i class="bi bi-diagram-3 text-primary me-2"></i>Mặt hàng thuộc dòng: <span id="modalModelTitle" class="text-primary font-monospace"></span></h5>
+                    <div class="text-muted small">Danh sách các sản phẩm và biến thể trong kho gắn liền với dòng model này</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="d-flex justify-content-between align-items-center p-3 bg-light border-bottom flex-wrap gap-2">
+                    <div>
+                        <span class="fw-semibold">Thương hiệu:</span> <span id="modalModelBrand" class="badge bg-secondary">--</span>
+                        <span class="ms-2 fw-semibold">Mã hãng:</span> <span id="modalModelOrgCode" class="badge bg-light text-dark border">--</span>
+                    </div>
+                    <div>
+                        <span class="fw-semibold">Tổng số mặt hàng:</span> <span id="modalTotalProducts" class="badge bg-primary">0</span>
+                        <span class="ms-2 fw-semibold">Tổng tồn kho vật lý:</span> <span id="modalTotalStock" class="badge bg-success">0</span>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="ps-3" style="width: 50px;">STT</th>
+                                <th style="width: 140px;">Mã hàng</th>
+                                <th>Tên hàng</th>
+                                <th style="width: 80px;">ĐVT</th>
+                                <th style="width: 100px;">Loại SP</th>
+                                <th style="width: 110px;">Chất liệu</th>
+                                <th class="text-end" style="width: 90px;">Tồn Min</th>
+                                <th class="text-end" style="width: 90px;">Tồn Max</th>
+                                <th class="text-end pe-3" style="width: 120px;">Giá vốn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalModelProductsBody">
+                            <tr><td colspan="9" class="text-center py-4 text-muted">Đang tải dữ liệu...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function editModel(id, code, name, brandCode, orgModelCode, remark, isActive) {
+        document.getElementById('editModelId').value = id;
+        document.getElementById('editModelCode').value = code;
+        document.getElementById('editModelName').value = name;
+        document.getElementById('editModelBrandCode').value = brandCode || '';
+        document.getElementById('editModelOrgCode').value = orgModelCode || '';
+        document.getElementById('editModelRemark').value = remark || '';
+        document.getElementById('editModelIsActive').checked = !!isActive;
+        document.getElementById('editModelForm').action = '/ProductModel/Update/' + id;
+        new bootstrap.Modal(document.getElementById('editModelModal')).show();
+    }
+
+    async function viewModelProducts(id, code, name) {
+        document.getElementById('modalModelTitle').textContent = name + ' (' + code + ')';
+        document.getElementById('modalModelBrand').textContent = '...';
+        document.getElementById('modalModelOrgCode').textContent = '...';
+        document.getElementById('modalTotalProducts').textContent = '...';
+        document.getElementById('modalTotalStock').textContent = '...';
+        const tbody = document.getElementById('modalModelProductsBody');
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Đang tải dữ liệu...</td></tr>';
+        
+        new bootstrap.Modal(document.getElementById('modelProductsModal')).show();
+
+        try {
+            const res = await fetch('/ProductModel/Detail/' + id);
+            if (!res.ok) throw new Error('Không thể tải chi tiết');
+            const data = await res.json();
+
+            document.getElementById('modalModelBrand').textContent = data.brandName || data.brandCode || 'Không có';
+            document.getElementById('modalModelOrgCode').textContent = data.orgModelCode || 'Không có';
+            document.getElementById('modalTotalProducts').textContent = data.totalProducts;
+            document.getElementById('modalTotalStock').textContent = Number(data.totalStockQty).toLocaleString();
+
+            if (!data.products || data.products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">Chưa có mặt hàng nào thuộc dòng model này.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            data.products.forEach((p, idx) => {
+                const costPriceFormatted = Number(p.costPrice || 0).toLocaleString() + ' đ';
+                const ptBadge = p.partTypeCode ? `<span class="badge bg-info-subtle text-info border border-info-subtle">${p.partTypeCode}</span>` : '—';
+                const matBadge = p.pmType ? `<span class="badge bg-warning-subtle text-dark border border-warning-subtle">${p.pmType}</span>` : '—';
+                html += `
+                    <tr>
+                        <td class="ps-3 text-muted">${idx + 1}</td>
+                        <td class="fw-semibold font-monospace">${p.code}</td>
+                        <td>${p.name}</td>
+                        <td><span class="badge bg-light text-dark border font-monospace">${p.uom || ''}</span></td>
+                        <td>${ptBadge}</td>
+                        <td>${matBadge}</td>
+                        <td class="text-end text-muted">${p.minStock > 0 ? p.minStock : '—'}</td>
+                        <td class="text-end text-muted">${p.maxStock > 0 ? p.maxStock : '—'}</td>
+                        <td class="text-end pe-3 fw-semibold text-dark">${costPriceFormatted}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Lỗi khi tải dữ liệu: ${err.message}</td></tr>`;
+        }
+    }
+</script>
+}

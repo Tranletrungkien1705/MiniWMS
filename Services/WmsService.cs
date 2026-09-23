@@ -157,6 +157,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdatePartMaterialTypeAsync(int id, PartMaterialType item);
     Task<(bool ok, string msg)> TogglePartMaterialTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeletePartMaterialTypeAsync(int id);
+    Task<ProductModelReport> ProductModelsReportAsync(string? q = null, string? brandCode = null, bool? activeOnly = null);
+    Task<List<ProductModel>> ProductModelsAsync(string? q = null, string? brandCode = null, bool? activeOnly = null);
+    Task<ProductModel?> GetProductModelAsync(int id);
+    Task<ProductModel?> GetProductModelByCodeAsync(string code);
+    Task<ProductModelDetailDto?> GetProductModelDetailAsync(int id);
+    Task<int> CreateProductModelAsync(ProductModel item);
+    Task<(bool ok, string msg)> UpdateProductModelAsync(int id, ProductModel item);
+    Task<(bool ok, string msg)> ToggleProductModelStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteProductModelAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -6085,6 +6094,191 @@ public class WmsService(AppDbContext db) : IWmsService
         db.PartMaterialTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa nhóm chất liệu '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Dòng sản phẩm / Model hàng hóa kho tổng hợp kèm 4 thẻ KPI (port từ Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
+    public async Task<ProductModelReport> ProductModelsReportAsync(string? q = null, string? brandCode = null, bool? activeOnly = null)
+    {
+        var query = db.ProductModels.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(m => m.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(brandCode))
+        {
+            var bc = brandCode.Trim().ToLowerInvariant();
+            query = query.Where(m => m.BrandCode != null && m.BrandCode.ToLower() == bc);
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Code.ToLower().Contains(kw) ||
+                                     m.Name.ToLower().Contains(kw) ||
+                                     (m.BrandCode != null && m.BrandCode.ToLower().Contains(kw)) ||
+                                     (m.OrgModelCode != null && m.OrgModelCode.ToLower().Contains(kw)) ||
+                                     (m.Remark != null && m.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(m => m.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var allBrands = await db.Brands.ToListAsync();
+        var brandDict = allBrands.ToDictionary(b => b.Code, b => b.Name, StringComparer.OrdinalIgnoreCase);
+        var balances = await BalancesAsync(null);
+
+        var prodGroup = allProducts
+            .Where(p => !string.IsNullOrEmpty(p.ModelCode))
+            .GroupBy(p => p.ModelCode!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = list.Select(m =>
+        {
+            var pList = new List<Product>();
+            if (prodGroup.TryGetValue(m.Code, out var listByCode)) pList.AddRange(listByCode);
+            if (prodGroup.TryGetValue(m.Name, out var listByName))
+            {
+                foreach (var p in listByName)
+                {
+                    if (!pList.Any(x => x.Id == p.Id)) pList.Add(p);
+                }
+            }
+            int pCount = pList.Count;
+            var pIds = pList.Select(p => p.Id).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            string? bName = m.BrandCode != null && brandDict.TryGetValue(m.BrandCode, out var bn) ? bn : m.BrandCode;
+            return new ProductModelRow(m.Id, m.Code, m.Name, m.BrandCode, bName, m.OrgModelCode, m.Remark, m.IsActive, m.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalModels = await db.ProductModels.CountAsync();
+        int activeCount = await db.ProductModels.CountAsync(m => m.IsActive);
+        int inactiveCount = totalModels - activeCount;
+
+        var modelCodes = (await db.ProductModels.Select(m => m.Code).ToListAsync())
+            .Select(c => c.ToLowerInvariant()).ToHashSet();
+        int mappedProds = allProducts.Count(p => !string.IsNullOrEmpty(p.ModelCode) && modelCodes.Contains(p.ModelCode.Trim().ToLowerInvariant()));
+
+        return new ProductModelReport(q, brandCode, activeOnly, totalModels, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<ProductModel>> ProductModelsAsync(string? q = null, string? brandCode = null, bool? activeOnly = null)
+    {
+        var query = db.ProductModels.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(m => m.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(brandCode))
+        {
+            var bc = brandCode.Trim().ToLowerInvariant();
+            query = query.Where(m => m.BrandCode != null && m.BrandCode.ToLower() == bc);
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Code.ToLower().Contains(kw) ||
+                                     m.Name.ToLower().Contains(kw) ||
+                                     (m.BrandCode != null && m.BrandCode.ToLower().Contains(kw)));
+        }
+        return query.OrderBy(m => m.Code).ToListAsync();
+    }
+
+    public Task<ProductModel?> GetProductModelAsync(int id) =>
+        db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
+
+    public Task<ProductModel?> GetProductModelByCodeAsync(string code) =>
+        db.ProductModels.FirstOrDefaultAsync(m => m.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<ProductModelDetailDto?> GetProductModelDetailAsync(int id)
+    {
+        var m = await db.ProductModels.FirstOrDefaultAsync(x => x.Id == id);
+        if (m == null) return null;
+
+        Brand? brand = null;
+        if (!string.IsNullOrEmpty(m.BrandCode))
+        {
+            brand = await db.Brands.FirstOrDefaultAsync(b => b.Code.ToLower() == m.BrandCode.ToLower());
+        }
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+        var products = allProducts
+            .Where(p => string.Equals(p.ModelCode, m.Code, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(p.ModelCode, m.Name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new ProductModelDetailDto(m, brand, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateProductModelAsync(ProductModel item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên model / dòng sản phẩm không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"MD{await db.ProductModels.CountAsync() + 1:D3}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.ProductModels.AnyAsync(m => m.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã model '{item.Code}' đã tồn tại trong hệ thống.");
+
+        if (!string.IsNullOrWhiteSpace(item.BrandCode))
+            item.BrandCode = item.BrandCode.Trim().ToUpperInvariant();
+
+        if (!string.IsNullOrWhiteSpace(item.OrgModelCode))
+            item.OrgModelCode = item.OrgModelCode.Trim();
+
+        item.CreatedAt = DateTime.Now;
+        db.ProductModels.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateProductModelAsync(int id, ProductModel item)
+    {
+        var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên model / dòng sản phẩm không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.BrandCode = string.IsNullOrWhiteSpace(item.BrandCode) ? null : item.BrandCode.Trim().ToUpperInvariant();
+        existing.OrgModelCode = string.IsNullOrWhiteSpace(item.OrgModelCode) ? null : item.OrgModelCode.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin model '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleProductModelStatusAsync(int id)
+    {
+        var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng model '{existing.Code}'." : $"Đã chuyển model '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteProductModelAsync(int id)
+    {
+        var existing = await db.ProductModels.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy model / dòng sản phẩm.");
+
+        bool isUsed = await db.Products.AnyAsync(p => p.ModelCode != null && (p.ModelCode.ToLower() == existing.Code.ToLower() || p.ModelCode.ToLower() == existing.Name.ToLower()));
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Model '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.ProductModels.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa model '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
