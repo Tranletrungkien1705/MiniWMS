@@ -2963,6 +2963,109 @@ app.MapDelete("/api/dealers/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== BẢN ĐỒ TIẾN ĐỘ LỆNH GIAO HÀNG THEO PHIẾU XUẤT KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================
+app.MapGet("/api/reports/map-delivery-order", async (
+    int? warehouseId,
+    string? areaCode,
+    string? customerCode,
+    string? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+    string? q,
+    IWmsService svc) =>
+{
+    var report = await svc.MapDeliveryOrderReportAsync(warehouseId, areaCode, customerCode, status, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/reports/map-delivery-order/kpis", async (
+    int? warehouseId,
+    string? areaCode,
+    string? customerCode,
+    string? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+    IWmsService svc) =>
+{
+    var report = await svc.MapDeliveryOrderReportAsync(warehouseId, areaCode, customerCode, status, fromDate, toDate, null);
+    return Results.Ok(new
+    {
+        report.TotalDeliveryOrders,
+        report.CompletedOrders,
+        report.PendingOrders,
+        report.DelayedOrders,
+        report.OnTimeRatePercent,
+        report.TotalDispatchedQty,
+        DateFrom = report.DateFrom.ToString("yyyy-MM-dd"),
+        DateTo = report.DateTo.ToString("yyyy-MM-dd"),
+        report.TodayStr
+    });
+});
+
+app.MapGet("/api/reports/map-delivery-order/area-summary", async (
+    int? warehouseId,
+    DateTime? fromDate,
+    DateTime? toDate,
+    IWmsService svc) =>
+{
+    var report = await svc.MapDeliveryOrderReportAsync(warehouseId, null, null, null, fromDate, toDate, null);
+    return Results.Ok(report.AreaSummaries);
+});
+
+app.MapGet("/api/reports/map-delivery-order/export-csv", async (
+    int? warehouseId,
+    string? areaCode,
+    string? customerCode,
+    string? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+    string? q,
+    IWmsService svc) =>
+{
+    var report = await svc.MapDeliveryOrderReportAsync(warehouseId, areaCode, customerCode, status, fromDate, toDate, q);
+    var sb = new System.Text.StringBuilder();
+    sb.Append('\uFEFF');
+
+    sb.AppendLine("BẢN ĐỒ TIẾN ĐỘ LỆNH GIAO HÀNG THEO PHIẾU XUẤT KHO (RPT_MAPDELIVERYORDER_BYINVFIOUT)");
+    sb.AppendLine($"Kho xuất:;{report.WarehouseName};Dải ngày:;{report.DateFrom:dd/MM/yyyy} - {report.DateTo:dd/MM/yyyy};Hôm nay:;{DateTime.Today:dd/MM/yyyy}");
+    sb.AppendLine($"Tổng số lệnh:;{report.TotalDeliveryOrders};Đã giao:;{report.CompletedOrders};Chờ giao:;{report.PendingOrders};Giao chậm:;{report.DelayedOrders};Tỷ lệ đúng hạn:;{report.OnTimeRatePercent}%;Tổng SL:;{report.TotalDispatchedQty}");
+    sb.AppendLine();
+
+    var headerCols = new List<string> { "STT", "Khu vực", "Mã KH", "Tên khách hàng", "Số phiếu xuất", "Loại", "Ngày xuất", "Mã hàng", "Tên hàng", "ĐVT", "Tổng SL", "Trạng thái", "Cảnh báo" };
+    headerCols.AddRange(report.ListDates);
+    sb.AppendLine(string.Join(";", headerCols));
+
+    int stt = 1;
+    foreach (var r in report.Rows)
+    {
+        var rowCols = new List<string>
+        {
+            (stt++).ToString(),
+            $"\"{r.AreaName}\"",
+            $"\"{r.CustomerCode}\"",
+            $"\"{r.CustomerName.Replace("\"", "\"\"")}\"",
+            $"\"{r.DeliveryOrderNo}\"",
+            $"\"{r.DocTypeLabel}\"",
+            r.OrderDateDisplay,
+            $"\"{r.ProductCode}\"",
+            $"\"{r.ProductName.Replace("\"", "\"\"")}\"",
+            $"\"{r.Uom}\"",
+            r.TotalQty.ToString(),
+            $"\"{r.StatusLabel}\"",
+            r.IsDelayed ? "CHẬM TIẾN ĐỘ" : "Đúng hạn"
+        };
+        foreach (var d in report.ListDates)
+        {
+            r.DailyQuantities.TryGetValue(d, out var qVal);
+            rowCols.Add(qVal > 0 ? qVal.ToString() : "");
+        }
+        sb.AppendLine(string.Join(";", rowCols));
+    }
+
+    var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+    return Results.File(bytes, "text/csv; charset=utf-8", $"BanDoGiaoHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 

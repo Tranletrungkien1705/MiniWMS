@@ -2602,6 +2602,81 @@ public record DealerDetailDto(
     List<StockDoc> RecentDispatches
 );
 
+/// <summary>Ô dữ liệu hiển thị sản lượng giao hàng theo từng ngày trên ma trận lịch biểu (port từ Rpt_MapDeliveryOrder_ByInvFIOut Skycic).</summary>
+public record MapDeliveryOrderDayCell(
+    string DateStr,         // Ngày định dạng yyyy-MM-dd
+    int Qty,                // Số lượng xuất giao trong ngày
+    bool IsToday,           // Có phải cột ngày hôm nay không (high-line-today)
+    bool IsDelayed          // Có bị cảnh báo giao chậm / quá hạn không (high-line-delay)
+);
+
+/// <summary>Dòng thông tin hiển thị tiến độ lệnh giao hàng theo phiếu xuất trên ma trận lịch biểu (port từ Rpt_MapDeliveryOrder_ByInvFIOut Skycic: AreaCode, CustomerCode, IF_InvOutNo, ProductCode, Qty, IF_InvOutStatus, CreateDTimeUTC, Rtp_Date).</summary>
+public class MapDeliveryOrderRow
+{
+    public int Stt { get; set; }
+    public int WarehouseId { get; set; }
+    public string WarehouseCode { get; set; } = "";
+    public string WarehouseName { get; set; } = "";
+    public string AreaCode { get; set; } = "";              // Mã khu vực địa bàn (AreaCode)
+    public string AreaName { get; set; } = "";              // Tên khu vực địa bàn (AreaName)
+    public string CustomerCode { get; set; } = "";          // Mã khách hàng (CustomerCode / CustomerCodeSys)
+    public string CustomerName { get; set; } = "";          // Tên khách hàng (CustomerName)
+    public string DeliveryOrderNo { get; set; } = "";       // Số phiếu xuất / Lệnh giao hàng (IF_InvOutNo)
+    public string DocTypeLabel { get; set; } = "";          // Loại nghiệp vụ xuất (Xuất bán, Xuất thành phẩm, Xuất điều chuyển...)
+    public DateTime OrderDate { get; set; }                 // Ngày tạo / Ngày hẹn giao (CreateDTimeUTC / Date)
+    public string OrderDateStr => OrderDate.ToString("yyyy-MM-dd");
+    public string OrderDateDisplay => OrderDate.ToString("dd/MM/yyyy");
+    public int ProductId { get; set; }
+    public string ProductCode { get; set; } = "";           // Mã mặt hàng (ProductCode / ProductCodeUser)
+    public string ProductName { get; set; } = "";           // Tên mặt hàng (ProductName)
+    public string Uom { get; set; } = "";                   // Đơn vị tính (UnitCode)
+    public int TotalQty { get; set; }                       // Tổng số lượng xuất giao (Qty)
+    public string Status { get; set; } = "PENDING";         // Trạng thái phiếu (PENDING, APPROVED, POSTED, FINISHED, CANCEL)
+    public string StatusLabel { get; set; } = "Chờ giao";
+    public string BadgeClass { get; set; } = "bg-warning text-dark";
+    public bool IsDelayed { get; set; }                     // Cờ cảnh báo giao chậm: PENDING/DRAFT mà ngày <= Hôm nay
+    public string? DeliveryAddress { get; set; }            // Địa chỉ nhận hàng
+    public string? DriverInfo { get; set; }                 // Thông tin lái xe, biển số
+    public string? Note { get; set; }                       // Ghi chú
+    public Dictionary<string, int> DailyQuantities { get; set; } = new(); // Key: yyyy-MM-dd, Value: Qty
+    public List<MapDeliveryOrderDayCell> Cells { get; set; } = new();
+}
+
+/// <summary>Thống kê tóm tắt tiến độ giao hàng theo khu vực địa bàn.</summary>
+public record AreaDeliverySummary(
+    string AreaCode,
+    string AreaName,
+    int TotalOrders,
+    int CompletedOrders,
+    int PendingOrders,
+    int DelayedOrders,
+    int TotalDispatchedQty,
+    double OnTimeRatePercent
+);
+
+/// <summary>Báo cáo Bản đồ lệnh giao hàng theo Phiếu xuất kho tổng hợp kèm KPI và ma trận lịch biểu (port từ Rpt_MapDeliveryOrder_ByInvFIOut Skycic: DateFrom, DateTo, HighLineToday, HighLineDelay).</summary>
+public record MapDeliveryOrderReport(
+    int? WarehouseId,
+    string WarehouseName,
+    string? AreaCodeFilter,
+    string? CustomerCodeFilter,
+    string? StatusFilter,
+    string? Keyword,
+    DateTime DateFrom,
+    DateTime DateTo,
+    string TodayStr,
+    List<string> ListDates,                 // Danh sách các ngày trong dải ngày yyyy-MM-dd
+    int TotalDeliveryOrders,                // Tổng số lệnh / phiếu xuất giao hàng
+    int CompletedOrders,                    // Số đơn đã hoàn tất / đã giao hàng
+    int PendingOrders,                      // Số đơn đang xử lý / chờ xuất giao
+    int DelayedOrders,                      // Số đơn cảnh báo giao chậm / quá hạn (high-line-delay)
+    double OnTimeRatePercent,               // Tỷ lệ giao hàng đúng hạn %
+    int TotalDispatchedQty,                 // Tổng sản lượng hàng hóa xuất giao
+    List<MapDeliveryOrderRow> Rows,         // Dòng ma trận tiến độ
+    List<AreaDeliverySummary> AreaSummaries  // Bảng phân bổ theo khu vực
+);
+
+
 
 
 

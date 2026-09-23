@@ -280,6 +280,7 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateDealerAsync(int id, Dealer item);
     Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteDealerAsync(int id);
+    Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -8938,6 +8939,337 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Dealers.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa đại lý '{existing.Code}'.");
+    }
+
+    // ==================== BẢN ĐỒ LỆNH GIAO HÀNG THEO PHIẾU XUẤT KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================
+    public async Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(
+        int? warehouseId,
+        string? areaCode,
+        string? customerCode,
+        string? status,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? keyword)
+    {
+        var today = DateTime.Today;
+        var todayStr = today.ToString("yyyy-MM-dd");
+
+        // Dải ngày mặc định: hôm nay - 7 ngày đến hôm nay + 7 ngày
+        var dtFrom = (fromDate ?? today.AddDays(-7)).Date;
+        var dtTo = (toDate ?? today.AddDays(7)).Date;
+
+        if (dtTo < dtFrom)
+        {
+            var temp = dtFrom;
+            dtFrom = dtTo;
+            dtTo = temp;
+        }
+
+        // Khống chế tối đa 31 ngày giống quy tắc DateDiff > 31 trong Skycic
+        if ((dtTo - dtFrom).TotalDays > 31)
+        {
+            dtTo = dtFrom.AddDays(31);
+        }
+
+        var listDates = Enumerable.Range(0, (int)(dtTo - dtFrom).TotalDays + 1)
+            .Select(d => dtFrom.AddDays(d).ToString("yyyy-MM-dd"))
+            .ToList();
+
+        // Lấy danh mục Khu vực & Khách hàng để đối chiếu AreaCode/AreaName
+        var areas = await db.Areas.ToListAsync();
+        var areaDict = areas.ToDictionary(a => a.Code.ToUpper(), a => a.Name);
+
+        var customers = await db.Customers.ToListAsync();
+        var cusDict = customers.ToDictionary(c => c.Code.ToUpper(), c => c);
+
+        var warehouses = await db.Warehouses.ToListAsync();
+        string whName = warehouseId.HasValue
+            ? (warehouses.FirstOrDefault(w => w.Id == warehouseId.Value)?.Name ?? "Kho không xác định")
+            : "Toàn bộ kho";
+
+        var allRows = new List<MapDeliveryOrderRow>();
+
+        // 1. Lấy dữ liệu từ StockDoc (Loại Out, không lấy trạng thái Hủy)
+        var stockDocsQuery = db.Docs
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.Lines).ThenInclude(l => l.Product)
+            .Where(d => d.Type == DocType.Out && d.Status != DocStatus.Cancelled)
+            .Where(d => d.Date >= dtFrom && d.Date < dtTo.AddDays(1))
+            .AsQueryable();
+
+        if (warehouseId.HasValue)
+        {
+            stockDocsQuery = stockDocsQuery.Where(d => d.FromWarehouseId == warehouseId.Value);
+        }
+
+        var stockDocs = await stockDocsQuery.ToListAsync();
+
+        foreach (var doc in stockDocs)
+        {
+            string cCode = doc.CustomerCode?.Trim() ?? "";
+            string cName = doc.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "Khách vãng lai");
+
+            // Xác định AreaCode: ưu tiên từ Khách hàng, kế đến từ Kho xuất
+            string rAreaCode = "AREA_MB";
+            if (!string.IsNullOrEmpty(cCode) && cusDict.TryGetValue(cCode.ToUpper(), out var cus) && !string.IsNullOrEmpty(cus.AreaCode))
+            {
+                rAreaCode = cus.AreaCode;
+            }
+            else if (!string.IsNullOrEmpty(doc.FromWarehouse?.AreaCode))
+            {
+                rAreaCode = doc.FromWarehouse.AreaCode;
+            }
+
+            string rAreaName = areaDict.TryGetValue(rAreaCode.ToUpper(), out var aName) ? aName : rAreaCode;
+            string docDateStr = doc.Date.ToString("yyyy-MM-dd");
+            bool isPosted = doc.Status == DocStatus.Posted;
+            string docStatus = isPosted ? "DELIVERED" : "PENDING";
+            string statusLabel = isPosted ? "Đã giao hàng" : "Chờ giao";
+            string badgeClass = isPosted ? "bg-success text-white" : "bg-warning text-dark";
+
+            // Phiếu xuất giao chậm: PENDING mà ngày hẹn <= Hôm nay
+            bool isDelayed = (!isPosted) && (doc.Date.Date <= today);
+
+            foreach (var line in doc.Lines)
+            {
+                var row = new MapDeliveryOrderRow
+                {
+                    WarehouseId = doc.FromWarehouseId ?? 0,
+                    WarehouseCode = doc.FromWarehouse?.Code ?? "",
+                    WarehouseName = doc.FromWarehouse?.Name ?? "",
+                    AreaCode = rAreaCode,
+                    AreaName = rAreaName,
+                    CustomerCode = cCode,
+                    CustomerName = cName,
+                    DeliveryOrderNo = doc.Code,
+                    DocTypeLabel = "Xuất bán hàng",
+                    OrderDate = doc.Date,
+                    ProductId = line.ProductId,
+                    ProductCode = line.Product?.Code ?? "",
+                    ProductName = line.Product?.Name ?? "",
+                    Uom = line.Product?.Uom ?? "cái",
+                    TotalQty = line.Quantity,
+                    Status = docStatus,
+                    StatusLabel = statusLabel,
+                    BadgeClass = badgeClass,
+                    IsDelayed = isDelayed,
+                    Note = doc.Note
+                };
+
+                // Điền sản lượng cho các ngày
+                foreach (var dStr in listDates)
+                {
+                    int qtyForDay = (dStr == docDateStr) ? line.Quantity : 0;
+                    bool cellIsToday = (dStr == todayStr);
+                    bool cellIsDelayed = isDelayed && (dStr == docDateStr);
+
+                    row.DailyQuantities[dStr] = qtyForDay;
+                    row.Cells.Add(new MapDeliveryOrderDayCell(dStr, qtyForDay, cellIsToday, cellIsDelayed));
+                }
+
+                allRows.Add(row);
+            }
+        }
+
+        // 2. Lấy dữ liệu từ InventoryOutFG (Phiếu xuất kho thành phẩm)
+        var fgDocsQuery = db.InventoryOutFGs
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Where(f => f.Status != InvOutFGStatus.Cancelled)
+            .Where(f => f.Date >= dtFrom && f.Date < dtTo.AddDays(1))
+            .AsQueryable();
+
+        if (warehouseId.HasValue)
+        {
+            fgDocsQuery = fgDocsQuery.Where(f => f.WarehouseId == warehouseId.Value);
+        }
+
+        var fgDocs = await fgDocsQuery.ToListAsync();
+
+        foreach (var fg in fgDocs)
+        {
+            string cCode = fg.AgentCode?.Trim() ?? "";
+            string cName = fg.CustomerName?.Trim() ?? (!string.IsNullOrEmpty(cCode) ? cCode : "Đại lý nhận hàng");
+
+            string rAreaCode = "AREA_MB";
+            if (!string.IsNullOrEmpty(cCode) && cusDict.TryGetValue(cCode.ToUpper(), out var cus) && !string.IsNullOrEmpty(cus.AreaCode))
+            {
+                rAreaCode = cus.AreaCode;
+            }
+            else if (!string.IsNullOrEmpty(fg.Warehouse?.AreaCode))
+            {
+                rAreaCode = fg.Warehouse.AreaCode;
+            }
+
+            string rAreaName = areaDict.TryGetValue(rAreaCode.ToUpper(), out var aName) ? aName : rAreaCode;
+            string docDateStr = fg.Date.ToString("yyyy-MM-dd");
+            bool isApproved = fg.Status == InvOutFGStatus.Approved;
+            string docStatus = isApproved ? "DELIVERED" : "PENDING";
+            string statusLabel = isApproved ? "Đã giao hàng" : "Chờ giao";
+            string badgeClass = isApproved ? "bg-success text-white" : "bg-warning text-dark";
+
+            bool isDelayed = (!isApproved) && (fg.Date.Date <= today);
+
+            string driverInfo = "";
+            if (!string.IsNullOrEmpty(fg.DriverName) || !string.IsNullOrEmpty(fg.PlateNo))
+            {
+                driverInfo = $"{fg.DriverName} ({fg.PlateNo})";
+            }
+
+            foreach (var line in fg.Lines)
+            {
+                var row = new MapDeliveryOrderRow
+                {
+                    WarehouseId = fg.WarehouseId,
+                    WarehouseCode = fg.Warehouse?.Code ?? "",
+                    WarehouseName = fg.Warehouse?.Name ?? "",
+                    AreaCode = rAreaCode,
+                    AreaName = rAreaName,
+                    CustomerCode = cCode,
+                    CustomerName = cName,
+                    DeliveryOrderNo = fg.Code,
+                    DocTypeLabel = "Xuất thành phẩm",
+                    OrderDate = fg.Date,
+                    ProductId = line.ProductId,
+                    ProductCode = line.Product?.Code ?? "",
+                    ProductName = line.Product?.Name ?? "",
+                    Uom = line.Product?.Uom ?? "cái",
+                    TotalQty = line.Qty,
+                    Status = docStatus,
+                    StatusLabel = statusLabel,
+                    BadgeClass = badgeClass,
+                    IsDelayed = isDelayed,
+                    DeliveryAddress = fg.DeliveryAddress,
+                    DriverInfo = driverInfo,
+                    Note = fg.Remark
+                };
+
+                foreach (var dStr in listDates)
+                {
+                    int qtyForDay = (dStr == docDateStr) ? line.Qty : 0;
+                    bool cellIsToday = (dStr == todayStr);
+                    bool cellIsDelayed = isDelayed && (dStr == docDateStr);
+
+                    row.DailyQuantities[dStr] = qtyForDay;
+                    row.Cells.Add(new MapDeliveryOrderDayCell(dStr, qtyForDay, cellIsToday, cellIsDelayed));
+                }
+
+                allRows.Add(row);
+            }
+        }
+
+        // Áp dụng các bộ lọc bổ sung
+        var filteredRows = allRows.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(areaCode))
+        {
+            var aCode = areaCode.Trim().ToUpper();
+            filteredRows = filteredRows.Where(r => r.AreaCode.ToUpper() == aCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(customerCode))
+        {
+            var cTerm = customerCode.Trim().ToLower();
+            filteredRows = filteredRows.Where(r => r.CustomerCode.ToLower().Contains(cTerm) || r.CustomerName.ToLower().Contains(cTerm));
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim().ToUpper();
+            if (s == "DELAYED")
+            {
+                filteredRows = filteredRows.Where(r => r.IsDelayed);
+            }
+            else
+            {
+                filteredRows = filteredRows.Where(r => r.Status.ToUpper() == s);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var k = keyword.Trim().ToLower();
+            filteredRows = filteredRows.Where(r =>
+                r.DeliveryOrderNo.ToLower().Contains(k) ||
+                r.CustomerName.ToLower().Contains(k) ||
+                r.CustomerCode.ToLower().Contains(k) ||
+                r.ProductCode.ToLower().Contains(k) ||
+                r.ProductName.ToLower().Contains(k) ||
+                r.AreaName.ToLower().Contains(k)
+            );
+        }
+
+        // Sắp xếp theo ngày tăng dần, sau đó theo khu vực và số phiếu xuất
+        var resultList = filteredRows
+            .OrderBy(r => r.OrderDate)
+            .ThenBy(r => r.AreaName)
+            .ThenBy(r => r.DeliveryOrderNo)
+            .ToList();
+
+        // Gán STT
+        for (int i = 0; i < resultList.Count; i++)
+        {
+            resultList[i].Stt = i + 1;
+        }
+
+        // Tính toán các chỉ số KPI
+        int totalOrders = resultList.Count;
+        int completedOrders = resultList.Count(r => r.Status == "DELIVERED");
+        int pendingOrders = resultList.Count(r => r.Status == "PENDING");
+        int delayedOrders = resultList.Count(r => r.IsDelayed);
+        int totalQty = resultList.Sum(r => r.TotalQty);
+        double onTimeRate = totalOrders > 0
+            ? Math.Round((double)(totalOrders - delayedOrders) / totalOrders * 100.0, 1)
+            : 100.0;
+
+        // Phân bổ thống kê theo từng Khu vực (Area Summaries)
+        var areaSummaries = resultList
+            .GroupBy(r => new { r.AreaCode, r.AreaName })
+            .Select(g =>
+            {
+                int grpTotal = g.Count();
+                int grpCompleted = g.Count(x => x.Status == "DELIVERED");
+                int grpPending = g.Count(x => x.Status == "PENDING");
+                int grpDelayed = g.Count(x => x.IsDelayed);
+                int grpQty = g.Sum(x => x.TotalQty);
+                double grpRate = grpTotal > 0
+                    ? Math.Round((double)(grpTotal - grpDelayed) / grpTotal * 100.0, 1)
+                    : 100.0;
+
+                return new AreaDeliverySummary(
+                    g.Key.AreaCode,
+                    g.Key.AreaName,
+                    grpTotal,
+                    grpCompleted,
+                    grpPending,
+                    grpDelayed,
+                    grpQty,
+                    grpRate
+                );
+            })
+            .OrderByDescending(a => a.TotalOrders)
+            .ToList();
+
+        return new MapDeliveryOrderReport(
+            warehouseId,
+            whName,
+            areaCode,
+            customerCode,
+            status,
+            keyword,
+            dtFrom,
+            dtTo,
+            todayStr,
+            listDates,
+            totalOrders,
+            completedOrders,
+            pendingOrders,
+            delayedOrders,
+            onTimeRate,
+            totalQty,
+            resultList,
+            areaSummaries
+        );
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

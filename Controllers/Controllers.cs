@@ -5102,6 +5102,89 @@ public class DealerController(IWmsService svc) : Controller
     }
 }
 
+public class MapDeliveryOrderController(IWmsService svc) : Controller
+{
+    [HttpGet("/MapDeliveryOrder")]
+    public async Task<IActionResult> Index(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Areas = await svc.AreasAsync(activeOnly: true);
+        ViewBag.Customers = await svc.CustomersAsync(activeOnly: true);
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.AreaCode = areaCode;
+        ViewBag.CustomerCode = customerCode;
+        ViewBag.Status = status;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.FromDate = fromDate;
+        ViewBag.ToDate = toDate;
+
+        var report = await svc.MapDeliveryOrderReportAsync(warehouseId, areaCode, customerCode, status, fromDate, toDate, q);
+        return View(report);
+    }
+
+    [HttpGet("/MapDeliveryOrder/ExportCsv")]
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.MapDeliveryOrderReportAsync(warehouseId, areaCode, customerCode, status, fromDate, toDate, q);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM cho Excel
+
+        sb.AppendLine("BẢN ĐỒ TIẾN ĐỘ LỆNH GIAO HÀNG THEO PHIẾU XUẤT KHO (RPT_MAPDELIVERYORDER_BYINVFIOUT)");
+        sb.AppendLine($"Kho xuất:;{report.WarehouseName};Dải ngày theo dõi:;{report.DateFrom:dd/MM/yyyy} - {report.DateTo:dd/MM/yyyy};Ngày hiện tại:;{DateTime.Today:dd/MM/yyyy}");
+        sb.AppendLine($"Khu vực lọc:;{(string.IsNullOrWhiteSpace(areaCode) ? "Tất cả" : areaCode)};Khách hàng lọc:;{(string.IsNullOrWhiteSpace(customerCode) ? "Tất cả" : customerCode)};Trạng thái:;{(string.IsNullOrWhiteSpace(status) ? "Tất cả" : status)}");
+        sb.AppendLine($"Tổng số lệnh giao:;{report.TotalDeliveryOrders};Đã giao hàng:;{report.CompletedOrders};Chờ xuất giao:;{report.PendingOrders};Cảnh báo giao chậm:;{report.DelayedOrders};Tỷ lệ đúng hạn:;{report.OnTimeRatePercent}%;Tổng sản lượng giao:;{report.TotalDispatchedQty}");
+        sb.AppendLine();
+
+        // Header dòng bảng: Cột cố định + Cột ngày
+        var headerCols = new List<string>
+        {
+            "STT", "Khu vực", "Mã KH", "Tên khách hàng / Đại lý", "Số phiếu xuất / Lệnh giao",
+            "Loại nghiệp vụ", "Ngày hẹn giao", "Mã hàng", "Tên mặt hàng", "ĐVT", "Tổng SL xuất", "Trạng thái", "Cảnh báo trễ hạn"
+        };
+        foreach (var d in report.ListDates)
+        {
+            headerCols.Add(d);
+        }
+        sb.AppendLine(string.Join(";", headerCols));
+
+        // Nội dung dữ liệu
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var rowCols = new List<string>
+            {
+                (stt++).ToString(),
+                $"\"{r.AreaName}\"",
+                $"\"{r.CustomerCode}\"",
+                $"\"{r.CustomerName.Replace("\"", "\"\"")}\"",
+                $"\"{r.DeliveryOrderNo}\"",
+                $"\"{r.DocTypeLabel}\"",
+                r.OrderDateDisplay,
+                $"\"{r.ProductCode}\"",
+                $"\"{r.ProductName.Replace("\"", "\"\"")}\"",
+                $"\"{r.Uom}\"",
+                r.TotalQty.ToString(),
+                $"\"{r.StatusLabel}\"",
+                r.IsDelayed ? "CHẬM TIẾN ĐỘ" : "Đúng hạn"
+            };
+
+            foreach (var d in report.ListDates)
+            {
+                r.DailyQuantities.TryGetValue(d, out var qVal);
+                rowCols.Add(qVal > 0 ? qVal.ToString() : "");
+            }
+            sb.AppendLine(string.Join(";", rowCols));
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;;;;TỔNG CỘNG:;{report.TotalDispatchedQty};;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"BanDo_GiaoHang_InvOut_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+
 
 
 

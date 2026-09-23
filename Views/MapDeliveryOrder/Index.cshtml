@@ -1,0 +1,411 @@
+@model MapDeliveryOrderReport
+@{
+    ViewData["Title"] = "Bản đồ Lệnh Giao hàng theo Phiếu Xuất kho";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var areas = (List<Area>)ViewBag.Areas;
+    var customers = (List<Customer>)ViewBag.Customers;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedArea = (string?)ViewBag.AreaCode;
+    var selectedCus = (string?)ViewBag.CustomerCode;
+    var selectedStatus = (string?)ViewBag.Status;
+    var keyword = (string?)ViewBag.Keyword;
+    var fromDate = (DateTime?)ViewBag.FromDate;
+    var toDate = (DateTime?)ViewBag.ToDate;
+}
+
+<style>
+    .high-line-today {
+        background-color: #e8f5e9 !important;
+        border-left: 2px solid #2e7d32 !important;
+        border-right: 2px solid #2e7d32 !important;
+    }
+    .high-line-today-th {
+        background-color: #c8e6c9 !important;
+        color: #1b5e20 !important;
+        font-weight: 700 !important;
+    }
+    .high-line-delay {
+        background-color: #fff3cd !important;
+        color: #856404 !important;
+        font-weight: 700 !important;
+        border: 1px solid #ffeeba !important;
+    }
+    .badge-delay {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    .timeline-table th, .timeline-table td {
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    .day-col {
+        min-width: 65px;
+        text-align: center;
+        padding: 4px 6px !important;
+        font-size: 12.5px;
+    }
+    .sticky-left-1 { position: sticky; left: 0; background: #fff; z-index: 2; }
+    .sticky-left-2 { position: sticky; left: 45px; background: #fff; z-index: 2; }
+    .sticky-left-3 { position: sticky; left: 165px; background: #fff; z-index: 2; }
+    @@media print {
+        .no-print { display: none !important; }
+        .main-content { padding: 0 !important; }
+        .card { box-shadow: none !important; border: 1px solid #ccc !important; }
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-calendar2-range text-primary me-2"></i>Bản đồ Tiến độ Lệnh Giao hàng theo Phiếu Xuất kho</h5>
+        <div class="text-muted small">Port từ <code>Rpt_MapDeliveryOrder_ByInvFIOut</code> (Skycic) — Lịch biểu ma trận điều phối xuất giao hàng, kiểm soát tiến độ & cảnh báo chậm hàng</div>
+    </div>
+    <div class="d-flex gap-2 no-print">
+        <a href="/MapDeliveryOrder/ExportCsv?warehouseId=@selectedWid&areaCode=@selectedArea&customerCode=@selectedCus&status=@selectedStatus&fromDate=@(fromDate?.ToString("yyyy-MM-dd"))&toDate=@(toDate?.ToString("yyyy-MM-dd"))&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In lịch biểu A4
+        </button>
+        <a href="/Doc/Create?type=1" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-up me-1"></i> Lập phiếu xuất kho
+        </a>
+    </div>
+</div>
+
+<!-- 5 Thẻ KPI Thống kê Tiến độ -->
+<div class="row g-3 mb-3">
+    <div class="col-md-2">
+        <div class="card p-3 border-0 shadow-sm bg-white">
+            <div class="text-muted small text-uppercase fw-semibold">Tổng lệnh giao</div>
+            <div class="stat-num text-primary">@Model.TotalDeliveryOrders</div>
+            <div class="small text-muted mt-1"><i class="bi bi-truck me-1"></i>@Model.TotalDispatchedQty sản phẩm</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 border-0 shadow-sm bg-white">
+            <div class="text-muted small text-uppercase fw-semibold">Đã giao hàng</div>
+            <div class="stat-num text-success">@Model.CompletedOrders</div>
+            <div class="small text-muted mt-1"><i class="bi bi-check2-circle text-success me-1"></i>Hoàn tất xuất kho</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card p-3 border-0 shadow-sm bg-white">
+            <div class="text-muted small text-uppercase fw-semibold">Chờ xuất giao</div>
+            <div class="stat-num text-warning">@Model.PendingOrders</div>
+            <div class="small text-muted mt-1"><i class="bi bi-hourglass-split text-warning me-1"></i>Đang đóng hàng / chờ xe</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-warning border-3">
+            <div class="text-muted small text-uppercase fw-semibold">Cảnh báo chậm tiến độ</div>
+            <div class="stat-num text-danger">@Model.DelayedOrders</div>
+            <div class="small text-danger fw-semibold mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Chờ giao quá hạn hôm nay</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 border-0 shadow-sm bg-white">
+            <div class="text-muted small text-uppercase fw-semibold">Tỷ lệ đúng hạn (On-Time)</div>
+            <div class="stat-num @(Model.OnTimeRatePercent >= 90 ? "text-success" : Model.OnTimeRatePercent >= 75 ? "text-warning" : "text-danger")">
+                @Model.OnTimeRatePercent%
+            </div>
+            <div class="small text-muted mt-1">
+                <span class="badge @(Model.OnTimeRatePercent >= 90 ? "bg-success" : "bg-warning text-dark")">
+                    @(Model.OnTimeRatePercent >= 90 ? "Hiệu suất Tốt" : "Cần tăng tốc giao")
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm đa chiều -->
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho xuất hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Khu vực địa bàn</label>
+                <select name="areaCode" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả khu vực —</option>
+                    @foreach (var a in areas)
+                    {
+                        <option value="@a.Code" selected="@(string.Equals(selectedArea, a.Code, StringComparison.OrdinalIgnoreCase))">@a.Name (@a.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Khách hàng / Đại lý</label>
+                <input type="text" name="customerCode" value="@selectedCus" class="form-control form-control-sm" placeholder="Mã hoặc tên khách..." />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Trạng thái tiến độ</label>
+                <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— Tất cả —</option>
+                    <option value="PENDING" selected="@(selectedStatus == "PENDING")">⏳ Chờ xuất giao</option>
+                    <option value="DELIVERED" selected="@(selectedStatus == "DELIVERED")">✅ Đã giao hàng</option>
+                    <option value="DELAYED" selected="@(selectedStatus == "DELAYED")">⚠️ Cảnh báo giao chậm</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Từ ngày</label>
+                <input type="date" name="fromDate" id="fromDateInput" value="@(fromDate?.ToString("yyyy-MM-dd") ?? Model.DateFrom.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted mb-1">Đến ngày</label>
+                <input type="date" name="toDate" id="toDateInput" value="@(toDate?.ToString("yyyy-MM-dd") ?? Model.DateTo.ToString("yyyy-MM-dd"))" class="form-control form-control-sm" />
+            </div>
+
+            <!-- Dòng nút chọn nhanh & Từ khóa -->
+            <div class="col-md-8 d-flex gap-1 align-items-center mt-2">
+                <span class="small text-muted me-1 fw-semibold"><i class="bi bi-clock-history me-1"></i>Chọn nhanh:</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:11.5px" onclick="setDateRange(-3, 3)">Quanh hôm nay (±3 ngày)</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:11.5px" onclick="setDateRange(-7, 7)">Mặc định (±7 ngày)</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:11.5px" onclick="setDateRange(0, 14)">14 ngày tới</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:11.5px" onclick="setDateRange(-15, 15)">30 ngày (±15 ngày)</button>
+            </div>
+            <div class="col-md-4 d-flex gap-2 justify-content-end mt-2">
+                <input type="text" name="q" value="@keyword" class="form-control form-control-sm" placeholder="Tìm mã phiếu, mặt hàng..." />
+                <button type="submit" class="btn btn-sm btn-primary px-3"><i class="bi bi-search me-1"></i>Lọc</button>
+                <a href="/MapDeliveryOrder" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Thanh Chú thích Màu sắc (Legend) -->
+<div class="d-flex align-items-center gap-3 mb-2 px-2 py-1 bg-light rounded small text-muted">
+    <span class="fw-semibold"><i class="bi bi-info-circle me-1"></i>Chú thích:</span>
+    <span><span class="badge high-line-today-th me-1">26/03</span> Cột ngày hôm nay (Today)</span>
+    <span><span class="badge high-line-delay me-1">45</span> Ô cảnh báo giao chậm (Pending & Quá hạn)</span>
+    <span><span class="badge bg-success me-1">Đã giao</span> Phiếu xuất đã hoàn tất</span>
+    <span><span class="badge bg-warning text-dark me-1">Chờ giao</span> Đơn hàng đang chuẩn bị</span>
+</div>
+
+<!-- Bảng Ma trận Bản đồ Tiến độ Giao hàng -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 580px; overflow-y: auto;">
+            <table class="table table-hover table-bordered mb-0 align-middle timeline-table" style="font-size: 13px;">
+                <thead class="table-light sticky-top" style="z-index: 3;">
+                    <tr>
+                        <th class="text-center sticky-left-1" style="width: 45px;">STT</th>
+                        <th class="sticky-left-2" style="width: 120px;">Khu vực</th>
+                        <th class="sticky-left-3" style="width: 180px;">Khách hàng / Đại lý</th>
+                        <th style="min-width: 130px;">Số phiếu xuất</th>
+                        <th style="min-width: 120px;">Loại phiếu</th>
+                        <th style="min-width: 100px;">Ngày xuất</th>
+                        <th style="min-width: 180px;">Mặt hàng</th>
+                        <th class="text-center" style="width: 60px;">ĐVT</th>
+                        <th class="text-end" style="width: 80px;">Tổng SL</th>
+                        <th class="text-center" style="width: 95px;">Trạng thái</th>
+
+                        <!-- Các cột ngày động -->
+                        @foreach (var dStr in Model.ListDates)
+                        {
+                            var dateVal = DateTime.Parse(dStr);
+                            bool isToday = (dStr == Model.TodayStr);
+                            string dayOfWeekStr = dateVal.DayOfWeek switch
+                            {
+                                DayOfWeek.Monday => "T2",
+                                DayOfWeek.Tuesday => "T3",
+                                DayOfWeek.Wednesday => "T4",
+                                DayOfWeek.Thursday => "T5",
+                                DayOfWeek.Friday => "T6",
+                                DayOfWeek.Saturday => "T7",
+                                DayOfWeek.Sunday => "CN",
+                                _ => ""
+                            };
+                            <th class="day-col @(isToday ? "high-line-today-th" : "")" title="@dStr">
+                                <div>@dayOfWeekStr</div>
+                                <div class="fw-bold" style="font-size: 12px;">@dateVal.ToString("dd/MM")</div>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows == null || Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="@(10 + Model.ListDates.Count)" class="text-center py-5 text-muted">
+                                <i class="bi bi-calendar-x fs-1 d-block mb-2 text-secondary"></i>
+                                Không tìm thấy lệnh giao hàng nào phù hợp với bộ lọc trong dải ngày từ @Model.DateFrom.ToString("dd/MM/yyyy") đến @Model.DateTo.ToString("dd/MM/yyyy").
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var r in Model.Rows)
+                        {
+                            <tr class="@(r.IsDelayed ? "table-warning-subtle" : "")">
+                                <td class="text-center text-muted sticky-left-1">@r.Stt</td>
+                                <td class="sticky-left-2 fw-semibold">
+                                    <span class="badge bg-secondary-subtle text-dark border">@r.AreaName</span>
+                                </td>
+                                <td class="sticky-left-3">
+                                    <div class="fw-bold text-dark text-truncate" style="max-width: 170px;" title="@r.CustomerName">@r.CustomerName</div>
+                                    @if (!string.IsNullOrEmpty(r.CustomerCode))
+                                    {
+                                        <div class="small text-muted font-monospace">@r.CustomerCode</div>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="font-monospace fw-bold text-primary">@r.DeliveryOrderNo</span>
+                                    @if (!string.IsNullOrEmpty(r.WarehouseName))
+                                    {
+                                        <div class="text-muted" style="font-size: 11px;"><i class="bi bi-building me-1"></i>@r.WarehouseName</div>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">@r.DocTypeLabel</span>
+                                </td>
+                                <td class="small">@r.OrderDateDisplay</td>
+                                <td>
+                                    <div class="fw-semibold text-truncate" style="max-width: 175px;" title="@r.ProductName">@r.ProductName</div>
+                                    <div class="small text-muted font-monospace">@r.ProductCode</div>
+                                </td>
+                                <td class="text-center text-muted small">@r.Uom</td>
+                                <td class="text-end fw-bold">@r.TotalQty</td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.StatusLabel</span>
+                                    @if (r.IsDelayed)
+                                    {
+                                        <div class="small text-danger fw-bold mt-1" style="font-size:10px;"><i class="bi bi-exclamation-circle-fill me-1"></i>GIAO CHẬM</div>
+                                    }
+                                </td>
+
+                                <!-- Các ô theo ngày -->
+                                @foreach (var cell in r.Cells)
+                                {
+                                    string cellClass = "";
+                                    if (cell.IsToday) cellClass += " high-line-today";
+                                    if (cell.IsDelayed && cell.Qty > 0) cellClass += " high-line-delay";
+
+                                    <td class="day-col @cellClass" title="@r.DeliveryOrderNo - @r.ProductName: @(cell.Qty > 0 ? $"{cell.Qty} {r.Uom}" : "0")">
+                                        @if (cell.Qty > 0)
+                                        {
+                                            @if (cell.IsDelayed)
+                                            {
+                                                <span class="badge bg-warning text-dark border border-danger shadow-sm px-2 py-1 fw-bold" title="Lệnh giao hàng chưa hoàn tất quá hạn!">
+                                                    @cell.Qty ⚠️
+                                                </span>
+                                            }
+                                            else if (r.Status == "DELIVERED")
+                                            {
+                                                <span class="badge bg-success-subtle text-success border border-success fw-bold px-2 py-1">
+                                                    @cell.Qty
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-primary-subtle text-primary border border-primary fw-bold px-2 py-1">
+                                                    @cell.Qty
+                                                </span>
+                                            }
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (Model.Rows != null && Model.Rows.Count > 0)
+                {
+                    <tfoot class="table-light fw-bold sticky-bottom" style="z-index: 2;">
+                        <tr>
+                            <td colspan="8" class="text-end text-uppercase pe-3">TỔNG CỘNG TIẾN ĐỘ:</td>
+                            <td class="text-end text-primary fs-6">@Model.TotalDispatchedQty</td>
+                            <td class="text-center small text-muted">@Model.TotalDeliveryOrders lệnh</td>
+                            @foreach (var dStr in Model.ListDates)
+                            {
+                                int dayTotal = Model.Rows.Sum(r => r.DailyQuantities.TryGetValue(dStr, out var q) ? q : 0);
+                                bool isToday = (dStr == Model.TodayStr);
+                                <td class="day-col text-end fw-bold @(isToday ? "high-line-today" : "")" style="font-size: 12px;">
+                                    @(dayTotal > 0 ? dayTotal.ToString() : "")
+                                </td>
+                            }
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng Tóm tắt Phân bổ theo Khu vực (Area Delivery Breakdown) -->
+@if (Model.AreaSummaries != null && Model.AreaSummaries.Count > 0)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0"><i class="bi bi-pie-chart text-primary me-2"></i>Thống kê Phân bổ Lệnh Giao hàng theo Khu vực Địa bàn</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Mã KV</th>
+                            <th>Tên Khu vực Địa bàn</th>
+                            <th class="text-center">Tổng số lệnh</th>
+                            <th class="text-center">Đã giao hàng</th>
+                            <th class="text-center">Chờ xuất giao</th>
+                            <th class="text-center">Chậm tiến độ</th>
+                            <th class="text-end">Tổng sản lượng (SL)</th>
+                            <th class="text-center">Tỷ lệ đúng hạn</th>
+                            <th style="width: 180px;">Tiến độ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in Model.AreaSummaries)
+                        {
+                            <tr>
+                                <td class="font-monospace fw-bold text-muted">@a.AreaCode</td>
+                                <td class="fw-bold text-dark">@a.AreaName</td>
+                                <td class="text-center fw-semibold">@a.TotalOrders</td>
+                                <td class="text-center text-success"><i class="bi bi-check-circle me-1"></i>@a.CompletedOrders</td>
+                                <td class="text-center text-warning"><i class="bi bi-hourglass-split me-1"></i>@a.PendingOrders</td>
+                                <td class="text-center @(a.DelayedOrders > 0 ? "text-danger fw-bold" : "text-muted")">
+                                    @(a.DelayedOrders > 0 ? $"⚠️ {a.DelayedOrders}" : "0")
+                                </td>
+                                <td class="text-end fw-bold text-primary">@a.TotalDispatchedQty</td>
+                                <td class="text-center">
+                                    <span class="badge @(a.OnTimeRatePercent >= 90 ? "bg-success" : a.OnTimeRatePercent >= 75 ? "bg-warning text-dark" : "bg-danger")">
+                                        @a.OnTimeRatePercent%
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: @a.OnTimeRatePercent%" aria-valuenow="@a.OnTimeRatePercent" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+<script>
+    function setDateRange(daysFrom, daysTo) {
+        var today = new Date();
+        var dFrom = new Date(today);
+        dFrom.setDate(today.getDate() + daysFrom);
+        
+        var dTo = new Date(today);
+        dTo.setDate(today.getDate() + daysTo);
+        
+        document.getElementById('fromDateInput').value = dFrom.toISOString().split('T')[0];
+        document.getElementById('toDateInput').value = dTo.toISOString().split('T')[0];
+        document.getElementById('filterForm').submit();
+    }
+</script>

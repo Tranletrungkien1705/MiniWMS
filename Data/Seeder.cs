@@ -2723,6 +2723,187 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed dữ liệu Lệnh giao hàng / Phiếu xuất điều phối bản đồ (Rpt_MapDeliveryOrder_ByInvFIOut)
+        if (!await db.Docs.AnyAsync(d => d.Code == "PX-MAP-001"))
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001");
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001");
+
+            var today = DateTime.Today;
+
+            if (whHn != null && whHcm != null && ao != null && quan != null && pk != null && vay != null)
+            {
+                // 1. Phiếu xuất đã giao hoàn tất (3 ngày trước)
+                var doc1 = new StockDoc
+                {
+                    Code = "PX-MAP-001",
+                    Type = DocType.Out,
+                    FromWarehouseId = whHn.Id,
+                    CustomerCode = "KH001",
+                    CustomerName = "Công ty TNHH Thời trang An Phú",
+                    Date = today.AddDays(-3),
+                    CreatedAt = today.AddDays(-3),
+                    Status = DocStatus.Posted,
+                    Note = "Xuất bán buôn theo đơn đặt hàng ĐH-AP-01",
+                    CreatedBy = "dispatcher"
+                };
+                doc1.Lines.Add(new StockDocLine { ProductId = ao.Id, Quantity = 25 });
+                doc1.Lines.Add(new StockDocLine { ProductId = pk.Id, Quantity = 10 });
+                db.Docs.Add(doc1);
+
+                // 2. Phiếu xuất chờ giao nhưng đã QUÁ HẠN hôm nay => CẢNH BÁO GIAO CHẬM (high-line-delay)
+                var doc2 = new StockDoc
+                {
+                    Code = "PX-MAP-002",
+                    Type = DocType.Out,
+                    FromWarehouseId = whHn.Id,
+                    CustomerCode = "KH002",
+                    CustomerName = "Chuỗi Cửa hàng Thời trang Tràng Thi",
+                    Date = today.AddDays(-1),
+                    CreatedAt = today.AddDays(-1),
+                    Status = DocStatus.Draft, // Chờ giao
+                    Note = "Cần xe tải nhỏ giao gấp điểm bán phố đi bộ",
+                    CreatedBy = "sales-admin"
+                };
+                doc2.Lines.Add(new StockDocLine { ProductId = quan.Id, Quantity = 20 });
+                db.Docs.Add(doc2);
+
+                // 3. Phiếu xuất giao HÔM NAY (Today)
+                var doc3 = new StockDoc
+                {
+                    Code = "PX-MAP-003",
+                    Type = DocType.Out,
+                    FromWarehouseId = whHcm.Id,
+                    CustomerCode = "KH003",
+                    CustomerName = "Đại lý Thời trang Phương Nam",
+                    Date = today,
+                    CreatedAt = today,
+                    Status = DocStatus.Draft,
+                    Note = "Lệnh xuất hàng giao trưa nay tại kho trung chuyển Tân Bình",
+                    CreatedBy = "dispatcher"
+                };
+                doc3.Lines.Add(new StockDocLine { ProductId = vay.Id, Quantity = 30 });
+                doc3.Lines.Add(new StockDocLine { ProductId = ao.Id, Quantity = 15 });
+                db.Docs.Add(doc3);
+
+                // 4. Phiếu xuất kế hoạch giao trong 2 ngày tới
+                var doc4 = new StockDoc
+                {
+                    Code = "PX-MAP-004",
+                    Type = DocType.Out,
+                    FromWarehouseId = whHn.Id,
+                    CustomerCode = "KH004",
+                    CustomerName = "Công ty CP Bán lẻ Thời trang Việt",
+                    Date = today.AddDays(2),
+                    CreatedAt = today,
+                    Status = DocStatus.Draft,
+                    Note = "Đơn giao trung tâm thương mại Aeon Mall",
+                    CreatedBy = "sales-admin"
+                };
+                doc4.Lines.Add(new StockDocLine { ProductId = pk.Id, Quantity = 40 });
+                db.Docs.Add(doc4);
+
+                // 5. Phiếu xuất kế hoạch giao trong 4 ngày tới
+                var doc5 = new StockDoc
+                {
+                    Code = "PX-MAP-005",
+                    Type = DocType.Out,
+                    FromWarehouseId = whHcm.Id,
+                    CustomerCode = "KH001",
+                    CustomerName = "Công ty TNHH Thời trang An Phú",
+                    Date = today.AddDays(4),
+                    CreatedAt = today,
+                    Status = DocStatus.Draft,
+                    Note = "Cung ứng đợt 2 cho thị trường miền Nam",
+                    CreatedBy = "dispatcher"
+                };
+                doc5.Lines.Add(new StockDocLine { ProductId = ao.Id, Quantity = 35 });
+                db.Docs.Add(doc5);
+
+                await db.SaveChangesAsync();
+            }
+        }
+
+        // Bổ sung phiếu xuất thành phẩm trải quanh hôm nay
+        if (!await db.InventoryOutFGs.AnyAsync(f => f.Code == "IFOFG-MAP-001"))
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var today = DateTime.Today;
+
+            if (whHn != null && whHcm != null && ao != null && quan != null)
+            {
+                var fg1 = new InventoryOutFG
+                {
+                    Code = "IFOFG-MAP-001",
+                    WarehouseId = whHn.Id,
+                    OutType = InvOutFGType.Commercial,
+                    FormType = InvOutFGFormType.QuantityOnly,
+                    CustomerName = "Đại lý Phân phối Cảng Xanh Hải Phòng",
+                    AgentCode = "DL_HP01",
+                    DeliveryAddress = "Số 55 Lạch Tray, Ngô Quyền, Hải Phòng",
+                    DriverName = "Trần Đình Trọng",
+                    DriverPhone = "0912.334.556",
+                    PlateNo = "15C-456.78",
+                    OrderNo = "PO-HP-2026",
+                    Date = today.AddDays(-2),
+                    CreatedBy = "admin",
+                    Status = InvOutFGStatus.Approved,
+                    ApprovedAt = today.AddDays(-2),
+                    ApprovedBy = "admin",
+                    Remark = "Đã xuất giao nguyên xe container Hải Phòng"
+                };
+                fg1.Lines.Add(new InventoryOutFGLine
+                {
+                    ProductId = ao.Id,
+                    Qty = 50,
+                    UnitPrice = 240_000m,
+                    UnitCost = ao.CostPrice > 0 ? ao.CostPrice : 150_000m,
+                    Note = "Áo sơ mi trắng xuất lô đạt chuẩn"
+                });
+                db.InventoryOutFGs.Add(fg1);
+
+                // Lệnh xuất thành phẩm PENDING nhưng quá hạn (high-line-delay)
+                var fg2 = new InventoryOutFG
+                {
+                    Code = "IFOFG-MAP-002",
+                    WarehouseId = whHcm.Id,
+                    OutType = InvOutFGType.Commercial,
+                    FormType = InvOutFGFormType.QuantityOnly,
+                    CustomerName = "Tổng Đại lý Phân phối Miền Nam - Phương Nam",
+                    AgentCode = "DL_MN01",
+                    DeliveryAddress = "Số 450 Hai Bà Trưng, Quận 1, TP.HCM",
+                    DriverName = "Võ Văn Lái",
+                    DriverPhone = "0909.112.233",
+                    PlateNo = "51D-889.90",
+                    OrderNo = "PO-MN-2026-03",
+                    Date = today.AddDays(-1),
+                    CreatedBy = "admin",
+                    Status = InvOutFGStatus.Pending, // Chờ duyệt xuất giao
+                    Remark = "Chờ xe tải giao hàng đến kho đại lý"
+                };
+                fg2.Lines.Add(new InventoryOutFGLine
+                {
+                    ProductId = quan.Id,
+                    Qty = 30,
+                    UnitPrice = 360_000m,
+                    UnitCost = quan.CostPrice > 0 ? quan.CostPrice : 220_000m,
+                    Note = "Quần jeans nam xuất đợt khuyến mãi"
+                });
+                db.InventoryOutFGs.Add(fg2);
+
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
