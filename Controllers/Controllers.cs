@@ -5330,6 +5330,91 @@ public class TempPrintController(IWmsService svc) : Controller
     }
 }
 
+// ==================== BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
+public class SummaryInOutPartnerPivotController(IWmsService svc, AppDbContext db) : Controller
+{
+    public async Task<IActionResult> Index(
+        int? warehouseId,
+        string? partnerCode,
+        string? productGrpCode,
+        int? productId,
+        string? actionType,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.ProductGroups = await db.ProductGroups.Where(g => g.IsActive).OrderBy(g => g.Name).ToListAsync();
+        ViewBag.Products = await svc.ProductsAsync();
+
+        // Lấy danh sách đối tác kết hợp (NCC + Khách hàng + Đại lý) cho dropdown lọc nhanh
+        var supList = await db.Suppliers.Where(s => s.IsActive).OrderBy(s => s.Name).Select(s => new { s.Code, s.Name, Type = "NCC" }).ToListAsync();
+        var cusList = await db.Customers.Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => new { c.Code, c.Name, Type = "KH" }).ToListAsync();
+        var allPartners = supList.Concat(cusList).OrderBy(p => p.Name).ToList();
+        ViewBag.Partners = allPartners;
+
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.PartnerCode = partnerCode ?? "";
+        ViewBag.ProductGrpCode = productGrpCode ?? "";
+        ViewBag.ProductId = productId;
+        ViewBag.ActionType = string.IsNullOrWhiteSpace(actionType) ? "ALL" : actionType.ToUpperInvariant();
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.AddDays(-60).ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.SummaryInOutPartnerPivotReportAsync(warehouseId, partnerCode, productGrpCode, productId, actionType, fromDate, toDate, q);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(
+        int? warehouseId,
+        string? partnerCode,
+        string? productGrpCode,
+        int? productId,
+        string? actionType,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? q)
+    {
+        var report = await svc.SummaryInOutPartnerPivotReportAsync(warehouseId, partnerCode, productGrpCode, productId, actionType, fromDate, toDate, q);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+
+        sb.AppendLine("BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (PORT TỪ RPT_SUMMARY_IN_OUT_SUP_PIVOT SKYCIC)");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Dải ngày:;{report.FromDate:dd/MM/yyyy} - {report.ToDate:dd/MM/yyyy};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Đối tác lọc:;{(string.IsNullOrWhiteSpace(partnerCode) ? "Tất cả" : partnerCode)};Nhóm hàng:;{(string.IsNullOrWhiteSpace(productGrpCode) ? "Tất cả" : productGrpCode)};Chiều giao dịch:;{report.ActionType ?? "ALL"};Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng số đối tác giao dịch:;{report.TotalPartners};Tổng SL Nhập:;{report.TotalInQty};Tổng Giá trị Nhập:;{report.TotalInAmount:N0} đ;Tổng SL Xuất:;{report.TotalOutQty};Tổng Giá trị Xuất:;{report.TotalOutAmount:N0} đ;Cân đối ròng:;{report.TotalNetQty};Chênh lệch giá trị ròng:;{report.TotalNetAmount:N0} đ;Tổng số lượt chứng từ:;{report.TotalTxCount}");
+        sb.AppendLine();
+
+        sb.AppendLine("--- PHẦN 1: MA TRẬN TỔNG HỢP GIAO DỊCH THEO ĐỐI TÁC X MẶT HÀNG (PIVOT MATRIX) ---");
+        sb.AppendLine("Mã đối tác;Tên đối tác;Phân loại đối tác;Khu vực thị trường;Tỉnh thành;Mã hàng hoá;Tên hàng hoá;Nhóm hàng;ĐVT;SL Nhập;Giá trị Nhập (đ);SL Xuất;Giá trị Xuất (đ);Chênh lệch ròng (SL);Chênh lệch giá trị (đ);Số lượt chứng từ;Ngày GD gần nhất");
+
+        foreach (var r in report.PivotRows)
+        {
+            sb.AppendLine($"\"{r.PartnerCode}\";\"{r.PartnerName.Replace("\"", "\"\"")}\";\"{r.PartnerType}\";\"{r.AreaName ?? ""}\";\"{r.ProvinceName ?? ""}\";\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.ProductGrpName ?? ""}\";\"{r.Uom}\";{r.TotalInQty};{r.TotalInAmount:F0};{r.TotalOutQty};{r.TotalOutAmount:F0};{r.NetQty};{r.NetAmount:F0};{r.TxCount};{r.LastDate:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;;TỔNG CỘNG:;{report.TotalInQty};{report.TotalInAmount:F0};{report.TotalOutQty};{report.TotalOutAmount:F0};{report.TotalNetQty};{report.TotalNetAmount:F0};{report.TotalTxCount};;");
+        sb.AppendLine();
+
+        sb.AppendLine("--- PHẦN 2: BẢNG KÊ CHI TIẾT TỪNG PHIẾU CHỨNG TỪ GIAO DỊCH PHÁT SINH ---");
+        sb.AppendLine("STT;Số chứng từ;Ngày ghi sổ;Kho hàng;Mã đối tác;Tên đối tác;Phân loại;Khu vực;Mã hàng;Tên hàng;Nhóm hàng;ĐVT;Chiều;Loại nghiệp vụ;Số lượng;Đơn giá (đ);Thành tiền (đ);Số tham chiếu / Đơn hàng;Người lập;Ghi chú");
+
+        int stt = 1;
+        foreach (var item in report.DetailItems)
+        {
+            sb.AppendLine($"{stt++};\"{item.DocNo}\";{item.DocDate:dd/MM/yyyy};\"{item.WarehouseName}\";\"{item.PartnerCode}\";\"{item.PartnerName.Replace("\"", "\"\"")}\";\"{item.PartnerType}\";\"{item.AreaName ?? ""}\";\"{item.ProductCode}\";\"{item.ProductName.Replace("\"", "\"\"")}\";\"{item.ProductGrpName ?? ""}\";\"{item.Uom}\";\"{item.ActionDesc}\";\"{item.InOutTypeName}\";{item.Quantity};{item.UnitPrice:F0};{item.Amount:F0};\"{item.RefNo ?? ""}\";\"{item.CreatedBy ?? ""}\";\"{item.Note?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_NXT_TheoDoiTac_Pivot_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+
 
 
 

@@ -296,6 +296,7 @@ public interface IWmsService
     Task<int> CreateTempPrintTypeAsync(TempPrintType item);
     Task<(bool ok, string msg)> UpdateTempPrintTypeAsync(int id, TempPrintType item);
     Task<(bool ok, string msg)> DeleteTempPrintTypeAsync(int id);
+    Task<SummaryInOutPartnerPivotReport> SummaryInOutPartnerPivotReportAsync(int? warehouseId, string? partnerCode, string? productGrpCode, int? productId, string? actionType, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -9729,6 +9730,486 @@ public class WmsService(AppDbContext db) : IWmsService
         "Thermal_K80" => "width: 80mm; min-height: 160mm; padding: 5mm; margin: 0 auto; background: #fff; font-family: monospace;",
         _ => "width: 210mm; min-height: 297mm; padding: 15mm 20mm; margin: 0 auto; background: #fff;"
     };
+
+    // ==================== BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
+    public async Task<SummaryInOutPartnerPivotReport> SummaryInOutPartnerPivotReportAsync(
+        int? warehouseId,
+        string? partnerCode,
+        string? productGrpCode,
+        int? productId,
+        string? actionType,
+        DateTime? fromDate,
+        DateTime? toDate,
+        string? keyword)
+    {
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        DateTime start = fromDate?.Date ?? DateTime.Today.AddDays(-60);
+        DateTime end = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.Today.AddDays(1).AddTicks(-1);
+
+        var warehouses = await db.Warehouses.ToListAsync();
+        var whDict = warehouses.ToDictionary(w => w.Id, w => w);
+
+        var products = await db.Products.ToListAsync();
+        var prodDict = products.ToDictionary(p => p.Id, p => p);
+
+        var prodGroups = await db.ProductGroups.ToListAsync();
+        var grpDict = prodGroups.ToDictionary(g => g.Code, g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+        var customers = await db.Customers.ToListAsync();
+        var cusDictByCode = customers.GroupBy(c => c.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var suppliers = await db.Suppliers.ToListAsync();
+        var supDictByCode = suppliers.GroupBy(s => s.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var dealers = await db.Dealers.ToListAsync();
+        var dealerDictByCode = dealers.GroupBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var areas = await db.Areas.ToListAsync();
+        var areaDictByCode = areas.GroupBy(a => a.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
+
+        (string? AreaName, string? ProvinceName) ResolveLocation(string? pCode, string? pType)
+        {
+            if (string.IsNullOrWhiteSpace(pCode)) return (null, null);
+            if (cusDictByCode.TryGetValue(pCode, out var c))
+            {
+                string? aName = !string.IsNullOrEmpty(c.AreaCode) && areaDictByCode.TryGetValue(c.AreaCode, out var an) ? an : c.AreaCode;
+                return (aName, c.Province);
+            }
+            if (dealerDictByCode.TryGetValue(pCode, out var d))
+            {
+                return (null, d.ProvinceCode);
+            }
+            return (null, null);
+        }
+
+        var rawItems = new List<SummaryInOutPartnerPivotItem>();
+        int seq = 1;
+
+        // 1. Giao dịch từ StockDoc (nhập mua, xuất bán, trả hàng)
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date >= start && d.Date <= end)
+            .Include(d => d.FromWarehouse)
+            .Include(d => d.ToWarehouse)
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        foreach (var doc in docs)
+        {
+            if (doc.Type == DocType.In)
+            {
+                int wId = doc.ToWarehouseId ?? 0;
+                if (warehouseId.HasValue && wId != warehouseId.Value) continue;
+                string wDocName = doc.ToWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho nhận");
+
+                string pCode = !string.IsNullOrWhiteSpace(doc.SupplierCode) ? doc.SupplierCode.Trim() : "NCC-KHAC";
+                string pName = !string.IsNullOrWhiteSpace(doc.SupplierName) ? doc.SupplierName.Trim() : (pCode == "NCC-KHAC" ? "Nhà cung cấp / Đối tác giao" : pCode);
+                string pType = "Nhà cung cấp";
+                string inOutType = "Nhập mua NCC";
+
+                if (!string.IsNullOrWhiteSpace(doc.RefNo) && doc.RefNo.StartsWith("THKH", StringComparison.OrdinalIgnoreCase))
+                {
+                    pType = "Khách hàng / Đại lý";
+                    inOutType = "Nhập khách trả hàng";
+                    if (!string.IsNullOrWhiteSpace(doc.CustomerCode)) { pCode = doc.CustomerCode; pName = doc.CustomerName ?? pCode; }
+                }
+
+                var (areaName, provName) = ResolveLocation(pCode, pType);
+
+                foreach (var line in doc.Lines)
+                {
+                    if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                    decimal up = prod.CostPrice;
+                    decimal amt = line.Quantity * up;
+                    string? grpName = !string.IsNullOrEmpty(prod.ProductGrpCode) && grpDict.TryGetValue(prod.ProductGrpCode, out var g) ? g : prod.ProductGrpCode;
+
+                    rawItems.Add(new SummaryInOutPartnerPivotItem(
+                        seq++,
+                        doc.Code,
+                        doc.Date,
+                        wId,
+                        wDocName,
+                        pCode,
+                        pName,
+                        pType,
+                        areaName,
+                        provName,
+                        prod.Id,
+                        prod.Code,
+                        prod.Name,
+                        prod.ProductGrpCode,
+                        grpName,
+                        prod.Uom,
+                        "IN",
+                        "Nhập kho",
+                        inOutType,
+                        line.Quantity,
+                        up,
+                        amt,
+                        doc.RefNo,
+                        doc.CreatedBy,
+                        doc.Note,
+                        $"/Doc/Detail/{doc.Id}"
+                    ));
+                }
+            }
+            else if (doc.Type == DocType.Out)
+            {
+                int wId = doc.FromWarehouseId ?? 0;
+                if (warehouseId.HasValue && wId != warehouseId.Value) continue;
+                string wDocName = doc.FromWarehouse?.Name ?? (whDict.TryGetValue(wId, out var wh) ? wh.Name : "Kho xuất");
+
+                string pCode;
+                string pName;
+                string pType;
+                string inOutType;
+
+                if (!string.IsNullOrWhiteSpace(doc.CustomerCode))
+                {
+                    pCode = doc.CustomerCode.Trim();
+                    pName = doc.CustomerName?.Trim() ?? pCode;
+                    pType = "Khách hàng / Đại lý";
+                    inOutType = "Xuất bán khách hàng";
+                }
+                else if (!string.IsNullOrWhiteSpace(doc.DepartmentCode))
+                {
+                    pCode = doc.DepartmentCode.Trim();
+                    pName = doc.DepartmentName?.Trim() ?? pCode;
+                    pType = "Nội bộ";
+                    inOutType = "Xuất cấp phát nội bộ";
+                }
+                else if (!string.IsNullOrWhiteSpace(doc.SupplierCode) || (!string.IsNullOrWhiteSpace(doc.RefNo) && doc.RefNo.StartsWith("THNCC", StringComparison.OrdinalIgnoreCase)))
+                {
+                    pCode = doc.SupplierCode?.Trim() ?? "SUP-RET";
+                    pName = doc.SupplierName?.Trim() ?? "Nhà cung cấp nhận trả";
+                    pType = "Nhà cung cấp";
+                    inOutType = "Xuất trả NCC";
+                }
+                else
+                {
+                    pCode = "KH-KHAC";
+                    pName = "Khách hàng / Đối tác nhận";
+                    pType = "Khách hàng / Đại lý";
+                    inOutType = "Xuất kho chung";
+                }
+
+                var (areaName, provName) = ResolveLocation(pCode, pType);
+
+                foreach (var line in doc.Lines)
+                {
+                    if (!prodDict.TryGetValue(line.ProductId, out var prod)) continue;
+                    decimal up = prod.CostPrice;
+                    decimal amt = line.Quantity * up;
+                    string? grpName = !string.IsNullOrEmpty(prod.ProductGrpCode) && grpDict.TryGetValue(prod.ProductGrpCode, out var g) ? g : prod.ProductGrpCode;
+
+                    rawItems.Add(new SummaryInOutPartnerPivotItem(
+                        seq++,
+                        doc.Code,
+                        doc.Date,
+                        wId,
+                        wDocName,
+                        pCode,
+                        pName,
+                        pType,
+                        areaName,
+                        provName,
+                        prod.Id,
+                        prod.Code,
+                        prod.Name,
+                        prod.ProductGrpCode,
+                        grpName,
+                        prod.Uom,
+                        "OUT",
+                        "Xuất kho",
+                        inOutType,
+                        line.Quantity,
+                        up,
+                        amt,
+                        doc.RefNo,
+                        doc.CreatedBy,
+                        doc.Note,
+                        $"/Doc/Detail/{doc.Id}"
+                    ));
+                }
+            }
+        }
+
+        // 2. Giao dịch từ InventoryInFG (Nhập thành phẩm sản xuất)
+        var inFGs = await db.InventoryInFGs
+            .Where(f => f.Status != InvInFGStatus.Cancelled && f.Date >= start && f.Date <= end &&
+                        (!warehouseId.HasValue || f.WarehouseId == warehouseId.Value))
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .ToListAsync();
+
+        foreach (var fg in inFGs)
+        {
+            string pCode = "XUONG-SX";
+            string pName = !string.IsNullOrWhiteSpace(fg.WorkshopName) ? fg.WorkshopName : "Xưởng sản xuất";
+            string pType = "Phân xưởng SX";
+            string wName = fg.Warehouse?.Name ?? "Kho thành phẩm";
+
+            foreach (var line in fg.Lines)
+            {
+                if (line.ActualQty <= 0) continue;
+                var prod = line.Product ?? (prodDict.TryGetValue(line.ProductId, out var p) ? p : null);
+                if (prod == null) continue;
+
+                decimal up = prod.CostPrice;
+                decimal amt = line.ActualQty * up;
+                string? grpName = !string.IsNullOrEmpty(prod.ProductGrpCode) && grpDict.TryGetValue(prod.ProductGrpCode, out var g) ? g : prod.ProductGrpCode;
+
+                rawItems.Add(new SummaryInOutPartnerPivotItem(
+                    seq++,
+                    fg.Code,
+                    fg.Date,
+                    fg.WarehouseId,
+                    wName,
+                    pCode,
+                    pName,
+                    pType,
+                    "Nhà máy / Xưởng",
+                    null,
+                    prod.Id,
+                    prod.Code,
+                    prod.Name,
+                    prod.ProductGrpCode,
+                    grpName,
+                    prod.Uom,
+                    "IN",
+                    "Nhập kho",
+                    "Nhập thành phẩm SX",
+                    line.ActualQty,
+                    up,
+                    amt,
+                    fg.WorkOrderNo,
+                    fg.CreatedBy,
+                    fg.Remark,
+                    $"/InventoryInFG/Detail/{fg.Id}"
+                ));
+            }
+        }
+
+        // 3. Giao dịch từ InventoryOutFG (Xuất thành phẩm giao khách hàng)
+        var outFGs = await db.InventoryOutFGs
+            .Where(f => f.Status != InvOutFGStatus.Cancelled && f.Date >= start && f.Date <= end &&
+                        (!warehouseId.HasValue || f.WarehouseId == warehouseId.Value))
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .ToListAsync();
+
+        foreach (var fg in outFGs)
+        {
+            string pCode = fg.AgentCode ?? "KH-TP";
+            string pName = !string.IsNullOrWhiteSpace(fg.CustomerName) ? fg.CustomerName : "Khách hàng dự án";
+            string pType = "Khách hàng / Đại lý";
+            string wName = fg.Warehouse?.Name ?? "Kho xuất TP";
+            var (areaName, provName) = ResolveLocation(pCode, pType);
+
+            foreach (var line in fg.Lines)
+            {
+                if (line.Qty <= 0) continue;
+                var prod = line.Product ?? (prodDict.TryGetValue(line.ProductId, out var p) ? p : null);
+                if (prod == null) continue;
+
+                decimal up = prod.CostPrice;
+                decimal amt = line.Qty * up;
+                string? grpName = !string.IsNullOrEmpty(prod.ProductGrpCode) && grpDict.TryGetValue(prod.ProductGrpCode, out var g) ? g : prod.ProductGrpCode;
+
+                rawItems.Add(new SummaryInOutPartnerPivotItem(
+                    seq++,
+                    fg.Code,
+                    fg.Date,
+                    fg.WarehouseId,
+                    wName,
+                    pCode,
+                    pName,
+                    pType,
+                    areaName,
+                    provName,
+                    prod.Id,
+                    prod.Code,
+                    prod.Name,
+                    prod.ProductGrpCode,
+                    grpName,
+                    prod.Uom,
+                    "OUT",
+                    "Xuất kho",
+                    "Xuất thành phẩm",
+                    line.Qty,
+                    up,
+                    amt,
+                    fg.OrderNo,
+                    fg.CreatedBy,
+                    fg.Remark,
+                    $"/InventoryOutFG/Detail/{fg.Id}"
+                ));
+            }
+        }
+
+        // 4. Áp dụng các bộ lọc (Filters)
+        var filtered = rawItems.AsEnumerable();
+
+        if (warehouseId.HasValue)
+            filtered = filtered.Where(x => x.WarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(partnerCode))
+        {
+            var pc = partnerCode.Trim().ToLowerInvariant();
+            filtered = filtered.Where(x => x.PartnerCode.ToLowerInvariant().Contains(pc) || x.PartnerName.ToLowerInvariant().Contains(pc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(productGrpCode))
+        {
+            var gc = productGrpCode.Trim().ToLowerInvariant();
+            filtered = filtered.Where(x => x.ProductGrpCode != null && x.ProductGrpCode.ToLowerInvariant() == gc);
+        }
+
+        if (productId.HasValue)
+            filtered = filtered.Where(x => x.ProductId == productId.Value);
+
+        if (!string.IsNullOrWhiteSpace(actionType) && !actionType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            var act = actionType.Trim().ToUpperInvariant();
+            filtered = filtered.Where(x => x.ActionType == act);
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLowerInvariant();
+            filtered = filtered.Where(x =>
+                x.PartnerCode.ToLowerInvariant().Contains(kw) ||
+                x.PartnerName.ToLowerInvariant().Contains(kw) ||
+                x.DocNo.ToLowerInvariant().Contains(kw) ||
+                x.ProductCode.ToLowerInvariant().Contains(kw) ||
+                x.ProductName.ToLowerInvariant().Contains(kw) ||
+                (x.RefNo != null && x.RefNo.ToLowerInvariant().Contains(kw)) ||
+                (x.WarehouseName != null && x.WarehouseName.ToLowerInvariant().Contains(kw))
+            );
+        }
+
+        var detailList = filtered.OrderByDescending(x => x.DocDate).ThenByDescending(x => x.Stt).ToList();
+
+        // 5. Xây dựng danh sách Pivot Rows (Partner x Product)
+        var pivotRows = detailList
+            .GroupBy(x => new { x.PartnerCode, x.PartnerName, x.PartnerType, x.AreaName, x.ProvinceName, x.ProductId, x.ProductCode, x.ProductName, x.ProductGrpCode, x.ProductGrpName, x.Uom })
+            .Select(g =>
+            {
+                int inQ = g.Where(i => i.ActionType == "IN").Sum(i => i.Quantity);
+                decimal inA = g.Where(i => i.ActionType == "IN").Sum(i => i.Amount);
+                int outQ = g.Where(i => i.ActionType == "OUT").Sum(i => i.Quantity);
+                decimal outA = g.Where(i => i.ActionType == "OUT").Sum(i => i.Amount);
+                int netQ = inQ - outQ;
+                decimal netA = inA - outA;
+                int tx = g.Select(i => i.DocNo).Distinct().Count();
+                DateTime last = g.Max(i => i.DocDate);
+
+                return new SummaryInOutPartnerPivotRow(
+                    g.Key.PartnerCode,
+                    g.Key.PartnerName,
+                    g.Key.PartnerType,
+                    g.Key.AreaName,
+                    g.Key.ProvinceName,
+                    g.Key.ProductId,
+                    g.Key.ProductCode,
+                    g.Key.ProductName,
+                    g.Key.ProductGrpCode,
+                    g.Key.ProductGrpName,
+                    g.Key.Uom,
+                    inQ,
+                    inA,
+                    outQ,
+                    outA,
+                    netQ,
+                    netA,
+                    tx,
+                    last
+                );
+            })
+            .OrderByDescending(r => r.TotalInQty + r.TotalOutQty)
+            .ThenBy(r => r.PartnerName)
+            .ThenBy(r => r.ProductCode)
+            .ToList();
+
+        // 6. Xây dựng nhóm Đối tác (Partner Groups)
+        int grandTotalVolume = pivotRows.Sum(r => r.TotalInQty + r.TotalOutQty);
+        var partnerGroups = pivotRows
+            .GroupBy(r => new { r.PartnerCode, r.PartnerName, r.PartnerType, r.AreaName, r.ProvinceName })
+            .Select(g =>
+            {
+                int grpInQ = g.Sum(x => x.TotalInQty);
+                decimal grpInA = g.Sum(x => x.TotalInAmount);
+                int grpOutQ = g.Sum(x => x.TotalOutQty);
+                decimal grpOutA = g.Sum(x => x.TotalOutAmount);
+                int grpNetQ = grpInQ - grpOutQ;
+                decimal grpNetA = grpInA - grpOutA;
+                int prodCount = g.Select(x => x.ProductId).Distinct().Count();
+                int txCount = g.Sum(x => x.TxCount);
+                int vol = grpInQ + grpOutQ;
+                double share = grandTotalVolume > 0 ? Math.Round((double)vol / grandTotalVolume * 100.0, 2) : 0.0;
+
+                return new SummaryInOutPartnerGroupRow(
+                    g.Key.PartnerCode,
+                    g.Key.PartnerName,
+                    g.Key.PartnerType,
+                    g.Key.AreaName,
+                    g.Key.ProvinceName,
+                    grpInQ,
+                    grpInA,
+                    grpOutQ,
+                    grpOutA,
+                    grpNetQ,
+                    grpNetA,
+                    prodCount,
+                    txCount,
+                    share,
+                    g.OrderByDescending(p => p.TotalInQty + p.TotalOutQty).ToList()
+                );
+            })
+            .OrderByDescending(g => g.TotalInQty + g.TotalOutQty)
+            .ThenBy(g => g.PartnerName)
+            .ToList();
+
+        // 7. Tính 4 thẻ KPI
+        int totalPartners = partnerGroups.Count;
+        int totalInQty = detailList.Where(x => x.ActionType == "IN").Sum(x => x.Quantity);
+        decimal totalInAmount = detailList.Where(x => x.ActionType == "IN").Sum(x => x.Amount);
+        int totalOutQty = detailList.Where(x => x.ActionType == "OUT").Sum(x => x.Quantity);
+        decimal totalOutAmount = detailList.Where(x => x.ActionType == "OUT").Sum(x => x.Amount);
+        int totalNetQty = totalInQty - totalOutQty;
+        decimal totalNetAmount = totalInAmount - totalOutAmount;
+        int totalTxCount = detailList.Select(x => x.DocNo).Distinct().Count();
+
+        return new SummaryInOutPartnerPivotReport(
+            warehouseId,
+            whName,
+            partnerCode,
+            productGrpCode,
+            productId,
+            actionType,
+            start,
+            end.Date,
+            keyword,
+            totalPartners,
+            totalInQty,
+            totalInAmount,
+            totalOutQty,
+            totalOutAmount,
+            totalNetQty,
+            totalNetAmount,
+            totalTxCount,
+            partnerGroups,
+            pivotRows,
+            detailList
+        );
+    }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
 }

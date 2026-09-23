@@ -3231,6 +3231,49 @@ app.MapDelete("/api/temp-print-types/{id:int}", async (int id, IWmsService svc) 
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
+app.MapGet("/api/reports/summary-in-out-partner-pivot", async (
+    int? warehouseId,
+    string? partnerCode,
+    string? productGrpCode,
+    int? productId,
+    string? actionType,
+    DateTime? fromDate,
+    DateTime? toDate,
+    string? q,
+    IWmsService svc) =>
+{
+    var report = await svc.SummaryInOutPartnerPivotReportAsync(warehouseId, partnerCode, productGrpCode, productId, actionType, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/reports/summary-in-out-partner-pivot/kpis", async (
+    int? warehouseId,
+    string? partnerCode,
+    string? productGrpCode,
+    int? productId,
+    string? actionType,
+    DateTime? fromDate,
+    DateTime? toDate,
+    string? q,
+    IWmsService svc) =>
+{
+    var report = await svc.SummaryInOutPartnerPivotReportAsync(warehouseId, partnerCode, productGrpCode, productId, actionType, fromDate, toDate, q);
+    return Results.Ok(new
+    {
+        report.TotalPartners,
+        report.TotalInQty,
+        report.TotalInAmount,
+        report.TotalOutQty,
+        report.TotalOutAmount,
+        report.TotalNetQty,
+        report.TotalNetAmount,
+        report.TotalTxCount,
+        FromDate = report.FromDate.ToString("yyyy-MM-dd"),
+        ToDate = report.ToDate.ToString("yyyy-MM-dd")
+    });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 

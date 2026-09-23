@@ -1,0 +1,508 @@
+@model SummaryInOutPartnerPivotReport
+@{
+    ViewData["Title"] = "Báo cáo Lịch sử Giao dịch Nhập - Xuất theo Đối tác";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var grps = (List<ProductGroup>)ViewBag.ProductGroups;
+    var prods = (List<Product>)ViewBag.Products;
+    var partners = ViewBag.Partners as IEnumerable<dynamic>;
+
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedPartner = (string)ViewBag.PartnerCode;
+    var selectedGrp = (string)ViewBag.ProductGrpCode;
+    var selectedPid = (int?)ViewBag.ProductId;
+    var selectedAction = (string)ViewBag.ActionType;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-person-lines-fill text-primary me-2"></i>Báo cáo Lịch sử Giao dịch Nhập - Xuất theo Đối tác</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Summary_In_Out_Sup_Pivot</code> (Skycic) — Ma trận phân tích chéo luân chuyển hàng hóa (Cross-Analysis Pivot) theo Đối tác (NCC / Khách hàng / Đại lý / Phân xưởng)</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/SummaryInOutPartnerPivot/ExportCsv?warehouseId=@selectedWid&partnerCode=@Uri.EscapeDataString(selectedPartner ?? "")&productGrpCode=@Uri.EscapeDataString(selectedGrp ?? "")&productId=@selectedPid&actionType=@selectedAction&fromDate=@fromDate&toDate=@toDate&q=@Uri.EscapeDataString(keyword ?? "")" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV (BOM)
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo A4
+        </button>
+        <a href="/SummaryInOutPartnerPivot" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc mặc định">
+            <i class="bi bi-arrow-clockwise me-1"></i> Đặt lại
+        </a>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm đa chiều -->
+<div class="card mb-3 border-0 shadow-sm filter-container">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3 col-sm-6">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <label class="form-label small fw-semibold text-muted mb-1">Đối tác giao dịch</label>
+                <input type="text" name="partnerCode" value="@selectedPartner" list="partnerList" placeholder="Chọn hoặc nhập mã/tên đối tác..." class="form-control form-control-sm" />
+                <datalist id="partnerList">
+                    @if (partners != null)
+                    {
+                        foreach (var p in partners)
+                        {
+                            <option value="@p.Code">[@p.Type] @p.Name</option>
+                        }
+                    }
+                </datalist>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <label class="form-label small fw-semibold text-muted mb-1">Nhóm hàng hóa</label>
+                <select name="productGrpCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhóm —</option>
+                    @foreach (var g in grps)
+                    {
+                        <option value="@g.Code" selected="@(selectedGrp == g.Code)">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2 col-sm-4">
+                <label class="form-label small fw-semibold text-muted mb-1">Chiều giao dịch</label>
+                <select name="actionType" class="form-select form-select-sm">
+                    <option value="ALL" selected="@(selectedAction == "ALL")">— Cả Nhập & Xuất —</option>
+                    <option value="IN" selected="@(selectedAction == "IN")">Chỉ Chiều Nhập (In)</option>
+                    <option value="OUT" selected="@(selectedAction == "OUT")">Chỉ Chiều Xuất (Out)</option>
+                </select>
+            </div>
+            <div class="col-md-2 col-sm-4 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Áp dụng
+                </button>
+            </div>
+            <div class="col-12 mt-2 pt-2 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small text-muted me-1">Từ ngày:</span>
+                    <input type="date" id="inputFromDate" name="fromDate" value="@fromDate" class="form-control form-control-sm" style="width:140px" required />
+                    <span class="small text-muted">Đến ngày:</span>
+                    <input type="date" id="inputToDate" name="toDate" value="@toDate" class="form-control form-control-sm" style="width:140px" required />
+                    <span class="small text-muted ms-2">Từ khóa:</span>
+                    <input type="text" name="q" value="@keyword" placeholder="Mã/tên đối tác, chứng từ, mặt hàng..." class="form-control form-control-sm" style="max-width:240px" />
+                    <button type="submit" class="btn btn-sm btn-outline-secondary py-1 px-2"><i class="bi bi-search"></i></button>
+                </div>
+                <div class="d-flex gap-1 align-items-center flex-wrap">
+                    <span class="small text-muted me-1">Khoảng nhanh:</span>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('today')">Hôm nay</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('last7days')">7 ngày</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisMonth')">Tháng này</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('lastMonth')">Tháng trước</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisYear')">Năm nay</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI thống kê tổng hợp -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐỐI TÁC GIAO DỊCH</span>
+                    <i class="bi bi-people-fill text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalPartners.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Số lượt chứng từ:</span>
+                    <span class="fw-bold text-dark">@Model.TotalTxCount.ToString("N0")</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG NHẬP TỪ ĐỐI TÁC</span>
+                    <i class="bi bi-box-arrow-in-down text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">+@Model.TotalInQty.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị nhập kho:</span>
+                    <span class="fw-bold text-success">@Model.TotalInAmount.ToString("N0") đ</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG XUẤT CHO ĐỐI TÁC</span>
+                    <i class="bi bi-box-arrow-up text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">-@Model.TotalOutQty.ToString("N0")</div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị xuất kho:</span>
+                    <span class="fw-bold text-danger">@Model.TotalOutAmount.ToString("N0") đ</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CÂN ĐỐI LUÂN CHUYỂN RÒNG</span>
+                    <i class="bi bi-arrow-left-right text-info fs-5"></i>
+                </div>
+                <div class="stat-num @(Model.TotalNetQty >= 0 ? "text-success" : "text-danger")">
+                    @(Model.TotalNetQty >= 0 ? "+" : "")@Model.TotalNetQty.ToString("N0")
+                </div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>Giá trị ròng (In - Out):</span>
+                    <span class="fw-bold @(Model.TotalNetAmount >= 0 ? "text-success" : "text-danger")">
+                        @(Model.TotalNetAmount >= 0 ? "+" : "")@Model.TotalNetAmount.ToString("N0") đ
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs chuyển đổi giữa Ma trận tổng hợp Đối tác & Bảng kê chi tiết chứng từ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom p-0">
+        <ul class="nav nav-tabs card-header-tabs m-0 px-3 pt-2" id="reportTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-semibold" id="pivot-tab" data-bs-toggle="tab" data-bs-target="#pivot-pane" type="button" role="tab">
+                    <i class="bi bi-grid-3x3 me-1"></i> Ma trận Đối tác x Mặt hàng (Pivot Matrix)
+                    <span class="badge bg-primary-subtle text-primary ms-1">@Model.PartnerGroups.Count đối tác</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-semibold" id="detail-tab" data-bs-toggle="tab" data-bs-target="#detail-pane" type="button" role="tab">
+                    <i class="bi bi-receipt-cutoff me-1"></i> Bảng kê Chi tiết Chứng từ
+                    <span class="badge bg-secondary-subtle text-secondary ms-1">@Model.DetailItems.Count dòng</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body p-0">
+        <div class="tab-content" id="reportTabsContent">
+            <!-- TAB 1: MA TRẬN PIVOT THEO ĐỐI TÁC -->
+            <div class="tab-pane fade show active p-3" id="pivot-pane" role="tabpanel">
+                @if (Model.PartnerGroups.Count == 0)
+                {
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                        Không có dữ liệu giao dịch nhập xuất đối tác nào phù hợp với bộ lọc trong khoảng thời gian này.
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                        <span class="small text-muted">Hiển thị ma trận tổng hợp của <strong>@Model.PartnerGroups.Count</strong> đối tác kinh doanh:</span>
+                        <div class="small">
+                            <span class="badge bg-success me-2"><i class="bi bi-arrow-down-left"></i> Nhập kho: @Model.TotalInQty.ToString("N0")</span>
+                            <span class="badge bg-danger me-2"><i class="bi bi-arrow-up-right"></i> Xuất kho: @Model.TotalOutQty.ToString("N0")</span>
+                            <span class="badge bg-info"><i class="bi bi-arrow-left-right"></i> Ròng: @Model.TotalNetQty.ToString("N0")</span>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" style="font-size:13px">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:40px"></th>
+                                    <th>Đối tác / Đơn vị giao dịch</th>
+                                    <th>Phân loại</th>
+                                    <th>Khu vực / Tỉnh thành</th>
+                                    <th class="text-center">Số SP</th>
+                                    <th class="text-center">Lượt GD</th>
+                                    <th class="text-end text-success">SL Nhập</th>
+                                    <th class="text-end text-danger">SL Xuất</th>
+                                    <th class="text-end text-primary">Cân đối ròng</th>
+                                    <th class="text-end">Giá trị ròng</th>
+                                    <th style="width:120px" class="text-center">Tỷ trọng (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.PartnerGroups.Count; i++)
+                                {
+                                    var grp = Model.PartnerGroups[i];
+                                    var collapseId = $"grp_collapse_{i}";
+                                    var typeBadge = grp.PartnerType switch
+                                    {
+                                        "Nhà cung cấp" => "bg-primary-subtle text-primary border border-primary-subtle",
+                                        "Khách hàng / Đại lý" => "bg-success-subtle text-success border border-success-subtle",
+                                        "Phân xưởng SX" => "bg-warning-subtle text-dark border border-warning-subtle",
+                                        _ => "bg-secondary-subtle text-secondary"
+                                    };
+
+                                    <tr class="table-group-header bg-light-subtle">
+                                        <td class="text-center">
+                                            <button class="btn btn-xs btn-outline-secondary py-0 px-1 border-0" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId">
+                                                <i class="bi bi-chevron-down"></i>
+                                            </button>
+                                        </td>
+                                        <td>
+                                            <a class="fw-bold text-decoration-none text-dark d-block" data-bs-toggle="collapse" href="#@collapseId" role="button">
+                                                @grp.PartnerName
+                                            </a>
+                                            <code class="text-muted small">@grp.PartnerCode</code>
+                                        </td>
+                                        <td>
+                                            <span class="badge @typeBadge">@grp.PartnerType</span>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                <i class="bi bi-geo-alt me-1"></i>@(grp.AreaName ?? "—")
+                                                @if (!string.IsNullOrEmpty(grp.ProvinceName))
+                                                {
+                                                    <span class="text-secondary">(@grp.ProvinceName)</span>
+                                                }
+                                            </small>
+                                        </td>
+                                        <td class="text-center fw-semibold">@grp.ItemsCount</td>
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary">@grp.TxCount</span>
+                                        </td>
+                                        <td class="text-end fw-bold text-success">
+                                            @(grp.TotalInQty > 0 ? $"+{grp.TotalInQty:N0}" : "0")
+                                        </td>
+                                        <td class="text-end fw-bold text-danger">
+                                            @(grp.TotalOutQty > 0 ? $"-{grp.TotalOutQty:N0}" : "0")
+                                        </td>
+                                        <td class="text-end fw-bold @(grp.NetQty >= 0 ? "text-success" : "text-danger")">
+                                            @(grp.NetQty >= 0 ? "+" : "")@grp.NetQty.ToString("N0")
+                                        </td>
+                                        <td class="text-end fw-semibold @(grp.NetAmount >= 0 ? "text-success" : "text-danger")">
+                                            @(grp.NetAmount >= 0 ? "+" : "")@grp.NetAmount.ToString("N0") đ
+                                        </td>
+                                        <td>
+                                            <div class="d-flex align-items-center gap-1">
+                                                <div class="progress flex-fill" style="height:6px;">
+                                                    <div class="progress-bar bg-info" style="width: @Math.Min(100, grp.SharePercent)%"></div>
+                                                </div>
+                                                <span class="small text-muted" style="min-width:38px;font-size:11px">@grp.SharePercent%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <!-- Dòng bảng con chi tiết sản phẩm của đối tác -->
+                                    <tr class="collapse show" id="@collapseId">
+                                        <td colspan="11" class="p-0 bg-white">
+                                            <div class="px-4 py-2 border-start border-3 border-info ms-3 my-1">
+                                                <div class="small text-muted mb-1 fw-semibold">
+                                                    <i class="bi bi-box-seam me-1"></i>Chi tiết các mặt hàng giao dịch với <strong>@grp.PartnerName</strong>:
+                                                </div>
+                                                <table class="table table-sm table-bordered mb-1" style="font-size:12px">
+                                                    <thead class="bg-light">
+                                                        <tr>
+                                                            <th>Mã hàng</th>
+                                                            <th>Tên hàng hoá / Vật tư</th>
+                                                            <th>Nhóm hàng</th>
+                                                            <th class="text-center" style="width:60px">ĐVT</th>
+                                                            <th class="text-end text-success" style="width:110px">SL Nhập</th>
+                                                            <th class="text-end text-danger" style="width:110px">SL Xuất</th>
+                                                            <th class="text-end text-primary" style="width:110px">Chênh lệch Ròng</th>
+                                                            <th class="text-end" style="width:130px">Giá trị Ròng</th>
+                                                            <th class="text-center" style="width:80px">Lượt GD</th>
+                                                            <th class="text-center" style="width:100px">GD cuối</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var prod in grp.ProductRows)
+                                                        {
+                                                            <tr>
+                                                                <td><code>@prod.ProductCode</code></td>
+                                                                <td class="fw-semibold">@prod.ProductName</td>
+                                                                <td class="text-muted">@(prod.ProductGrpName ?? "—")</td>
+                                                                <td class="text-center">@prod.Uom</td>
+                                                                <td class="text-end text-success fw-bold">
+                                                                    @(prod.TotalInQty > 0 ? $"+{prod.TotalInQty:N0}" : "—")
+                                                                </td>
+                                                                <td class="text-end text-danger fw-bold">
+                                                                    @(prod.TotalOutQty > 0 ? $"-{prod.TotalOutQty:N0}" : "—")
+                                                                </td>
+                                                                <td class="text-end fw-bold @(prod.NetQty >= 0 ? "text-success" : "text-danger")">
+                                                                    @(prod.NetQty >= 0 ? "+" : "")@prod.NetQty.ToString("N0")
+                                                                </td>
+                                                                <td class="text-end @(prod.NetAmount >= 0 ? "text-success" : "text-danger")">
+                                                                    @(prod.NetAmount >= 0 ? "+" : "")@prod.NetAmount.ToString("N0") đ
+                                                                </td>
+                                                                <td class="text-center">@prod.TxCount</td>
+                                                                <td class="text-center text-muted">@prod.LastDate.ToString("dd/MM/yyyy")</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4" class="text-center">TỔNG CỘNG TOÀN HỆ THỐNG</td>
+                                    <td class="text-center">@Model.PivotRows.Select(p => p.ProductId).Distinct().Count()</td>
+                                    <td class="text-center">@Model.TotalTxCount</td>
+                                    <td class="text-end text-success">+@Model.TotalInQty.ToString("N0")</td>
+                                    <td class="text-end text-danger">-@Model.TotalOutQty.ToString("N0")</td>
+                                    <td class="text-end text-primary">@(Model.TotalNetQty >= 0 ? "+" : "")@Model.TotalNetQty.ToString("N0")</td>
+                                    <td class="text-end @(Model.TotalNetAmount >= 0 ? "text-success" : "text-danger")">
+                                        @(Model.TotalNetAmount >= 0 ? "+" : "")@Model.TotalNetAmount.ToString("N0") đ
+                                    </td>
+                                    <td class="text-center">100.0%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <!-- TAB 2: BẢNG KÊ CHI TIẾT CHỨNG TỪ PHÁT SINH -->
+            <div class="tab-pane fade p-3" id="detail-pane" role="tabpanel">
+                @if (Model.DetailItems.Count == 0)
+                {
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                        Không có dòng chứng từ phát sinh nào trong khoảng thời gian này.
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                        <span class="small text-muted">Tổng cộng <strong>@Model.DetailItems.Count</strong> dòng giao dịch chi tiết:</span>
+                        <div class="small text-muted">Sắp xếp theo ngày ghi sổ mới nhất</div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped align-middle mb-0" style="font-size:12.5px">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:40px">STT</th>
+                                    <th>Số chứng từ</th>
+                                    <th>Ngày</th>
+                                    <th>Kho hàng</th>
+                                    <th>Đối tác giao dịch</th>
+                                    <th>Mặt hàng</th>
+                                    <th class="text-center" style="width:50px">ĐVT</th>
+                                    <th class="text-center">Chiều</th>
+                                    <th>Loại nghiệp vụ</th>
+                                    <th class="text-end">Số lượng</th>
+                                    <th class="text-end">Đơn giá</th>
+                                    <th class="text-end">Thành tiền</th>
+                                    <th>Tham chiếu / Đơn</th>
+                                    <th>Người lập</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model.DetailItems)
+                                {
+                                    var actionBadge = item.ActionType == "IN" ? "bg-success" : "bg-danger";
+                                    var actionIcon = item.ActionType == "IN" ? "bi-arrow-down-left" : "bi-arrow-up-right";
+                                    <tr>
+                                        <td>@item.Stt</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(item.DocDetailUrl))
+                                            {
+                                                <a href="@item.DocDetailUrl" class="fw-bold text-decoration-none">@item.DocNo</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="fw-bold">@item.DocNo</span>
+                                            }
+                                        </td>
+                                        <td class="text-muted">@item.DocDate.ToString("dd/MM/yyyy")</td>
+                                        <td><span class="badge bg-light text-dark border">@item.WarehouseName</span></td>
+                                        <td>
+                                            <div class="fw-semibold">@item.PartnerName</div>
+                                            <small class="text-muted"><code>@item.PartnerCode</code> &bull; @item.PartnerType</small>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold">@item.ProductName</div>
+                                            <small class="text-muted"><code>@item.ProductCode</code> &bull; @(item.ProductGrpName ?? "—")</small>
+                                        </td>
+                                        <td class="text-center">@item.Uom</td>
+                                        <td class="text-center">
+                                            <span class="badge @actionBadge"><i class="bi @actionIcon me-1"></i>@item.ActionDesc</span>
+                                        </td>
+                                        <td><small class="text-secondary fw-semibold">@item.InOutTypeName</small></td>
+                                        <td class="text-end fw-bold @(item.ActionType == "IN" ? "text-success" : "text-danger")">
+                                            @(item.ActionType == "IN" ? "+" : "-")@item.Quantity.ToString("N0")
+                                        </td>
+                                        <td class="text-end text-muted">@item.UnitPrice.ToString("N0") đ</td>
+                                        <td class="text-end fw-semibold">@item.Amount.ToString("N0") đ</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(item.RefNo))
+                                            {
+                                                <code class="text-dark">@item.RefNo</code>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="text-muted small">@(item.CreatedBy ?? "system")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@@media print {
+    .sidebar, .topbar, .filter-container, .btn, .nav-tabs, tfoot { display: none !important; }
+    .content-area { padding: 0 !important; }
+    .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+    .tab-content > .tab-pane { display: block !important; opacity: 1 !important; visibility: visible !important; }
+    body { font-size: 10.5px !important; background: #fff !important; }
+    .stat-num { font-size: 18px !important; }
+}
+</style>
+
+@section Scripts {
+<script>
+function setPeriod(type) {
+    const today = new Date();
+    let from = new Date();
+    let to = new Date();
+
+    if (type === 'today') {
+        from = today;
+        to = today;
+    } else if (type === 'last7days') {
+        from = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
+        to = today;
+    } else if (type === 'thisMonth') {
+        from = new Date(today.getFullYear(), today.getMonth(), 1);
+        to = today;
+    } else if (type === 'lastMonth') {
+        from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        to = new Date(today.getFullYear(), today.getMonth(), 0);
+    } else if (type === 'thisYear') {
+        from = new Date(today.getFullYear(), 0, 1);
+        to = today;
+    }
+
+    const pad = n => n < 10 ? '0' + n : n;
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    document.getElementById('inputFromDate').value = fmt(from);
+    document.getElementById('inputToDate').value = fmt(to);
+    document.getElementById('filterForm').submit();
+}
+</script>
+}

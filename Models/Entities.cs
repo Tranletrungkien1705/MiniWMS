@@ -2757,6 +2757,105 @@ public record TempPrintPreviewResult(
     string RenderedHtml
 );
 
+// ==================== BÁO CÁO LỊCH SỬ GIAO DỊCH NHẬP XUẤT THEO ĐỐI TÁC (Rpt_Summary_In_Out_Sup_Pivot Skycic) ====================
+
+/// <summary>Dòng chi tiết phát sinh một giao dịch nhập hoặc xuất theo đối tác (port từ Rpt_Summary_In_Out_Sup_Pivot Skycic: DocNo, ApprDateUTC, InvCode, InvName, CustomerCodeSys, CustomerCode, CustomerName, AreaCode, AreaName, ProvinceCode, ProvinceName, ProductCode, ProductCodeUser, ProductName, InventoryAction, InventoryActionDesc, Inv_In_Out_Type, Inv_In_Out_TypeDesc, ProductGrpCode, ProductGrpName, Qty, UnitCode, mu_UnitName, InvInType, InvOutType).</summary>
+public record SummaryInOutPartnerPivotItem(
+    int Stt,
+    string DocNo,
+    DateTime DocDate,
+    int WarehouseId,
+    string WarehouseName,
+    string PartnerCode,
+    string PartnerName,
+    string PartnerType,       // "Nhà cung cấp", "Khách hàng / Đại lý", "Xưởng sản xuất", "Nội bộ"
+    string? AreaName,
+    string? ProvinceName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string? ProductGrpCode,
+    string? ProductGrpName,
+    string Uom,
+    string ActionType,        // "IN" hoặc "OUT"
+    string ActionDesc,        // "Nhập kho" hoặc "Xuất kho"
+    string InOutTypeName,     // "Nhập mua NCC", "Xuất bán khách hàng", "Nhập khách trả", "Xuất trả NCC", "Nhập thành phẩm SX", "Xuất thành phẩm", v.v.
+    int Quantity,
+    decimal UnitPrice,
+    decimal Amount,
+    string? RefNo,
+    string? CreatedBy,
+    string? Note,
+    string? DocDetailUrl
+);
+
+/// <summary>Dòng tổng hợp số lượng & giá trị nhập xuất của một mặt hàng theo từng đối tác (Pivot Row: Partner x Product).</summary>
+public record SummaryInOutPartnerPivotRow(
+    string PartnerCode,
+    string PartnerName,
+    string PartnerType,
+    string? AreaName,
+    string? ProvinceName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string? ProductGrpCode,
+    string? ProductGrpName,
+    string Uom,
+    int TotalInQty,
+    decimal TotalInAmount,
+    int TotalOutQty,
+    decimal TotalOutAmount,
+    int NetQty,             // = TotalInQty - TotalOutQty
+    decimal NetAmount,      // = TotalInAmount - TotalOutAmount
+    int TxCount,            // Số lượt giao dịch chứng từ
+    DateTime LastDate
+);
+
+/// <summary>Nhóm thông tin phân tích cấp Đối tác trong ma trận Pivot (Pivot Partner Group Header).</summary>
+public record SummaryInOutPartnerGroupRow(
+    string PartnerCode,
+    string PartnerName,
+    string PartnerType,
+    string? AreaName,
+    string? ProvinceName,
+    int TotalInQty,
+    decimal TotalInAmount,
+    int TotalOutQty,
+    decimal TotalOutAmount,
+    int NetQty,             // = TotalInQty - TotalOutQty
+    decimal NetAmount,      // = TotalInAmount - TotalOutAmount
+    int ItemsCount,         // Số lượng mặt hàng khác nhau phát sinh giao dịch
+    int TxCount,            // Tổng số lượt giao dịch chứng từ
+    double SharePercent,    // Tỷ trọng % tổng luân chuyển (In + Out) so với toàn hệ thống
+    List<SummaryInOutPartnerPivotRow> ProductRows
+);
+
+/// <summary>Báo cáo toàn diện Lịch sử giao dịch Nhập - Xuất theo Đối tác dạng ma trận Pivot (port từ Rpt_Summary_In_Out_Sup_Pivot Skycic).</summary>
+public record SummaryInOutPartnerPivotReport(
+    int? WarehouseId,
+    string WarehouseName,
+    string? PartnerCode,
+    string? ProductGrpCode,
+    int? ProductId,
+    string? ActionType,       // "ALL", "IN", "OUT"
+    DateTime FromDate,
+    DateTime ToDate,
+    string? Keyword,
+    int TotalPartners,        // Tổng số đối tác phát sinh giao dịch
+    int TotalInQty,           // Tổng lượng hàng nhập từ các đối tác
+    decimal TotalInAmount,    // Tổng giá trị nhập
+    int TotalOutQty,          // Tổng lượng hàng xuất cho các đối tác
+    decimal TotalOutAmount,   // Tổng giá trị xuất
+    int TotalNetQty,          // Chênh lệch ròng sản lượng (= In - Out)
+    decimal TotalNetAmount,   // Chênh lệch ròng giá trị (= In - Out)
+    int TotalTxCount,         // Tổng số lượt chứng từ giao dịch
+    List<SummaryInOutPartnerGroupRow> PartnerGroups,
+    List<SummaryInOutPartnerPivotRow> PivotRows,
+    List<SummaryInOutPartnerPivotItem> DetailItems
+);
+
+
 
 
 
