@@ -1,0 +1,385 @@
+@model InventoryTypeReport
+@{
+    ViewData["Title"] = "Loại kho";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-diagram-2-fill text-primary me-2"></i>Danh mục Phân loại Loại kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_InventoryType</code> (Skycic) — Chuẩn hóa danh mục phân loại kho hàng (Kho tổng phân phối, Kho nguyên vật liệu, Kho thành phẩm, Kho trung chuyển, Kho bảo hành, Kho đại lý/ký gửi), quản lý tồn kho và quy chuẩn lưu trữ</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/InventoryType/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/Warehouse" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-building me-1"></i> Danh sách kho hàng
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createInventoryTypeModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Loại kho
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ LOẠI KHO</span>
+                    <i class="bi bi-diagram-2 text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalTypes</div>
+                <div class="small text-muted">Nhóm phân loại nghiệp vụ kho WMS</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng gán cho kho hàng trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NGỪNG ÁP DỤNG</span>
+                    <i class="bi bi-pause-circle text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@Model.InactiveCount</div>
+                <div class="small text-muted">Tạm khóa / Hạn chế tạo kho mới</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHO ĐÃ PHÂN LOẠI</span>
+                    <i class="bi bi-buildings text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.TotalWarehousesMapped</div>
+                <div class="small text-muted">Kho vật lý đã gán mã loại kho</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm kiếm theo mã loại kho, tên loại kho hoặc mô tả..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Ngừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/InventoryType" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Loại kho -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 140px;">Mã loại kho</th>
+                        <th>Tên loại kho</th>
+                        <th>Mô tả / Mục đích sử dụng</th>
+                        <th class="text-center" style="width: 130px;">Số kho</th>
+                        <th class="text-end" style="width: 140px;">Tổng tồn kho</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 180px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy loại kho nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">@row.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.Name</div>
+                                    <div class="small text-muted">Ngày tạo: @row.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                </td>
+                                <td>
+                                    <span class="text-secondary small">@(string.IsNullOrWhiteSpace(row.Remark) ? "—" : row.Remark)</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.WarehouseCount > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-0" onclick="viewWarehouses(@row.Id, '@row.Code', '@row.Name')">
+                                            <i class="bi bi-building me-1"></i>@row.WarehouseCount kho
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">0 kho</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <span class="fw-bold @(row.TotalStockQty > 0 ? "text-dark" : "text-muted")">@row.TotalStockQty.ToString("N0")</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                            <i class="bi bi-dash-circle me-1"></i>Ngừng áp dụng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin" onclick="editInventoryType(@row.Id, '@row.Code', '@row.Name', '@(row.Remark?.Replace("'", "\\'") ?? "")', @(row.IsActive.ToString().ToLower()))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" asp-action="Toggle" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái loại kho @row.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-@(row.IsActive ? "warning" : "success")" title="@(row.IsActive ? "Ngừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(row.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Delete" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa loại kho @row.Code? (Nếu đã có kho trực thuộc sẽ chuyển sang Ngừng áp dụng)');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa loại kho">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Loại kho -->
+<div class="modal fade" id="createInventoryTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Loại kho mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã loại kho (InvType) <span class="text-danger">*</span></label>
+                        <input type="text" name="code" class="form-control text-uppercase" placeholder="Ví dụ: KHO_TONG, KHO_NVL, KHO_TP, KHO_TC..." required maxlength="30" />
+                        <div class="form-text small">Viết tắt in hoa, không trùng lặp trong hệ thống (port từ Mst_InventoryType).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên loại kho (InvTypeName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Kho tổng phân phối, Kho nguyên vật liệu..." required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Mục đích sử dụng (Remark)</label>
+                        <textarea name="remark" class="form-control" rows="3" placeholder="Mô tả công dụng, tính chất lưu trữ hàng hóa, phạm vi cung ứng..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu loại kho</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Loại kho -->
+<div class="modal fade" id="editInventoryTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Update" id="editInventoryTypeForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil text-primary me-2"></i>Chỉnh sửa Loại kho</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã loại kho (InvType)</label>
+                        <input type="text" id="editCode" class="form-control bg-light" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên loại kho (InvTypeName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control" required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Mục đích sử dụng (Remark)</label>
+                        <textarea name="remark" id="editRemark" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small fw-semibold" for="editIsActive">Kích hoạt áp dụng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách Kho trực thuộc Loại kho -->
+<div class="modal fade" id="viewWarehousesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-buildings text-primary me-2"></i>
+                    Danh sách Kho thuộc loại: <span id="modalTypeTitle" class="text-primary font-monospace"></span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded">
+                    <div>
+                        <span class="text-muted small">Số kho trực thuộc:</span>
+                        <span id="modalTotalWarehouses" class="fw-bold ms-1 text-dark">0</span>
+                    </div>
+                    <div>
+                        <span class="text-muted small">Tổng tồn kho thực tế:</span>
+                        <span id="modalTotalStock" class="fw-bold ms-1 text-primary">0</span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Mã kho</th>
+                                <th>Tên kho</th>
+                                <th>Địa chỉ</th>
+                                <th>Ghi chú</th>
+                                <th class="text-end">Sơ đồ kho</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalWarehousesTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">Đang tải dữ liệu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function editInventoryType(id, code, name, remark, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editRemark').value = remark;
+        document.getElementById('editIsActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editInventoryTypeModal')).show();
+    }
+
+    async function viewWarehouses(id, code, name) {
+        document.getElementById('modalTypeTitle').textContent = `${name} (${code})`;
+        const tbody = document.getElementById('modalWarehousesTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu...</td></tr>';
+        
+        const modal = new bootstrap.Modal(document.getElementById('viewWarehousesModal'));
+        modal.show();
+
+        try {
+            const res = await fetch(`/InventoryType/Detail?id=${id}`);
+            if (!res.ok) throw new Error('Không thể tải dữ liệu.');
+            const data = await res.json();
+
+            document.getElementById('modalTotalWarehouses').textContent = data.totalWarehouses + ' kho';
+            document.getElementById('modalTotalStock').textContent = Number(data.totalStockQty).toLocaleString('vi-VN');
+
+            if (!data.warehouses || data.warehouses.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Chưa có kho nào được gán loại kho này.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            data.warehouses.forEach(w => {
+                html += `<tr>
+                    <td><code>${w.code}</code></td>
+                    <td class="fw-semibold">${w.name}</td>
+                    <td class="small text-muted">${w.address || '—'}</td>
+                    <td class="small text-muted">${w.remark || '—'}</td>
+                    <td class="text-end">
+                        <a href="/InventoryBlock?warehouseId=${w.id}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                            <i class="bi bi-grid-3x3 me-1"></i>Ô kệ
+                        </a>
+                    </td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">${err.message}</td></tr>`;
+        }
+    }
+</script>
+}

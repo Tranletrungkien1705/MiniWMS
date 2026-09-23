@@ -1,30 +1,82 @@
 @model List<Warehouse>
-@{ ViewData["Title"] = "Kho"; }
+@{
+    ViewData["Title"] = "Kho";
+    var invTypes = ViewBag.InventoryTypes as List<InventoryType> ?? [];
+    var invTypeDict = invTypes.ToDictionary(t => t.Code, t => t.Name, StringComparer.OrdinalIgnoreCase);
+}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-building text-primary me-2"></i>Quản lý Danh sách Kho hàng</h5>
+        <div class="text-muted small">Cấu hình các kho hàng vật lý, chi nhánh, phân loại theo <code>Mst_InventoryType</code> và quản lý vị trí sơ đồ khay kệ</div>
+    </div>
+    <div>
+        <a href="/InventoryType" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-diagram-2-fill me-1"></i> Danh mục Loại kho
+        </a>
+    </div>
+</div>
 <div class="row g-3">
-    <div class="col-lg-4"><div class="card"><div class="card-body">
-        <h6 class="fw-bold mb-3">Thêm kho</h6>
+    <div class="col-lg-4"><div class="card border-0 shadow-sm"><div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-plus-circle me-1 text-primary"></i>Thêm kho mới</h6>
         <form asp-action="Create" method="post">@Html.AntiForgeryToken()
-            <div class="mb-2"><input name="name" class="form-control" placeholder="Tên kho *" required /></div>
-            <div class="mb-2"><input name="code" class="form-control" placeholder="Mã (tự sinh)" /></div>
-            <div class="mb-3"><input name="address" class="form-control" placeholder="Địa chỉ" /></div>
-            <button class="btn btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Tạo kho</button>
+            <div class="mb-2"><input name="name" class="form-control form-control-sm" placeholder="Tên kho *" required /></div>
+            <div class="mb-2"><input name="code" class="form-control form-control-sm" placeholder="Mã kho (vd: KHO-HN, KHO-HCM...)" /></div>
+            <div class="mb-2">
+                <select name="invTypeCode" class="form-select form-select-sm">
+                    <option value="">-- Chọn Loại kho (Mst_InventoryType) --</option>
+                    @foreach (var it in invTypes) {
+                        <option value="@it.Code">@it.Name (@it.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-2"><input name="address" class="form-control form-control-sm" placeholder="Địa chỉ kho" /></div>
+            <div class="mb-3"><input name="remark" class="form-control form-control-sm" placeholder="Ghi chú / Mục đích sử dụng" /></div>
+            <button class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-lg me-1"></i>Tạo kho</button>
         </form>
     </div></div></div>
-    <div class="col-lg-8"><div class="card"><div class="card-body">
-        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên kho</th><th>Địa chỉ</th><th class="text-end">Sơ đồ kho</th></tr></thead><tbody>
-        @foreach (var w in Model) {
-            <tr>
-                <td class="fw-semibold">@w.Code</td>
-                <td>@w.Name</td>
-                <td class="small text-muted">@w.Address</td>
-                <td class="text-end">
-                    <a href="/InventoryBlock?warehouseId=@w.Id" class="btn btn-sm btn-outline-primary">
-                        <i class="bi bi-grid-3x3 me-1"></i>Vị trí ô kệ
-                    </a>
-                </td>
-            </tr>
-        }
-        @if (Model.Count == 0) { <tr><td colspan="4" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
-        </tbody></table>
+    <div class="col-lg-8"><div class="card border-0 shadow-sm"><div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 100px;">Mã kho</th>
+                        <th>Tên kho</th>
+                        <th style="width: 160px;">Loại kho</th>
+                        <th>Địa chỉ</th>
+                        <th class="text-end" style="width: 130px;">Sơ đồ kho</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var w in Model) {
+                    var typeName = !string.IsNullOrEmpty(w.InvTypeCode) && invTypeDict.TryGetValue(w.InvTypeCode, out var tn) ? tn : w.InvTypeCode;
+                    <tr>
+                        <td class="fw-semibold"><code>@w.Code</code></td>
+                        <td>
+                            <div class="fw-bold">@w.Name</div>
+                            @if (!string.IsNullOrEmpty(w.Remark)) {
+                                <div class="text-muted small"><i class="bi bi-info-circle me-1"></i>@w.Remark</div>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(w.InvTypeCode)) {
+                                <span class="badge bg-info-subtle text-info border border-info-subtle">
+                                    <i class="bi bi-diagram-2 me-1"></i>@typeName
+                                </span>
+                            } else {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td class="small text-muted">@w.Address</td>
+                        <td class="text-end">
+                            <a href="/InventoryBlock?warehouseId=@w.Id" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-grid-3x3 me-1"></i>Vị trí ô kệ
+                            </a>
+                        </td>
+                    </tr>
+                }
+                @if (Model.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
+                </tbody>
+            </table>
+        </div>
     </div></div></div>
 </div>

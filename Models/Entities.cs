@@ -23,6 +23,8 @@ public class Warehouse : IOrgOwned
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Address { get; set; }
+    public string? InvTypeCode { get; set; } // Phân loại Loại kho (port từ Mst_InventoryType Skycic: KHO_TONG, KHO_NVL, KHO_TP, KHO_TC, KHO_BH, KHO_DL)
+    public string? Remark { get; set; }      // Ghi chú / Mục đích sử dụng kho
 }
 
 public class Product : IOrgOwned
@@ -1919,6 +1921,49 @@ public record ProductModelDetailDto(
     Brand? Brand,
     List<Product> Products,
     int TotalProducts,
+    int TotalStockQty
+);
+
+/// <summary>Danh mục Loại kho / Phân loại kho hàng (port từ Mst_InventoryType Skycic: InvType, InvTypeName, FlagActive, Remark).</summary>
+public class InventoryType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã loại kho (InvType, vd: KHO_TONG, KHO_NVL, KHO_TP, KHO_TC, KHO_BH, KHO_DL)
+    public string Name { get; set; } = "";          // Tên loại kho (InvTypeName, vd: Kho tổng phân phối, Kho nguyên vật liệu, Kho thành phẩm...)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mục đích sử dụng & đặc tính lưu trữ (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị loại kho kèm số lượng kho trực thuộc và tổng tồn kho thực tế.</summary>
+public record InventoryTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int WarehouseCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách loại kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record InventoryTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalWarehousesMapped,
+    List<InventoryTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại kho kèm danh sách các kho trực thuộc loại này.</summary>
+public record InventoryTypeDetailDto(
+    InventoryType Item,
+    List<Warehouse> Warehouses,
+    int TotalWarehouses,
     int TotalStockQty
 );
 

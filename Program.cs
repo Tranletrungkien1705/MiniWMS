@@ -1906,6 +1906,80 @@ app.MapDelete("/api/product-models/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Loại kho / Phân loại kho hàng (port từ Mst_InventoryType Skycic)
+app.MapGet("/api/inventory-types", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.InventoryTypesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryTypeAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy loại kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryTypeByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy loại kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-types/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetInventoryTypeDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy loại kho." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/inventory-types", async (CreateInventoryTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên loại kho." });
+    try
+    {
+        var item = new InventoryType
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateInventoryTypeAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/inventory-types/{id:int}", async (int id, UpdateInventoryTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên loại kho." });
+    var item = new InventoryType
+    {
+        Name = dto.Name.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateInventoryTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInventoryTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInventoryTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -1960,3 +2034,5 @@ record CreatePartMaterialTypeDto(string? Code, string Name, string? Remark, bool
 record UpdatePartMaterialTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateProductModelDto(string? Code, string Name, string? BrandCode, string? OrgModelCode, string? Remark, bool? IsActive);
 record UpdateProductModelDto(string Name, string? BrandCode, string? OrgModelCode, string? Remark, bool? IsActive);
+record CreateInventoryTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
+record UpdateInventoryTypeDto(string Name, string? Remark, bool? IsActive);
