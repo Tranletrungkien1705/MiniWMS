@@ -1780,6 +1780,54 @@ public record BrandDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Danh mục Đơn vị tính hàng hóa / vật tư kho (Unit of Measure - UOM - port từ Mst_PartUnit Skycic: PartUnitCode, PartUnitName, FlagUnitStd, FlagActive, Remark).</summary>
+public class PartUnit : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã đơn vị tính (PartUnitCode, vd: CAI, HOP, THUNG, KG, MET, CUON, BO, CHIEC, VI, LIT, M2)
+    public string Name { get; set; } = "";          // Tên đơn vị tính (PartUnitName, vd: Cái, Hộp, Thùng, Kilogram, Mét, Cuộn, Bộ, Chiếc, Vỉ, Lít, Mét vuông)
+    public bool IsStandard { get; set; } = true;    // Đơn vị chuẩn / cơ bản (FlagUnitStd: 1 - Đơn vị cơ bản, 0 - Đơn vị quy đổi/thứ cấp)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Quy cách quy đổi hoặc định mức bao bì (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị đơn vị tính kèm số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record PartUnitRow(
+    int Id,
+    string Code,
+    string Name,
+    bool IsStandard,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách đơn vị tính tổng hợp kèm 4 thẻ KPI.</summary>
+public record PartUnitReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    bool? StandardOnly,
+    int TotalUnits,
+    int StandardUnitsCount,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<PartUnitRow> Rows
+);
+
+/// <summary>Chi tiết Đơn vị tính kèm danh sách sản phẩm sử dụng đơn vị.</summary>
+public record PartUnitDetailDto(
+    PartUnit Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
+
 
 
 

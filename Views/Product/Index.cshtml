@@ -3,6 +3,7 @@
     ViewData["Title"] = "Mặt hàng";
     var partTypes = ViewBag.PartTypes as List<PartType> ?? [];
     var brands = ViewBag.Brands as List<Brand> ?? [];
+    var partUnits = ViewBag.PartUnits as List<PartUnit> ?? [];
 }
 <div class="row g-3">
     <div class="col-lg-4"><div class="card"><div class="card-body">
@@ -29,7 +30,15 @@
                 </select>
             </div>
             <div class="row g-2 mb-2">
-                <div class="col-12"><input name="uom" class="form-control" placeholder="ĐVT" value="cái" /></div>
+                <div class="col-12">
+                    <input list="partUnitList" name="uom" class="form-control" placeholder="Đơn vị tính (Mst_PartUnit)" value="cái" required />
+                    <datalist id="partUnitList">
+                        @foreach (var u in partUnits)
+                        {
+                            <option value="@u.Name">@u.Code — @(u.IsStandard ? "ĐVT Chuẩn" : "ĐVT Quy đổi")</option>
+                        }
+                    </datalist>
+                </div>
             </div>
             <div class="row g-2 mb-3">
                 <div class="col-6"><input name="minStock" type="number" class="form-control" placeholder="Tồn tối thiểu (Min)" value="0" /></div>
@@ -58,7 +67,9 @@
                         <span class="text-muted small">—</span>
                     }
                 </td>
-                <td>@p.Uom</td>
+                <td>
+                    <span class="badge bg-light text-dark border font-monospace">@p.Uom</span>
+                </td>
                 <td class="text-end text-muted">@(p.MinStock > 0 ? p.MinStock.ToString() : "—")</td>
                 <td class="text-end text-muted">@(p.MaxStock > 0 ? p.MaxStock.ToString() : "—")</td>
             </tr>

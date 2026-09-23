@@ -48,6 +48,22 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.PartUnits.AnyAsync())
+        {
+            db.PartUnits.AddRange(
+                new PartUnit { Code = "CAI", Name = "Cái", IsStandard = true, IsActive = true, Remark = "Đơn vị tính cơ bản cho sản phẩm đơn chiếc, may mặc, phụ kiện" },
+                new PartUnit { Code = "HOP", Name = "Hộp", IsStandard = true, IsActive = true, Remark = "Quy cách đóng gói hộp duplex / hộp carton nhỏ" },
+                new PartUnit { Code = "THUNG", Name = "Thùng", IsStandard = false, IsActive = true, Remark = "Đơn vị bao bì đóng gói master carton vận chuyển" },
+                new PartUnit { Code = "KG", Name = "Kilogram", IsStandard = true, IsActive = true, Remark = "Đơn vị đo khối lượng chuẩn hệ SI cho nguyên vật liệu sợi bông, vải tấm" },
+                new PartUnit { Code = "MET", Name = "Mét", IsStandard = true, IsActive = true, Remark = "Đơn vị đo chiều dài cho cuộn vải, ruy băng may mặc" },
+                new PartUnit { Code = "CUON", Name = "Cuộn", IsStandard = false, IsActive = true, Remark = "Đơn vị bao gói dạng cuộn tròn dây kéo, vải lót, màng co" },
+                new PartUnit { Code = "BO", Name = "Bộ", IsStandard = true, IsActive = true, Remark = "Đơn vị theo bộ sản phẩm hoàn chỉnh gồm nhiều chi tiết đi kèm" },
+                new PartUnit { Code = "CHIEC", Name = "Chiếc", IsStandard = true, IsActive = true, Remark = "Đơn vị đếm hàng hóa cá thể hóa đơn lẻ" },
+                new PartUnit { Code = "PALLET", Name = "Pallet", IsStandard = false, IsActive = true, Remark = "Đơn vị quy đổi bốc xếp lưu kho theo kiện nâng pallet tiêu chuẩn" },
+                new PartUnit { Code = "VI", Name = "Vỉ", IsStandard = false, IsActive = true, Remark = "Đơn vị đóng vỉ phụ liệu cúc, khóa, tem nhãn" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
@@ -2050,7 +2066,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2063,6 +2079,8 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartTypes_OrgId_Code\" ON miniwms.\"PartTypes\" (\"OrgId\", \"Code\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"Brands\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Origin\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Brands_OrgId_Code\" ON miniwms.\"Brands\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PartUnits\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"IsStandard\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartUnits_OrgId_Code\" ON miniwms.\"PartUnits\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
@@ -2507,6 +2525,17 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Brands_OrgId_Code"" ON ""Brands"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""PartUnits"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""IsStandard"" INTEGER NOT NULL DEFAULT 1,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartUnits_OrgId_Code"" ON ""PartUnits"" (""OrgId"", ""Code"");",
             @"ALTER TABLE ""Products"" ADD COLUMN ""PartTypeCode"" TEXT NULL;",
             @"ALTER TABLE ""Products"" ADD COLUMN ""BrandCode"" TEXT NULL;"
         };

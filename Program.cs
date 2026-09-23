@@ -1678,6 +1678,82 @@ app.MapDelete("/api/brands/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Đơn vị tính hàng hóa / vật tư kho (port từ Mst_PartUnit Skycic)
+app.MapGet("/api/part-units", async (string? q, bool? activeOnly, bool? standardOnly, IWmsService svc) =>
+{
+    var report = await svc.PartUnitsReportAsync(q, activeOnly, standardOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/part-units/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetPartUnitAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy đơn vị tính." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-units/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetPartUnitByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy đơn vị tính." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-units/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetPartUnitDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy đơn vị tính." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/part-units", async (CreatePartUnitDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên đơn vị tính." });
+    try
+    {
+        var item = new PartUnit
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            IsStandard = dto.IsStandard ?? true,
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreatePartUnitAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/part-units/{id:int}", async (int id, UpdatePartUnitDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên đơn vị tính." });
+    var item = new PartUnit
+    {
+        Name = dto.Name.Trim(),
+        IsStandard = dto.IsStandard ?? true,
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdatePartUnitAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/part-units/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.TogglePartUnitStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/part-units/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeletePartUnitAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
@@ -1727,3 +1803,5 @@ record CreatePartTypeDto(string? Code, string Name, string? Remark, bool? IsActi
 record UpdatePartTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark, bool? IsActive);
 record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActive);
+record CreatePartUnitDto(string? Code, string Name, bool? IsStandard, string? Remark, bool? IsActive);
+record UpdatePartUnitDto(string Name, bool? IsStandard, string? Remark, bool? IsActive);

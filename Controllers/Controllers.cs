@@ -30,6 +30,7 @@ public class ProductController(IWmsService svc) : Controller
     {
         ViewBag.PartTypes = await svc.PartTypesAsync(activeOnly: true);
         ViewBag.Brands = await svc.BrandsAsync(activeOnly: true);
+        ViewBag.PartUnits = await svc.PartUnitsAsync(activeOnly: true);
         return View(await svc.ProductsAsync());
     }
 
@@ -2753,6 +2754,145 @@ public class BrandController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"ThuongHieu_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class PartUnitController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? standardOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.StandardOnly = standardOnly;
+        var report = await svc.PartUnitsReportAsync(q, activeOnly, standardOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetPartUnitDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy đơn vị tính." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            isStandard = detail.Item.IsStandard,
+            remark = detail.Item.Remark,
+            isActive = detail.Item.IsActive,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                p.PartTypeCode,
+                p.BrandCode,
+                p.MinStock,
+                p.MaxStock,
+                p.CostPrice
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, bool isStandard = true, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên đơn vị tính.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new PartUnit
+            {
+                Code = code?.Trim().ToUpperInvariant() ?? "",
+                Name = name.Trim(),
+                IsStandard = isStandard,
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreatePartUnitAsync(item);
+            TempData["Success"] = $"Đã tạo mới đơn vị tính '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, bool isStandard = true, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên đơn vị tính.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new PartUnit
+        {
+            Name = name.Trim(),
+            IsStandard = isStandard,
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdatePartUnitAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.TogglePartUnitStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeletePartUnitAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly, bool? standardOnly)
+    {
+        var report = await svc.PartUnitsReportAsync(q, activeOnly, standardOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC ĐƠN VỊ TÍNH HÀNG HÓA / VẬT TƯ KHO (MST_PARTUNIT)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc loại chuẩn:;{(standardOnly == true ? "Đơn vị cơ bản/chuẩn" : standardOnly == false ? "Đơn vị quy đổi" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã đơn vị tính;Tên đơn vị tính;Phân loại;Trạng thái;Số lượng SP;Tổng tồn kho;Ghi chú / Quy cách;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var typeStr = r.IsStandard ? "Đơn vị cơ bản / Chuẩn" : "Đơn vị quy đổi / Thứ cấp";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{typeStr}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ ĐƠN VỊ TÍNH:;{report.TotalUnits};;;;");
+        sb.AppendLine($";;ĐƠN VỊ CƠ BẢN / CHUẨN:;{report.StandardUnitsCount};;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG SỬ DỤNG:;{report.TotalProductsMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DonViTinh_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

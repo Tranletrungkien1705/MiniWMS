@@ -139,6 +139,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item);
     Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteBrandAsync(int id);
+    Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null);
+    Task<List<PartUnit>> PartUnitsAsync(string? q = null, bool? activeOnly = null);
+    Task<PartUnit?> GetPartUnitAsync(int id);
+    Task<PartUnit?> GetPartUnitByCodeAsync(string code);
+    Task<PartUnitDetailDto?> GetPartUnitDetailAsync(int id);
+    Task<int> CreatePartUnitAsync(PartUnit item);
+    Task<(bool ok, string msg)> UpdatePartUnitAsync(int id, PartUnit item);
+    Task<(bool ok, string msg)> TogglePartUnitStatusAsync(int id);
+    Task<(bool ok, string msg)> DeletePartUnitAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -5755,6 +5764,162 @@ public class WmsService(AppDbContext db) : IWmsService
         db.Brands.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa thương hiệu '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Đơn vị tính hàng hóa tổng hợp kèm 4 thẻ KPI (port từ Mst_PartUnit Skycic).</summary>
+    public async Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null)
+    {
+        var query = db.PartUnits.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(u => u.IsActive == activeOnly.Value);
+        if (standardOnly.HasValue) query = query.Where(u => u.IsStandard == standardOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(u => u.Code.ToLower().Contains(kw) ||
+                                     u.Name.ToLower().Contains(kw) ||
+                                     (u.Remark != null && u.Remark.ToLower().Contains(kw)));
+        }
+
+        var units = await query.OrderBy(u => u.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var prodGroup = allProducts
+            .GroupBy(p => p.Uom.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = units.Select(u =>
+        {
+            var pList = new List<Product>();
+            if (prodGroup.TryGetValue(u.Code, out var listByCode)) pList.AddRange(listByCode);
+            if (prodGroup.TryGetValue(u.Name, out var listByName))
+            {
+                foreach (var p in listByName)
+                {
+                    if (!pList.Any(x => x.Id == p.Id)) pList.Add(p);
+                }
+            }
+            int pCount = pList.Count;
+            var pIds = pList.Select(p => p.Id).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new PartUnitRow(u.Id, u.Code, u.Name, u.IsStandard, u.IsActive, u.Remark, u.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalUnits = await db.PartUnits.CountAsync();
+        int standardUnitsCount = await db.PartUnits.CountAsync(u => u.IsStandard);
+        int activeCount = await db.PartUnits.CountAsync(u => u.IsActive);
+        int inactiveCount = totalUnits - activeCount;
+
+        var unitCodesAndNames = (await db.PartUnits.Select(u => new { u.Code, u.Name }).ToListAsync())
+            .SelectMany(u => new[] { u.Code.ToLowerInvariant(), u.Name.ToLowerInvariant() }).ToHashSet();
+        int mappedProds = allProducts.Count(p => unitCodesAndNames.Contains(p.Uom.Trim().ToLowerInvariant()));
+
+        return new PartUnitReport(q, activeOnly, standardOnly, totalUnits, standardUnitsCount, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<PartUnit>> PartUnitsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartUnits.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(u => u.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(u => u.Code.ToLower().Contains(kw) || u.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(u => u.Code).ToListAsync();
+    }
+
+    public Task<PartUnit?> GetPartUnitAsync(int id) =>
+        db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
+
+    public Task<PartUnit?> GetPartUnitByCodeAsync(string code) =>
+        db.PartUnits.FirstOrDefaultAsync(u => u.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<PartUnitDetailDto?> GetPartUnitDetailAsync(int id)
+    {
+        var u = await db.PartUnits.FirstOrDefaultAsync(x => x.Id == id);
+        if (u == null) return null;
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+        var products = allProducts
+            .Where(p => string.Equals(p.Uom, u.Code, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(p.Uom, u.Name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new PartUnitDetailDto(u, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreatePartUnitAsync(PartUnit item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên đơn vị tính không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"UNIT{await db.PartUnits.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.PartUnits.AnyAsync(u => u.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã đơn vị tính '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.PartUnits.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdatePartUnitAsync(int id, PartUnit item)
+    {
+        var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên đơn vị tính không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.IsStandard = item.IsStandard;
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin đơn vị tính '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> TogglePartUnitStatusAsync(int id)
+    {
+        var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng đơn vị tính '{existing.Code}'." : $"Đã chuyển đơn vị tính '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeletePartUnitAsync(int id)
+    {
+        var existing = await db.PartUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đơn vị tính.");
+
+        bool isUsed = await db.Products.AnyAsync(p => p.Uom.ToLower() == existing.Code.ToLower() || p.Uom.ToLower() == existing.Name.ToLower());
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Đơn vị tính '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.PartUnits.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa đơn vị tính '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
