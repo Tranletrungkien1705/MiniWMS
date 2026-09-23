@@ -5,13 +5,14 @@
     var fWh = (int)ViewBag.FromWarehouseId;
     var tWh = (int)ViewBag.ToWarehouseId;
     var balMap = (Dictionary<int, int>)ViewBag.Balances;
+    var moveOrdTypes = (List<MoveOrdType>?)ViewBag.MoveOrdTypes ?? new();
 }
 <form asp-action="Create" method="post" id="moForm">
     @Html.AntiForgeryToken()
     <div class="card mb-3"><div class="card-body">
         <h6 class="fw-bold mb-3"><i class="bi bi-shuffle me-1 text-primary"></i>Thông tin lệnh điều chuyển (Move Order)</h6>
         <div class="row g-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small fw-semibold text-muted">Kho xuất chuyển (Kho đi) *</label>
                 <select name="fromWarehouseId" id="fromWh" class="form-select" required onchange="onWhChange()">
                     <option value="">— Chọn kho xuất —</option>
@@ -22,7 +23,7 @@
                 </select>
                 <div class="form-text">Tồn khả dụng sẽ hiển thị theo kho xuất được chọn.</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small fw-semibold text-muted">Kho nhận chuyển (Kho đến) *</label>
                 <select name="toWarehouseId" id="toWh" class="form-select" required>
                     <option value="">— Chọn kho nhận —</option>
@@ -33,7 +34,18 @@
                 </select>
                 <div class="form-text">Kho nhận phải khác kho xuất chuyển.</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Loại hình điều chuyển</label>
+                <select name="moveOrdTypeCode" class="form-select">
+                    <option value="">— Tiêu chuẩn / Thông thường —</option>
+                    @foreach (var t in moveOrdTypes)
+                    {
+                        <option value="@t.Code">@(t.IsUrgent ? "[Khẩn cấp] " : "")@t.Name (@t.Code)</option>
+                    }
+                </select>
+                <div class="form-text">Phân loại mục đích & mức độ ưu tiên.</div>
+            </div>
+            <div class="col-md-3">
                 <label class="form-label small fw-semibold text-muted">Lý do / Ghi chú</label>
                 <input name="note" class="form-control" placeholder="Ví dụ: Tiếp tế hàng chi nhánh, cân đối kho..." />
             </div>

@@ -387,6 +387,8 @@ app.MapGet("/api/move-orders", async (int? fromWhId, int? toWhId, MoveOrderStatu
         m.Date,
         Status = m.Status.ToString(),
         m.TotalQty,
+        m.MoveOrdTypeCode,
+        m.MoveOrdTypeName,
         m.StockDocId,
         StockDocCode = m.StockDoc?.Code,
         m.Note,
@@ -412,6 +414,8 @@ app.MapGet("/api/move-orders/{id:int}", async (int id, IWmsService svc) =>
         m.Date,
         Status = m.Status.ToString(),
         m.TotalQty,
+        m.MoveOrdTypeCode,
+        m.MoveOrdTypeName,
         m.StockDocId,
         StockDocCode = m.StockDoc?.Code,
         m.Note,
@@ -436,6 +440,7 @@ app.MapPost("/api/move-orders", async (CreateMoveOrderDto dto, IWmsService svc) 
     {
         FromWarehouseId = dto.FromWarehouseId,
         ToWarehouseId = dto.ToWarehouseId,
+        MoveOrdTypeCode = dto.MoveOrdTypeCode,
         Note = dto.Note,
         CreatedBy = "api"
     };
@@ -2777,11 +2782,94 @@ app.MapDelete("/api/customer-sources/{id:int}", async (int id, IWmsService svc) 
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== LOẠI HÌNH & MỤC ĐÍCH ĐIỀU CHUYỂN KHO (Mst_MoveOrdType Skycic) ====================
+app.MapGet("/api/move-ord-types", async (string? q, bool? activeOnly, bool? urgentOnly, IWmsService svc) =>
+{
+    var report = await svc.MoveOrdTypesReportAsync(q, activeOnly, urgentOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/move-ord-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetMoveOrdTypeAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy loại điều chuyển." });
+});
+
+app.MapGet("/api/move-ord-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetMoveOrdTypeByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy loại điều chuyển." });
+});
+
+app.MapGet("/api/move-ord-types/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetMoveOrdTypeDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy loại điều chuyển." });
+});
+
+app.MapPost("/api/move-ord-types", async (CreateMoveOrdTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên loại hình điều chuyển." });
+
+    var item = new MoveOrdType
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        IsUrgent = dto.IsUrgent ?? false,
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateMoveOrdTypeAsync(item);
+        return Results.Created($"/api/move-ord-types/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/move-ord-types/{id:int}", async (int id, UpdateMoveOrdTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập tên loại điều chuyển." });
+
+    var item = new MoveOrdType
+    {
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        IsUrgent = dto.IsUrgent ?? false,
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateMoveOrdTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/move-ord-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleMoveOrdTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/move-ord-types/{id:int}/toggle-urgent", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleMoveOrdTypeUrgentAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/move-ord-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteMoveOrdTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
 record RegisterOrgDto(string Name);
-record CreateMoveOrderDto(int FromWarehouseId, int ToWarehouseId, string? Note, List<MoveOrderItemDto> Lines);
+record CreateMoveOrderDto(int FromWarehouseId, int ToWarehouseId, string? Note, List<MoveOrderItemDto> Lines, string? MoveOrdTypeCode = null);
 record MoveOrderItemDto(int ProductId, int Quantity, string? Note);
 record CreateReturnSupDto(int WarehouseId, string SupplierName, string? SupplierCode, string? RefDocNo, string? Reason, List<ReturnSupItemDto> Lines);
 record ReturnSupItemDto(int ProductId, int Quantity, decimal UnitPrice, string? Note);
@@ -2852,3 +2940,5 @@ record CreateDepartmentDto(string? Code, string Name, string? ParentCode, string
 record UpdateDepartmentDto(string Name, string? ParentCode, string? BUCode, int? Level, string? MST, string? Description, bool? IsActive);
 record CreateCustomerSourceDto(string? Code, string Name, string? ParentCode, string? BUCode, string? Description, bool? IsActive);
 record UpdateCustomerSourceDto(string Name, string? ParentCode, string? BUCode, string? Description, bool? IsActive);
+record CreateMoveOrdTypeDto(string? Code, string Name, string? Description, bool? IsUrgent, bool? IsActive);
+record UpdateMoveOrdTypeDto(string Name, string? Description, bool? IsUrgent, bool? IsActive);

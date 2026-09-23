@@ -261,6 +261,16 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateCustomerSourceAsync(int id, CustomerSource item);
     Task<(bool ok, string msg)> ToggleCustomerSourceStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteCustomerSourceAsync(int id);
+    Task<MoveOrdTypeReport> MoveOrdTypesReportAsync(string? q = null, bool? activeOnly = null, bool? urgentOnly = null);
+    Task<List<MoveOrdType>> MoveOrdTypesAsync(string? q = null, bool? activeOnly = null);
+    Task<MoveOrdType?> GetMoveOrdTypeAsync(int id);
+    Task<MoveOrdType?> GetMoveOrdTypeByCodeAsync(string code);
+    Task<MoveOrdTypeDetailDto?> GetMoveOrdTypeDetailAsync(int id);
+    Task<int> CreateMoveOrdTypeAsync(MoveOrdType item);
+    Task<(bool ok, string msg)> UpdateMoveOrdTypeAsync(int id, MoveOrdType item);
+    Task<(bool ok, string msg)> ToggleMoveOrdTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> ToggleMoveOrdTypeUrgentAsync(int id);
+    Task<(bool ok, string msg)> DeleteMoveOrdTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -779,6 +789,15 @@ public class WmsService(AppDbContext db) : IWmsService
 
         order.Code = $"MO{DateTime.Now:yyMMdd}-{await db.MoveOrders.CountAsync() + 1:D3}";
         order.Status = MoveOrderStatus.Pending;
+        if (!string.IsNullOrWhiteSpace(order.MoveOrdTypeCode))
+        {
+            var moveType = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Code == order.MoveOrdTypeCode.Trim().ToUpperInvariant());
+            if (moveType != null)
+            {
+                order.MoveOrdTypeCode = moveType.Code;
+                order.MoveOrdTypeName = moveType.Name;
+            }
+        }
         foreach (var (pid, qty, note) in lines.Where(l => l.productId > 0 && l.qty > 0))
             order.Lines.Add(new MoveOrderLine { ProductId = pid, Quantity = qty, Note = note });
 
@@ -8467,6 +8486,185 @@ public class WmsService(AppDbContext db) : IWmsService
         db.CustomerSources.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa nguồn khách hàng '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo / Danh sách loại hình điều chuyển kho tổng hợp kèm 4 thẻ KPI (port từ Mst_MoveOrdType Skycic: MoveOrdType, MoveOrdTypeName, FlagActive, LogLUDTimeUTC, LogLUBy).</summary>
+    public async Task<MoveOrdTypeReport> MoveOrdTypesReportAsync(string? q = null, bool? activeOnly = null, bool? urgentOnly = null)
+    {
+        var query = db.MoveOrdTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (urgentOnly.HasValue) query = query.Where(t => t.IsUrgent == urgentOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.Description != null && t.Description.ToLower().Contains(kw)));
+        }
+
+        var types = await query.ToListAsync();
+        var allMoveOrders = await db.MoveOrders
+            .Include(m => m.Lines)
+            .ToListAsync();
+
+        var rows = types.Select(t =>
+        {
+            var matchedOrders = allMoveOrders
+                .Where(m => !string.IsNullOrEmpty(m.MoveOrdTypeCode) && m.MoveOrdTypeCode.Equals(t.Code, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            int ordersCount = matchedOrders.Count;
+            int qtyMoved = matchedOrders.Sum(m => m.Lines.Sum(l => l.Quantity));
+
+            return new MoveOrdTypeRow(
+                t.Id,
+                t.Code,
+                t.Name,
+                t.Description,
+                t.IsUrgent,
+                t.IsActive,
+                t.CreatedAt,
+                ordersCount,
+                qtyMoved
+            );
+        }).OrderBy(r => r.IsUrgent ? 0 : 1).ThenBy(r => r.Code).ToList();
+
+        int totalTypes = await db.MoveOrdTypes.CountAsync();
+        int activeCount = await db.MoveOrdTypes.CountAsync(t => t.IsActive);
+        int urgentCount = await db.MoveOrdTypes.CountAsync(t => t.IsUrgent && t.IsActive);
+        int inactiveCount = totalTypes - activeCount;
+
+        int totalMoveOrdersCount = allMoveOrders.Count(m => !string.IsNullOrEmpty(m.MoveOrdTypeCode));
+        int totalQtyMoved = allMoveOrders.Where(m => !string.IsNullOrEmpty(m.MoveOrdTypeCode)).Sum(m => m.Lines.Sum(l => l.Quantity));
+
+        return new MoveOrdTypeReport(
+            q,
+            activeOnly,
+            urgentOnly,
+            totalTypes,
+            activeCount,
+            urgentCount,
+            inactiveCount,
+            totalMoveOrdersCount,
+            totalQtyMoved,
+            rows
+        );
+    }
+
+    public Task<List<MoveOrdType>> MoveOrdTypesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.MoveOrdTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) || t.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(t => t.IsUrgent ? 0 : 1).ThenBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<MoveOrdType?> GetMoveOrdTypeAsync(int id) =>
+        db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<MoveOrdType?> GetMoveOrdTypeByCodeAsync(string code) =>
+        db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<MoveOrdTypeDetailDto?> GetMoveOrdTypeDetailAsync(int id)
+    {
+        var item = await db.MoveOrdTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var matchedOrders = await db.MoveOrders
+            .Where(m => !string.IsNullOrEmpty(m.MoveOrdTypeCode) && m.MoveOrdTypeCode.ToLower() == item.Code.ToLower())
+            .Include(m => m.FromWarehouse)
+            .Include(m => m.ToWarehouse)
+            .Include(m => m.Lines).ThenInclude(l => l.Product)
+            .OrderByDescending(m => m.Date)
+            .Take(25)
+            .ToListAsync();
+
+        int totalOrders = await db.MoveOrders.CountAsync(m => !string.IsNullOrEmpty(m.MoveOrdTypeCode) && m.MoveOrdTypeCode.ToLower() == item.Code.ToLower());
+        int totalQtyMoved = matchedOrders.Sum(m => m.Lines.Sum(l => l.Quantity));
+
+        return new MoveOrdTypeDetailDto(item, matchedOrders, totalOrders, totalQtyMoved);
+    }
+
+    public async Task<int> CreateMoveOrdTypeAsync(MoveOrdType item)
+    {
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"MOVE_TYPE{await db.MoveOrdTypes.CountAsync() + 1:D2}";
+        }
+        item.Name = item.Name.Trim();
+        item.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+
+        bool exists = await db.MoveOrdTypes.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã loại điều chuyển '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.MoveOrdTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateMoveOrdTypeAsync(int id, MoveOrdType item)
+    {
+        var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+
+        existing.Name = item.Name.Trim();
+        existing.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+        existing.IsUrgent = item.IsUrgent;
+        existing.IsActive = item.IsActive;
+
+        // Cập nhật tên hiển thị ở các lệnh điều chuyển đã lưu
+        var ordersToUpdate = await db.MoveOrders.Where(m => m.MoveOrdTypeCode == existing.Code).ToListAsync();
+        foreach (var order in ordersToUpdate)
+        {
+            order.MoveOrdTypeName = existing.Name;
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật loại điều chuyển '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleMoveOrdTypeStatusAsync(int id)
+    {
+        var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt loại điều chuyển '{existing.Code}'." : $"Đã chuyển loại điều chuyển '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleMoveOrdTypeUrgentAsync(int id)
+    {
+        var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+
+        existing.IsUrgent = !existing.IsUrgent;
+        await db.SaveChangesAsync();
+        return (true, existing.IsUrgent ? $"Đã đánh dấu loại điều chuyển '{existing.Code}' là Khẩn cấp / Ưu tiên cao." : $"Đã chuyển loại điều chuyển '{existing.Code}' về mức Tiêu chuẩn.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteMoveOrdTypeAsync(int id)
+    {
+        var existing = await db.MoveOrdTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hình điều chuyển.");
+
+        bool inUse = await db.MoveOrders.AnyAsync(m => m.MoveOrdTypeCode != null && m.MoveOrdTypeCode.ToUpper() == existing.Code.ToUpper());
+        if (inUse)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Loại điều chuyển '{existing.Code}' đã có lệnh điều chuyển sử dụng nên đã được chuyển sang trạng thái Tạm dừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.MoveOrdTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại điều chuyển '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

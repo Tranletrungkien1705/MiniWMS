@@ -112,6 +112,18 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.MoveOrdTypes.AnyAsync())
+        {
+            db.MoveOrdTypes.AddRange(
+                new MoveOrdType { Code = "MOVE_BRANCH", Name = "Điều chuyển chi nhánh & Cửa hàng", Description = "Phân phối hàng định kỳ từ tổng kho phân phối đến các kho chi nhánh, showroom hoặc điểm bán", IsUrgent = false, IsActive = true },
+                new MoveOrdType { Code = "MOVE_REPLENISH", Name = "Điều chuyển bổ sung định mức an toàn", Description = "Bổ sung hàng tồn kho khẩn cấp hoặc định kỳ khi kho nhận chạm ngưỡng tồn tối thiểu MinStock", IsUrgent = false, IsActive = true },
+                new MoveOrdType { Code = "MOVE_TRANSIT", Name = "Điều chuyển qua Hub trung chuyển", Description = "Luân chuyển hàng qua các trạm trung chuyển trung gian (Hub logistics) trước khi về kho đích", IsUrgent = false, IsActive = true },
+                new MoveOrdType { Code = "MOVE_WARRANTY", Name = "Điều chuyển bảo hành & Kiểm định", Description = "Chuyển hàng hóa lỗi kỹ thuật, nghi ngờ chất lượng về kho thẩm định kỹ thuật hoặc trung tâm bảo hành", IsUrgent = true, IsActive = true },
+                new MoveOrdType { Code = "MOVE_REORG", Name = "Điều chuyển quy hoạch & Sắp xếp lại kho", Description = "Chuyển hàng sắp xếp gom kho, tối ưu thể tích lưu trữ khay kệ hoặc giải tỏa kho bảo trì", IsUrgent = false, IsActive = true },
+                new MoveOrdType { Code = "MOVE_DISPOSAL", Name = "Điều chuyển tập kết xử lý hàng hủy", Description = "Chuyển gom hàng hỏng nặng, hết hạn sử dụng về kho cách ly chờ làm thủ tục tiêu hủy", IsUrgent = false, IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.UserMapInventories.AnyAsync())
         {
             var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
@@ -1203,6 +1215,8 @@ public static class Seeder
                     Code = "MOSEED-001",
                     FromWarehouseId = hn.Value,
                     ToWarehouseId = hcm.Value,
+                    MoveOrdTypeCode = "MOVE_BRANCH",
+                    MoveOrdTypeName = "Điều chuyển chi nhánh & Cửa hàng",
                     Status = MoveOrderStatus.Finished,
                     Date = DateTime.Now.AddDays(-2),
                     CreatedAt = DateTime.Now.AddDays(-2),
@@ -1224,6 +1238,8 @@ public static class Seeder
                         Code = "MOSEED-002",
                         FromWarehouseId = hn.Value,
                         ToWarehouseId = hcm.Value,
+                        MoveOrdTypeCode = "MOVE_REPLENISH",
+                        MoveOrdTypeName = "Điều chuyển bổ sung định mức an toàn",
                         Status = MoveOrderStatus.Pending,
                         Date = DateTime.Now,
                         CreatedAt = DateTime.Now,
@@ -1232,6 +1248,27 @@ public static class Seeder
                     };
                     moPending.Lines.Add(new MoveOrderLine { ProductId = pk.Value, Quantity = 5, Note = "Thắt lưng da cao cấp" });
                     db.MoveOrders.Add(moPending);
+                }
+
+                // Lệnh 3: Đã duyệt - Chuyển bảo hành kiểm định kỹ thuật (MOVE_WARRANTY)
+                if (pk.HasValue)
+                {
+                    var moWarranty = new MoveOrder
+                    {
+                        Code = "MOSEED-003",
+                        FromWarehouseId = hcm.Value,
+                        ToWarehouseId = hn.Value,
+                        MoveOrdTypeCode = "MOVE_WARRANTY",
+                        MoveOrdTypeName = "Điều chuyển bảo hành & Kiểm định",
+                        Status = MoveOrderStatus.Approved,
+                        Date = DateTime.Now.AddDays(-1),
+                        CreatedAt = DateTime.Now.AddDays(-1),
+                        ApprovedAt = DateTime.Now.AddHours(-12),
+                        Note = "Chuyển sản phẩm bảo hành về trung tâm kiểm định kỹ thuật Hà Nội",
+                        CreatedBy = "seed"
+                    };
+                    moWarranty.Lines.Add(new MoveOrderLine { ProductId = pk.Value, Quantity = 2, Note = "Kiểm định khóa kim loại" });
+                    db.MoveOrders.Add(moWarranty);
                 }
                 await db.SaveChangesAsync();
             }
@@ -2525,7 +2562,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2570,8 +2607,16 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Departments_OrgId_Code\" ON miniwms.\"Departments\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Departments_OrgId_ParentCode\" ON miniwms.\"Departments\" (\"OrgId\", \"ParentCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Departments_OrgId_Level\" ON miniwms.\"Departments\" (\"OrgId\", \"Level\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"CustomerSources\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"ParentCode\" text NULL, \"BUCode\" text NULL, \"Description\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CustomerSources_OrgId_Code\" ON miniwms.\"CustomerSources\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_CustomerSources_OrgId_ParentCode\" ON miniwms.\"CustomerSources\" (\"OrgId\", \"ParentCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"MoveOrdTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"IsUrgent\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_MoveOrdTypes_OrgId_Code\" ON miniwms.\"MoveOrdTypes\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
+        sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeName\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Customers\" ADD COLUMN IF NOT EXISTS \"CustomerSourceCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"DepartmentCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"DepartmentName\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"UserMapInventories\" ADD COLUMN IF NOT EXISTS \"DepartmentCode\" text NULL");
@@ -3186,7 +3231,34 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Departments_OrgId_Code"" ON ""Departments"" (""OrgId"", ""Code"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Departments_OrgId_ParentCode"" ON ""Departments"" (""OrgId"", ""ParentCode"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_Departments_OrgId_Level"" ON ""Departments"" (""OrgId"", ""Level"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_Departments_OrgId_Level"" ON ""Departments"" (""OrgId"", ""Level"");",
+            @"ALTER TABLE ""Customers"" ADD COLUMN ""CustomerSourceCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""CustomerSources"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""BUCode"" TEXT NULL,
+                ""Description"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CustomerSources_OrgId_Code"" ON ""CustomerSources"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_CustomerSources_OrgId_ParentCode"" ON ""CustomerSources"" (""OrgId"", ""ParentCode"");",
+            @"ALTER TABLE ""MoveOrders"" ADD COLUMN ""MoveOrdTypeCode"" TEXT NULL;",
+            @"ALTER TABLE ""MoveOrders"" ADD COLUMN ""MoveOrdTypeName"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""MoveOrdTypes"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""Description"" TEXT NULL,
+                ""IsUrgent"" INTEGER NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MoveOrdTypes_OrgId_Code"" ON ""MoveOrdTypes"" (""OrgId"", ""Code"");"
         };
         foreach (var s in sql)
         {

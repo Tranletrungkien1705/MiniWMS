@@ -175,6 +175,8 @@ public class MoveOrder : IOrgOwned
     public string? Note { get; set; }
     public string CreatedBy { get; set; } = "";
     public MoveOrderStatus Status { get; set; } = MoveOrderStatus.Pending;
+    public string? MoveOrdTypeCode { get; set; } // Mã loại hình điều chuyển (port từ Mst_MoveOrdType Skycic: MOVE_BRANCH, MOVE_REPLENISH, MOVE_TRANSIT, MOVE_WARRANTY, MOVE_REORG, MOVE_DISPOSAL)
+    public string? MoveOrdTypeName { get; set; } // Tên loại hình điều chuyển kho
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? ApprovedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
@@ -2465,6 +2467,54 @@ public record CustomerSourceDetailDto(
     int TotalShippedQty,
     decimal TotalShippedAmount,
     List<StockDoc> RecentDispatches
+);
+
+/// <summary>Danh mục Loại hình & Mục đích Điều chuyển kho (Move Order Type - port từ Mst_MoveOrdType Skycic: MoveOrdType, MoveOrdTypeName, FlagActive, LogLUDTimeUTC, LogLUBy).</summary>
+public class MoveOrdType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã loại điều chuyển (MoveOrdType, vd: MOVE_BRANCH, MOVE_REPLENISH, MOVE_TRANSIT, MOVE_WARRANTY, MOVE_REORG, MOVE_DISPOSAL)
+    public string Name { get; set; } = "";             // Tên loại điều chuyển (MoveOrdTypeName, vd: Điều chuyển phân phối chi nhánh, Điều chuyển bổ sung dự phòng an toàn...)
+    public string? Description { get; set; }          // Mô tả quy trình & mục đích điều chuyển
+    public bool IsUrgent { get; set; } = false;        // Cờ điều chuyển khẩn cấp / Mức độ ưu tiên cao
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị loại điều chuyển kho kèm số lượng lệnh phát sinh và tổng sản lượng chuyển.</summary>
+public record MoveOrdTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Description,
+    bool IsUrgent,
+    bool IsActive,
+    DateTime CreatedAt,
+    int TotalOrdersCount,
+    int TotalQtyMoved
+);
+
+/// <summary>Báo cáo / Danh sách loại hình điều chuyển kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record MoveOrdTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    bool? UrgentFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int UrgentCount,
+    int InactiveCount,
+    int TotalMoveOrdersCount,
+    int TotalQtyMoved,
+    List<MoveOrdTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại điều chuyển kèm danh sách các lệnh điều chuyển phát sinh liên quan.</summary>
+public record MoveOrdTypeDetailDto(
+    MoveOrdType Item,
+    List<MoveOrder> Orders,
+    int TotalOrders,
+    int TotalQtyMoved
 );
 
 

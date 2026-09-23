@@ -1,0 +1,436 @@
+@model MoveOrdTypeReport
+@{
+    ViewData["Title"] = "Loại hình điều chuyển";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var urgentOnly = (bool?)ViewBag.UrgentOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-diagram-3 text-primary me-2"></i>Danh mục Loại hình & Mục đích Điều chuyển kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_MoveOrdType</code> (Skycic) — Chuẩn hóa danh mục hình thức & mục đích điều chuyển hàng hóa giữa các kho (Phân phối chi nhánh, Bổ sung an toàn, Hub trung chuyển, Bảo hành kiểm định, Quy hoạch sắp xếp kho, Tập kết xử lý hàng hủy), quản lý phân loại khẩn cấp (<code>IsUrgent</code>) và trạng thái áp dụng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/MoveOrdType/ExportCsv?q=@keyword&activeOnly=@activeOnly&urgentOnly=@urgentOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/MoveOrder" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-shuffle me-1"></i> Lệnh điều chuyển
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createMoveOrdTypeModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Loại điều chuyển
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ LOẠI ĐIỀU CHUYỂN</span>
+                    <i class="bi bi-diagram-3 text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalTypes</div>
+                <div class="small text-muted">Quy chuẩn luân chuyển kho WMS</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng khi lập lệnh điều chuyển</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHẨN CẤP / ƯU TIÊN CAO</span>
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-danger">@Model.UrgentCount</div>
+                <div class="small text-muted">Bảo hành, cứu trợ điểm bán thiếu hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SẢN LƯỢNG LUÂN CHUYỂN</span>
+                    <i class="bi bi-box-seam text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.TotalQtyMoved.ToString("N0")</div>
+                <div class="small text-muted">Qua @Model.TotalMoveOrdersCount lượt lệnh điều chuyển</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm kiếm theo mã loại, tên loại hoặc quy trình điều chuyển..." />
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái: Tất cả --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="urgentOnly" class="form-select form-select-sm">
+                    <option value="">-- Mức ưu tiên: Tất cả --</option>
+                    <!option value="true" @(urgentOnly == true ? "selected" : "")>Khẩn cấp / Ưu tiên cao</!option>
+                    <!option value="false" @(urgentOnly == false ? "selected" : "")>Tiêu chuẩn / Bình thường</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/MoveOrdType" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Loại điều chuyển kho -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 150px;">Mã loại</th>
+                        <th>Tên loại hình điều chuyển</th>
+                        <th class="text-center" style="width: 150px;">Mức ưu tiên</th>
+                        <th>Mục đích & Quy trình điều chuyển</th>
+                        <th class="text-center" style="width: 130px;">Số lệnh</th>
+                        <th class="text-end" style="width: 130px;">Tổng SL chuyển</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 190px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy loại hình điều chuyển nào phù compliance với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">@row.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.Name</div>
+                                    <div class="small text-muted">Khởi tạo: @row.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" asp-action="ToggleUrgent" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi cờ ưu tiên cho loại @row.Code?');">
+                                        @Html.AntiForgeryToken()
+                                        @if (row.IsUrgent)
+                                        {
+                                            <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" title="Bấm để chuyển về Tiêu chuẩn">
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">
+                                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Khẩn cấp
+                                                </span>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" title="Bấm để đánh dấu Khẩn cấp">
+                                                <span class="badge bg-light text-secondary border px-2 py-1">
+                                                    <i class="bi bi-arrow-right-circle me-1"></i>Tiêu chuẩn
+                                                </span>
+                                            </button>
+                                        }
+                                    </form>
+                                </td>
+                                <td>
+                                    <span class="text-secondary small">@(string.IsNullOrWhiteSpace(row.Description) ? "—" : row.Description)</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.TotalOrdersCount > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 py-0" onclick="viewOrders(@row.Id, '@row.Code', '@row.Name')">
+                                            <i class="bi bi-shuffle me-1"></i>@row.TotalOrdersCount lệnh
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">0 lệnh</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <span class="fw-bold @(row.TotalQtyMoved > 0 ? "text-dark" : "text-muted")">@row.TotalQtyMoved.ToString("N0")</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                            <i class="bi bi-dash-circle me-1"></i>Tạm dừng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin" onclick="editMoveOrdType(@row.Id, '@row.Code', '@row.Name', '@(row.Description?.Replace("'", "\\'") ?? "")', @(row.IsUrgent.ToString().ToLower()), @(row.IsActive.ToString().ToLower()))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" asp-action="Toggle" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái áp dụng loại điều chuyển @row.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-@(row.IsActive ? "warning" : "success")" title="@(row.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(row.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Delete" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa loại điều chuyển @row.Code? (Nếu đã phát sinh lệnh sẽ chuyển sang Tạm dừng)');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa loại điều chuyển">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Loại điều chuyển -->
+<div class="modal fade" id="createMoveOrdTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Loại điều chuyển mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã loại điều chuyển (MoveOrdType) <span class="text-danger">*</span></label>
+                        <input type="text" name="code" class="form-control text-uppercase font-monospace" placeholder="Ví dụ: MOVE_BRANCH, MOVE_REPLENISH, MOVE_TRANSIT..." required maxlength="30" />
+                        <div class="form-text small">Viết tắt in hoa, không trùng lặp (port từ Mst_MoveOrdType Skycic).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên loại điều chuyển (MoveOrdTypeName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Điều chuyển phân phối chi nhánh, Điều chuyển khẩn cấp..." required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả mục đích & Quy trình điều chuyển</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="Mô tả hoàn cảnh áp dụng, căn cứ lệnh hoặc lưu ý vận chuyển..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isUrgent" value="true" id="createIsUrgent" />
+                        <label class="form-check-label small fw-semibold" for="createIsUrgent">Đánh dấu Khẩn cấp / Mức độ ưu tiên cao (IsUrgent)</label>
+                        <div class="form-text small">Bật nếu đây là loại chuyển hàng gấp (bảo hành, tiếp tế thiếu hụt nghiêm trọng).</div>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu loại điều chuyển</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Loại điều chuyển -->
+<div class="modal fade" id="editMoveOrdTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Update" id="editMoveOrdTypeForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil text-primary me-2"></i>Chỉnh sửa Loại điều chuyển</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã loại điều chuyển (MoveOrdType)</label>
+                        <input type="text" id="editCode" class="form-control bg-light font-monospace" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên loại điều chuyển (MoveOrdTypeName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control" required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả mục đích & Quy trình điều chuyển</label>
+                        <textarea name="description" id="editDescription" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isUrgent" value="true" id="editIsUrgent" />
+                        <label class="form-check-label small fw-semibold" for="editIsUrgent">Khẩn cấp / Mức độ ưu tiên cao (IsUrgent)</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small fw-semibold" for="editIsActive">Kích hoạt áp dụng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách Lệnh điều chuyển thuộc Loại điều chuyển -->
+<div class="modal fade" id="viewOrdersModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-shuffle text-primary me-2"></i>
+                    Lệnh điều chuyển thuộc loại: <span id="modalTypeTitle" class="text-primary font-monospace"></span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded">
+                    <div>
+                        <span class="text-muted small">Tổng số lệnh phát sinh:</span>
+                        <span id="modalTotalOrders" class="fw-bold ms-1 text-dark">0</span>
+                    </div>
+                    <div>
+                        <span class="text-muted small">Tổng sản lượng luân chuyển:</span>
+                        <span id="modalTotalQty" class="fw-bold ms-1 text-primary">0</span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Số lệnh</th>
+                                <th>Ngày lập</th>
+                                <th>Kho xuất</th>
+                                <th>Kho nhận</th>
+                                <th class="text-end">Số lượng</th>
+                                <th class="text-center">Trạng thái</th>
+                                <th class="text-end">Chi tiết</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalOrdersTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-3">Đang tải dữ liệu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function editMoveOrdType(id, code, name, description, isUrgent, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editDescription').value = description;
+        document.getElementById('editIsUrgent').checked = isUrgent;
+        document.getElementById('editIsActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editMoveOrdTypeModal')).show();
+    }
+
+    async function viewOrders(id, code, name) {
+        document.getElementById('modalTypeTitle').textContent = `${name} (${code})`;
+        document.getElementById('modalTotalOrders').textContent = '...';
+        document.getElementById('modalTotalQty').textContent = '...';
+        const tbody = document.getElementById('modalOrdersTableBody');
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu...</td></tr>';
+        new bootstrap.Modal(document.getElementById('viewOrdersModal')).show();
+
+        try {
+            const res = await fetch(`/MoveOrdType/DetailJson?id=${id}`);
+            if (!res.ok) throw new Error('Không thể tải dữ liệu');
+            const data = await res.json();
+
+            document.getElementById('modalTotalOrders').textContent = data.totalOrders.toLocaleString();
+            document.getElementById('modalTotalQty').textContent = data.totalQtyMoved.toLocaleString();
+
+            if (!data.orders || data.orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Chưa có lệnh điều chuyển nào thuộc loại này.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.orders.map(o => {
+                let statusBadge = '';
+                if (o.status === 'Pending') statusBadge = '<span class="badge bg-warning text-dark">Chờ duyệt</span>';
+                else if (o.status === 'Approved') statusBadge = '<span class="badge bg-primary">Đã duyệt</span>';
+                else if (o.status === 'Finished') statusBadge = '<span class="badge bg-success">Đã chuyển kho</span>';
+                else if (o.status === 'Cancelled') statusBadge = '<span class="badge bg-dark">Đã hủy</span>';
+                else statusBadge = `<span class="badge bg-secondary">${o.status}</span>`;
+
+                return `
+                    <tr>
+                        <td class="fw-semibold text-primary font-monospace">${o.code}</td>
+                        <td class="small text-muted">${o.date}</td>
+                        <td><i class="bi bi-box-arrow-up-right me-1 text-muted"></i>${o.fromWarehouse}</td>
+                        <td><i class="bi bi-box-arrow-in-down-left me-1 text-muted"></i>${o.toWarehouse}</td>
+                        <td class="text-end fw-bold text-dark">${o.totalQty.toLocaleString()}</td>
+                        <td class="text-center">${statusBadge}</td>
+                        <td class="text-end">
+                            <a href="/MoveOrder/Detail/${o.id}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                                <i class="bi bi-arrow-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Lỗi: ${err.message}</td></tr>`;
+        }
+    }
+</script>
+}

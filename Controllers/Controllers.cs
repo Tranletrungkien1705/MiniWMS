@@ -263,6 +263,7 @@ public class MoveOrderController(IWmsService svc) : Controller
         ViewBag.FromWarehouseId = fWh;
         ViewBag.ToWarehouseId = tWh;
         ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.MoveOrdTypes = await svc.MoveOrdTypesAsync(activeOnly: true);
 
         var balances = fWh > 0 ? await svc.BalancesAsync(fWh) : new List<BalanceRow>();
         ViewBag.Balances = balances.ToDictionary(b => b.ProductId, b => b.Qty);
@@ -271,7 +272,7 @@ public class MoveOrderController(IWmsService svc) : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(int fromWarehouseId, int toWarehouseId, string? note, int[]? productId, int[]? qty, string[]? lineNote)
+    public async Task<IActionResult> Create(int fromWarehouseId, int toWarehouseId, string? moveOrdTypeCode, string? note, int[]? productId, int[]? qty, string[]? lineNote)
     {
         if (fromWarehouseId <= 0 || toWarehouseId <= 0)
         {
@@ -303,6 +304,7 @@ public class MoveOrderController(IWmsService svc) : Controller
         {
             FromWarehouseId = fromWarehouseId,
             ToWarehouseId = toWarehouseId,
+            MoveOrdTypeCode = string.IsNullOrWhiteSpace(moveOrdTypeCode) ? null : moveOrdTypeCode.Trim().ToUpperInvariant(),
             Note = note,
             CreatedBy = "web"
         };
@@ -4778,6 +4780,160 @@ public class CustomerSourceController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"NguonKhachHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class MoveOrdTypeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? urgentOnly)
+    {
+        var report = await svc.MoveOrdTypesReportAsync(q, activeOnly, urgentOnly);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string name, string? code, string? description, bool isUrgent = false, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần nhập tên loại hình điều chuyển.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new MoveOrdType
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            IsUrgent = isUrgent,
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateMoveOrdTypeAsync(item);
+            TempData["Success"] = $"Đã tạo mới loại hình điều chuyển '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? description, bool isUrgent, bool isActive)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần nhập tên loại hình điều chuyển.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new MoveOrdType
+        {
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            IsUrgent = isUrgent,
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateMoveOrdTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleMoveOrdTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleUrgent(int id)
+    {
+        var (ok, msg) = await svc.ToggleMoveOrdTypeUrgentAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteMoveOrdTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DetailJson(int id)
+    {
+        var detail = await svc.GetMoveOrdTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy loại điều chuyển." });
+
+        return Json(new
+        {
+            type = new
+            {
+                detail.Item.Id,
+                detail.Item.Code,
+                detail.Item.Name,
+                detail.Item.Description,
+                detail.Item.IsUrgent,
+                detail.Item.IsActive,
+                CreatedAt = detail.Item.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            orders = detail.Orders.Select(o => new
+            {
+                o.Id,
+                o.Code,
+                Date = o.Date.ToString("dd/MM/yyyy"),
+                FromWarehouse = o.FromWarehouse.Name,
+                ToWarehouse = o.ToWarehouse.Name,
+                Status = o.Status.ToString(),
+                TotalQty = o.TotalQty,
+                ItemsCount = o.Lines.Count,
+                o.Note
+            }),
+            totalOrders = detail.TotalOrders,
+            totalQtyMoved = detail.TotalQtyMoved
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly, bool? urgentOnly)
+    {
+        var report = await svc.MoveOrdTypesReportAsync(q, activeOnly, urgentOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC LOẠI HÌNH & MỤC ĐÍCH ĐIỀU CHUYỂN KHO (MST_MOVEORDTYPE)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc mức ưu tiên:;{(urgentOnly == true ? "Khẩn cấp / Ưu tiên cao" : urgentOnly == false ? "Tiêu chuẩn" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã loại điều chuyển;Tên loại hình điều chuyển;Mức độ ưu tiên;Trạng thái;Số lệnh phát sinh;Tổng sản lượng luân chuyển;Mô tả & Quy trình điều chuyển;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var priorityStr = r.IsUrgent ? "Khẩn cấp / Ưu tiên cao" : "Tiêu chuẩn";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{priorityStr}\";\"{statusStr}\";{r.TotalOrdersCount};{r.TotalQtyMoved};\"{r.Description?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG LOẠI ĐIỀU CHUYỂN:;{report.TotalTypes};;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;");
+        sb.AppendLine($";;KHẨN CẤP / ƯU TIÊN CAO:;{report.UrgentCount};;;;;;");
+        sb.AppendLine($";;TẠM DỪNG:;{report.InactiveCount};;;;;;");
+        sb.AppendLine($";;TỔNG LƯỢT LỆNH ĐIỀU CHUYỂN:;{report.TotalMoveOrdersCount};;;;;;");
+        sb.AppendLine($";;TỔNG SẢN LƯỢNG LUÂN CHUYỂN:;{report.TotalQtyMoved};;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"LoaiDieuChuyen_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

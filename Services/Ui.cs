@@ -33,6 +33,22 @@ public static class Ui
         MoveOrderStatus.Cancelled => ("Đã hủy", "dark"),
         _ => (s.ToString(), "secondary")
     };
+    public static (string text, string css) MoveOrdTypeBadge(string? code, string? name, bool isUrgent = false)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return ("Tiêu chuẩn", "secondary");
+        var label = !string.IsNullOrWhiteSpace(name) ? name : code;
+        if (isUrgent) return (label, "danger");
+        return code.ToUpperInvariant() switch
+        {
+            "MOVE_BRANCH" => (label, "info text-dark"),
+            "MOVE_REPLENISH" => (label, "primary"),
+            "MOVE_TRANSIT" => (label, "warning text-dark"),
+            "MOVE_WARRANTY" => (label, "danger"),
+            "MOVE_REORG" => (label, "secondary"),
+            "MOVE_DISPOSAL" => (label, "dark"),
+            _ => (label, "primary")
+        };
+    }
     public static (string text, string css) ReturnSupStatusBadge(ReturnSupStatus s) => s switch
     {
         ReturnSupStatus.Draft => ("Chờ duyệt", "warning text-dark"),

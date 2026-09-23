@@ -52,6 +52,7 @@ public class AppDbContext : DbContext
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<CustomerSource> CustomerSources => Set<CustomerSource>();
+    public DbSet<MoveOrdType> MoveOrdTypes => Set<MoveOrdType>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -96,6 +97,7 @@ public class AppDbContext : DbContext
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<InventoryOutType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<MoveOrdType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryInType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryLevelType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
