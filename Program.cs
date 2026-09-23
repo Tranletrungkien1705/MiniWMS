@@ -1132,6 +1132,13 @@ app.MapGet("/api/reports/inventory-in-fg-sum", async (int? warehouseId, DateTime
     return Results.Ok(report);
 });
 
+// API Báo cáo Tổng hợp Xuất kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryOutFGSum Skycic)
+app.MapGet("/api/reports/inventory-out-fg-sum", async (int? warehouseId, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryOutFGSumReportAsync(warehouseId, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
 // API Quản lý Nhập kho thành phẩm sản xuất (port từ InvF_InventoryInFG Skycic)
 app.MapGet("/api/inventory-in-fg", async (int? warehouseId, InvInFGStatus? status, InvInFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
 {

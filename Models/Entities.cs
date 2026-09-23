@@ -3813,3 +3813,36 @@ public record FGInSumReport(
     int DistinctWarehousesCount,// Số kho có phát sinh nhập thành phẩm
     List<FGInSumRow> Rows
 );
+
+/// <summary>Dòng báo cáo Tổng hợp Xuất kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryOutFGSum Skycic).
+/// Tổng hợp số lượng thành phẩm xuất kho (đã duyệt) theo từng kho + mặt hàng + đại lý nhận hàng trong kỳ.</summary>
+public record FGOutSumRow(
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string? AgentCode,           // Mã đại lý / khách hàng nhận hàng (AgentCode / MST)
+    string AgentName,            // Tên đại lý / khách hàng nhận hàng (NNTFullName)
+    int TotalQtyOut,             // Tổng số lượng xuất kho (TotalQtyOut)
+    int DocCount,                // Số phiếu xuất thành phẩm đóng góp vào dòng này
+    decimal TotalAmount,         // Tổng giá trị xuất kho (Σ Qty * UnitPrice)
+    double SharePercent          // Tỷ trọng % số lượng xuất của dòng trên tổng lượng xuất toàn kỳ
+);
+
+/// <summary>Báo cáo Tổng hợp Xuất kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryOutFGSum Skycic).
+/// Đối soát lượng thành phẩm xuất kho giao đại lý / khách hàng theo kho, mặt hàng và kỳ phê duyệt.</summary>
+public record FGOutSumReport(
+    DateTime FromDate,
+    DateTime ToDate,
+    int? WarehouseId,
+    string WarehouseName,
+    string? Keyword,
+    int TotalDocs,              // Số phiếu xuất thành phẩm đã duyệt trong kỳ
+    int TotalQtyOut,            // Tổng số lượng thành phẩm xuất kho trong kỳ
+    decimal TotalAmount,        // Tổng giá trị thành phẩm xuất kho trong kỳ
+    int DistinctProductsCount,  // Số mặt hàng thành phẩm phân biệt
+    int DistinctWarehousesCount,// Số kho có phát sinh xuất thành phẩm
+    List<FGOutSumRow> Rows
+);
