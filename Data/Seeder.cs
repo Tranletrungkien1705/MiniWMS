@@ -2768,6 +2768,93 @@ public static class Seeder
             }
         }
 
+        // Seed dữ liệu Phiếu nhập kho mua hàng (PurchaseReceipt - port từ InvF_InventoryIn Skycic)
+        if (!await db.PurchaseReceipts.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var prods = await db.Products.ToListAsync();
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001");
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001");
+            var vay = prods.FirstOrDefault(p => p.Code == "VAY-001");
+            var today = DateTime.Today;
+
+            if (whHn != null && ao != null && quan != null && vay != null)
+            {
+                // Phiếu kho nhập mua đã ghi sổ cho phiếu PN2603-001 đã duyệt
+                var pnBuy = new StockDoc
+                {
+                    Type = DocType.In,
+                    ToWarehouseId = whHn.Id,
+                    Code = "PNSEED-BUY01",
+                    Status = DocStatus.Posted,
+                    Date = today.AddDays(-5),
+                    SupplierCode = "NCC-001",
+                    SupplierName = "Công ty TNHH Vải Sợi Việt",
+                    RefNo = "PN2603-001",
+                    Note = "Nhập kho mua hàng theo phiếu PN2603-001 - NCC: Công ty TNHH Vải Sợi Việt - HĐ: HD-2026-0312",
+                    CreatedBy = "seed"
+                };
+                pnBuy.Lines.Add(new StockDocLine { ProductId = ao.Id, Quantity = 200 });
+                pnBuy.Lines.Add(new StockDocLine { ProductId = quan.Id, Quantity = 150 });
+                db.Docs.Add(pnBuy);
+                await db.SaveChangesAsync();
+
+                // 1. Phiếu ĐÃ DUYỆT & NHẬP KHO (Approved)
+                var pr1 = new PurchaseReceipt
+                {
+                    Code = "PN2603-001",
+                    WarehouseId = whHn.Id,
+                    InvInTypeCode = "IN_BUY",
+                    InvInTypeName = "Nhập mua hàng Nhà cung cấp",
+                    SupplierName = "Công ty TNHH Vải Sợi Việt",
+                    SupplierCode = "NCC-001",
+                    InvoiceNo = "HD-2026-0312",
+                    InvoiceDate = today.AddDays(-5),
+                    OrderNo = "PO-2026-0312",
+                    UserDeliver = "Trần Văn Giao",
+                    VehicleNo = "29C-123.45",
+                    ContractNo = "HĐMB-2026-01",
+                    Date = today.AddDays(-5),
+                    Status = PurchaseReceiptStatus.Approved,
+                    StockDocId = pnBuy.Id,
+                    CreatedAt = today.AddDays(-5),
+                    ApprovedAt = today.AddDays(-5).AddHours(3),
+                    ApprovedBy = "admin",
+                    Remark = "Nhập kho lô vải và phụ liệu may mặc theo hợp đồng mua quý 1",
+                    CreatedBy = "seed"
+                };
+                pr1.Lines.Add(new PurchaseReceiptLine { ProductId = ao.Id, Quantity = 200, UnitPrice = 120000m, VATRate = 10, UnitCode = "cái", Note = "Áo sơ mi trắng size M" });
+                pr1.Lines.Add(new PurchaseReceiptLine { ProductId = quan.Id, Quantity = 150, UnitPrice = 180000m, VATRate = 10, UnitCode = "cái", Note = "Quần jeans xanh size 32" });
+                db.PurchaseReceipts.Add(pr1);
+
+                // 2. Phiếu ĐANG CHỜ DUYỆT (Pending)
+                var pr2 = new PurchaseReceipt
+                {
+                    Code = "PN2603-002",
+                    WarehouseId = whHn.Id,
+                    InvInTypeCode = "IN_BUY",
+                    InvInTypeName = "Nhập mua hàng Nhà cung cấp",
+                    SupplierName = "Công ty CP Phụ Liệu May Mặc Hà Nội",
+                    SupplierCode = "NCC-002",
+                    InvoiceNo = "HD-2026-0325",
+                    InvoiceDate = today,
+                    OrderNo = "PO-2026-0325",
+                    UserDeliver = "Lê Thị Vận",
+                    VehicleNo = "30F-678.90",
+                    Date = today,
+                    Status = PurchaseReceiptStatus.Pending,
+                    CreatedAt = today,
+                    Remark = "Chờ kiểm đếm và phê duyệt nhập kho lô váy đầm dạ hội",
+                    CreatedBy = "seed"
+                };
+                pr2.Lines.Add(new PurchaseReceiptLine { ProductId = vay.Id, Quantity = 80, UnitPrice = 350000m, VATRate = 8, UnitCode = "cái", Note = "Váy đầm dạ hội size S-M" });
+                db.PurchaseReceipts.Add(pr2);
+
+                await db.SaveChangesAsync();
+            }
+        }
+
         // Seed dữ liệu Quản lý Hộp đóng gói & Phân cấp bao bì kho (InventoryBox - port từ Inv_InventoryBox Skycic)
         if (!await db.InventoryBoxes.AnyAsync())
         {
@@ -4030,7 +4117,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4120,6 +4207,11 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON miniwms.\"Agents\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON miniwms.\"Agents\" (\"OrgId\", \"ProvinceCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_DistrictCode\" ON miniwms.\"Agents\" (\"OrgId\", \"DistrictCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PurchaseReceipts\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"WarehouseId\" integer NOT NULL, \"InvInTypeCode\" text NULL, \"InvInTypeName\" text NULL, \"SupplierName\" text NOT NULL DEFAULT '', \"SupplierCode\" text NULL, \"InvoiceNo\" text NULL, \"InvoiceDate\" timestamp NULL, \"OrderNo\" text NULL, \"UserDeliver\" text NULL, \"VehicleNo\" text NULL, \"ContainerNo\" text NULL, \"ContractNo\" text NULL, \"Date\" timestamp NOT NULL DEFAULT now(), \"CreatedBy\" text NOT NULL DEFAULT '', \"Status\" integer NOT NULL DEFAULT 0, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedAt\" timestamp NULL, \"ApprovedBy\" text NULL, \"Remark\" text NULL, \"StockDocId\" integer NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_Code\" ON miniwms.\"PurchaseReceipts\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_WarehouseId_Status\" ON miniwms.\"PurchaseReceipts\" (\"OrgId\", \"WarehouseId\", \"Status\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PurchaseReceiptLines\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"PurchaseReceiptId\" integer NOT NULL, \"ProductId\" integer NOT NULL, \"Quantity\" integer NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"VATRate\" double precision NOT NULL DEFAULT 0, \"UnitCode\" text NULL, \"Note\" text NULL)",
+            "CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceiptLines_OrgId_PurchaseReceiptId\" ON miniwms.\"PurchaseReceiptLines\" (\"OrgId\", \"PurchaseReceiptId\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -4954,6 +5046,11 @@ public static class Seeder
         sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON \"Agents\" (\"OrgId\", \"Code\");");
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON \"Agents\" (\"OrgId\", \"ProvinceCode\");");
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_DistrictCode\" ON \"Agents\" (\"OrgId\", \"DistrictCode\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"PurchaseReceipts\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"WarehouseId\" INTEGER NOT NULL, \"InvInTypeCode\" TEXT NULL, \"InvInTypeName\" TEXT NULL, \"SupplierName\" TEXT NOT NULL DEFAULT '', \"SupplierCode\" TEXT NULL, \"InvoiceNo\" TEXT NULL, \"InvoiceDate\" TEXT NULL, \"OrderNo\" TEXT NULL, \"UserDeliver\" TEXT NULL, \"VehicleNo\" TEXT NULL, \"ContainerNo\" TEXT NULL, \"ContractNo\" TEXT NULL, \"Date\" TEXT NOT NULL, \"CreatedBy\" TEXT NOT NULL DEFAULT '', \"Status\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL, \"ApprovedAt\" TEXT NULL, \"ApprovedBy\" TEXT NULL, \"Remark\" TEXT NULL, \"StockDocId\" INTEGER NULL, CONSTRAINT \"FK_PurchaseReceipts_Warehouses_WarehouseId\" FOREIGN KEY (\"WarehouseId\") REFERENCES \"Warehouses\" (\"Id\") ON DELETE RESTRICT, CONSTRAINT \"FK_PurchaseReceipts_Docs_StockDocId\" FOREIGN KEY (\"StockDocId\") REFERENCES \"Docs\" (\"Id\") ON DELETE SET NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_Code\" ON \"PurchaseReceipts\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_WarehouseId_Status\" ON \"PurchaseReceipts\" (\"OrgId\", \"WarehouseId\", \"Status\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"PurchaseReceiptLines\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"PurchaseReceiptId\" INTEGER NOT NULL, \"ProductId\" INTEGER NOT NULL, \"Quantity\" INTEGER NOT NULL DEFAULT 0, \"UnitPrice\" NUMERIC NOT NULL DEFAULT 0, \"VATRate\" REAL NOT NULL DEFAULT 0, \"UnitCode\" TEXT NULL, \"Note\" TEXT NULL, CONSTRAINT \"FK_PurchaseReceiptLines_PurchaseReceipts_PurchaseReceiptId\" FOREIGN KEY (\"PurchaseReceiptId\") REFERENCES \"PurchaseReceipts\" (\"Id\") ON DELETE CASCADE, CONSTRAINT \"FK_PurchaseReceiptLines_Products_ProductId\" FOREIGN KEY (\"ProductId\") REFERENCES \"Products\" (\"Id\") ON DELETE RESTRICT);");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceiptLines_OrgId_PurchaseReceiptId\" ON \"PurchaseReceiptLines\" (\"OrgId\", \"PurchaseReceiptId\");");
         foreach (var s in sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(s); } catch { }

@@ -1,0 +1,231 @@
+@{
+    ViewData["Title"] = "Lập phiếu nhập kho mua hàng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var prods = (List<Product>)ViewBag.Products;
+    var invInTypes = (List<InventoryInType>)ViewBag.InvInTypes;
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/PurchaseReceipt" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Quay lại
+        </a>
+        <h4 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-truck text-primary me-2"></i>Lập phiếu nhập kho mua hàng mới
+        </h4>
+    </div>
+</div>
+
+<form method="post" action="/PurchaseReceipt/Create" id="createPrForm">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-3">
+        <!-- Thông tin chung phiếu nhập -->
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-primary">
+                        <i class="bi bi-info-circle me-1"></i> 1. Thông tin chung phiếu nhập kho mua hàng (InvF_InventoryIn)
+                    </h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Kho nhập hàng <span class="text-danger">*</span></label>
+                            <select name="warehouseId" class="form-select" required>
+                                <option value="">-- Chọn kho nhận hàng --</option>
+                                @foreach (var w in whs)
+                                {
+                                    <option value="@w.Id">@w.Name (@w.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Loại hình nhập kho</label>
+                            <select name="invInTypeCode" class="form-select">
+                                <option value="">-- Chọn loại nhập --</option>
+                                @foreach (var t in invInTypes)
+                                {
+                                    <option value="@t.Code">@t.Name (@t.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Ngày nhập kho <span class="text-danger">*</span></label>
+                            <input type="date" name="date" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Nhà cung cấp / Đối tác giao hàng <span class="text-danger">*</span></label>
+                            <input type="text" name="supplierName" class="form-control" placeholder="vd: Công ty TNHH Vải Sợi Việt" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Mã nhà cung cấp</label>
+                            <input type="text" name="supplierCode" class="form-control" placeholder="vd: NCC-001" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold small text-muted">Người giao hàng (UserDeliver)</label>
+                            <input type="text" name="userDeliver" class="form-control" placeholder="vd: Trần Văn Giao" />
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Số hóa đơn mua (InvoiceNo)</label>
+                            <input type="text" name="invoiceNo" class="form-control" placeholder="vd: HD-2026-0325" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Ngày hóa đơn</label>
+                            <input type="date" name="invoiceDate" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Số đơn hàng / Hợp đồng (OrderNo)</label>
+                            <input type="text" name="orderNo" class="form-control" placeholder="vd: PO-2026-0325" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Số hợp đồng mua</label>
+                            <input type="text" name="contractNo" class="form-control" placeholder="vd: HĐMB-2026-01" />
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Biển số xe vận chuyển</label>
+                            <input type="text" name="vehicleNo" class="form-control" placeholder="vd: 29C-123.45" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold small text-muted">Số Container</label>
+                            <input type="text" name="containerNo" class="form-control" placeholder="vd: CONT-2026-001" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold small text-muted">Ghi chú / Diễn giải nhập kho</label>
+                            <input type="text" name="remark" class="form-control" placeholder="Ghi chú điều kiện nghiệm thu, lý do phát sinh..." />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chi tiết các mặt hàng nhập -->
+        <div class="col-lg-12">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold text-primary">
+                        <i class="bi bi-list-check me-1"></i> 2. Danh mục mặt hàng nhập kho & Đơn giá / Thuế VAT
+                    </h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn">
+                        <i class="bi bi-plus-lg me-1"></i> Thêm mặt hàng
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle mb-0" id="linesTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 26%;">Mặt hàng nhập kho <span class="text-danger">*</span></th>
+                                    <th style="width: 10%;" class="text-end">Số lượng <span class="text-danger">*</span></th>
+                                    <th style="width: 14%;" class="text-end">Đơn giá nhập (VNĐ)</th>
+                                    <th style="width: 10%;" class="text-end">VAT (%)</th>
+                                    <th style="width: 10%;">Đơn vị tính</th>
+                                    <th style="width: 20%;">Ghi chú dòng</th>
+                                    <th style="width: 6%;" class="text-center">Xóa</th>
+                                </tr>
+                            </thead>
+                            <tbody id="linesTbody">
+                                <tr>
+                                    <td>
+                                        <select name="productIds" class="form-select prod-select" required>
+                                            <option value="">-- Chọn mặt hàng --</option>
+                                            @foreach (var p in prods)
+                                            {
+                                                <option value="@p.Id" data-cost="@p.CostPrice" data-uom="@p.Uom">@p.Code — @p.Name (@p.Uom)</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" name="quantities" class="form-control text-end fw-bold text-success qty" min="1" value="10" required />
+                                    </td>
+                                    <td>
+                                        <input type="number" name="unitPrices" class="form-control text-end unit-price" min="0" step="1000" value="100000" />
+                                    </td>
+                                    <td>
+                                        <input type="number" name="vatRates" class="form-control text-end vat-rate" min="0" max="100" step="0.1" value="10" />
+                                    </td>
+                                    <td>
+                                        <input type="text" name="unitCodes" class="form-control unit-code" placeholder="cái" />
+                                    </td>
+                                    <td>
+                                        <input type="text" name="notes" class="form-control" placeholder="vd: Hàng đạt chuẩn nhập kho" />
+                                    </td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Xóa dòng">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thanh nút bấm hành động -->
+        <div class="col-12 d-flex justify-content-end gap-2 mb-5">
+            <a href="/PurchaseReceipt" class="btn btn-outline-secondary px-4">
+                Hủy bỏ
+            </a>
+            <button type="submit" class="btn btn-primary px-4 fw-semibold">
+                <i class="bi bi-check-circle me-1"></i> Lưu phiếu nhập mua (Chờ duyệt)
+            </button>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const tbody = document.getElementById('linesTbody');
+        const addBtn = document.getElementById('addRowBtn');
+
+        // Bắt sự kiện chọn mặt hàng để tự điền đơn giá & đơn vị tính
+        tbody.addEventListener('change', function (e) {
+            if (e.target.classList.contains('prod-select')) {
+                const opt = e.target.selectedOptions[0];
+                const cost = opt.getAttribute('data-cost') || 0;
+                const uom = opt.getAttribute('data-uom') || '';
+                const row = e.target.closest('tr');
+                const priceInput = row.querySelector('.unit-price');
+                const unitInput = row.querySelector('.unit-code');
+                if (priceInput && (!priceInput.value || priceInput.value === '0')) {
+                    priceInput.value = cost;
+                }
+                if (unitInput && !unitInput.value) {
+                    unitInput.value = uom;
+                }
+            }
+        });
+
+        // Bắt sự kiện xóa dòng
+        tbody.addEventListener('click', function (e) {
+            if (e.target.closest('.remove-row')) {
+                const rows = tbody.querySelectorAll('tr');
+                if (rows.length > 1) {
+                    e.target.closest('tr').remove();
+                } else {
+                    alert('Cần có ít nhất 1 dòng mặt hàng nhập kho.');
+                }
+            }
+        });
+
+        // Thêm dòng mới
+        addBtn.addEventListener('click', function () {
+            const firstRow = tbody.querySelector('tr');
+            const newRow = firstRow.cloneNode(true);
+            newRow.querySelector('.prod-select').selectedIndex = 0;
+            newRow.querySelector('.qty').value = '10';
+            newRow.querySelector('.unit-price').value = '100000';
+            newRow.querySelector('.vat-rate').value = '10';
+            newRow.querySelector('.unit-code').value = '';
+            newRow.querySelector('input[name="notes"]').value = '';
+            tbody.appendChild(newRow);
+        });
+    });
+</script>
+}

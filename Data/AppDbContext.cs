@@ -68,6 +68,8 @@ public class AppDbContext : DbContext
     public DbSet<Province> Provinces => Set<Province>();
     public DbSet<District> Districts => Set<District>();
     public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
+    public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -444,6 +446,28 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ProvinceCode });
             e.HasIndex(x => new { x.OrgId, x.DistrictCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<PurchaseReceipt>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
+            e.Ignore(x => x.TotalQty);
+            e.Ignore(x => x.TotalAmount);
+            e.Ignore(x => x.TotalVATAmount);
+            e.Ignore(x => x.TotalAmountAfterVAT);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.StockDoc).WithMany().HasForeignKey(x => x.StockDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<PurchaseReceiptLine>(e =>
+        {
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Ignore(x => x.Amount);
+            e.Ignore(x => x.VATAmount);
+            e.Ignore(x => x.AmountAfterVAT);
+            e.HasOne(x => x.PurchaseReceipt).WithMany(x => x.Lines).HasForeignKey(x => x.PurchaseReceiptId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

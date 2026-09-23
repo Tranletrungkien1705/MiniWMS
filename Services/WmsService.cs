@@ -367,6 +367,11 @@ public interface IWmsService
     Task<(bool ok, string msg)> MarkSecretUsedAsync(int id);
     Task<(bool ok, string msg)> MarkSecretMappedAsync(int id);
     Task<(bool ok, string msg)> DeleteInventorySecretAsync(int id);
+    Task<PurchaseReceiptReport> PurchaseReceiptsAsync(int? warehouseId, PurchaseReceiptStatus? status, string? invInTypeCode, DateTime? fromDate, DateTime? toDate, string? q);
+    Task<PurchaseReceipt?> GetPurchaseReceiptAsync(int id);
+    Task<int> CreatePurchaseReceiptAsync(PurchaseReceipt doc, List<(int productId, int qty, decimal unitPrice, double vatRate, string? unitCode, string? note)> lines);
+    Task<(bool ok, string msg)> ApprovePurchaseReceiptAsync(int id);
+    Task<(bool ok, string msg)> CancelPurchaseReceiptAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -12173,6 +12178,248 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventorySecrets.Remove(s);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa số in tem '{s.SerialNo}'.");
+    }
+
+    // ── PHIẾU NHẬP KHO MUA HÀNG (Purchase Receipt - port từ InvF_InventoryIn Skycic) ──
+    public async Task<PurchaseReceiptReport> PurchaseReceiptsAsync(int? warehouseId, PurchaseReceiptStatus? status, string? invInTypeCode, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var query = db.PurchaseReceipts
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .AsQueryable();
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            query = query.Where(f => f.WarehouseId == warehouseId.Value);
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        if (status.HasValue) query = query.Where(f => f.Status == status.Value);
+        if (!string.IsNullOrWhiteSpace(invInTypeCode)) query = query.Where(f => f.InvInTypeCode == invInTypeCode);
+
+        if (fromDate.HasValue)
+        {
+            var f = fromDate.Value.Date;
+            query = query.Where(x => x.Date >= f);
+        }
+        if (toDate.HasValue)
+        {
+            var t = toDate.Value.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(x => x.Date <= t);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(f => f.Code.ToLower().Contains(kw) ||
+                                     f.SupplierName.ToLower().Contains(kw) ||
+                                     (f.SupplierCode != null && f.SupplierCode.ToLower().Contains(kw)) ||
+                                     (f.InvoiceNo != null && f.InvoiceNo.ToLower().Contains(kw)) ||
+                                     (f.OrderNo != null && f.OrderNo.ToLower().Contains(kw)) ||
+                                     (f.UserDeliver != null && f.UserDeliver.ToLower().Contains(kw)) ||
+                                     (f.Remark != null && f.Remark.ToLower().Contains(kw)) ||
+                                     f.Lines.Any(l => l.Product.Code.ToLower().Contains(kw) || l.Product.Name.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderByDescending(f => f.Date).ThenByDescending(f => f.Id).ToListAsync();
+
+        int totalReceipts = list.Count;
+        int pendingCount = list.Count(f => f.Status == PurchaseReceiptStatus.Pending);
+        int approvedCount = list.Count(f => f.Status == PurchaseReceiptStatus.Approved);
+        int cancelledCount = list.Count(f => f.Status == PurchaseReceiptStatus.Cancelled);
+        int totalQty = list.Sum(f => f.TotalQty);
+        decimal totalAmount = list.Sum(f => f.TotalAmount);
+        decimal totalVAT = list.Sum(f => f.TotalVATAmount);
+        decimal totalAfterVAT = list.Sum(f => f.TotalAmountAfterVAT);
+
+        var rows = list.Select(f =>
+        {
+            var (statusLabel, badgeClass) = f.Status switch
+            {
+                PurchaseReceiptStatus.Pending => ("Chờ duyệt", "bg-warning text-dark"),
+                PurchaseReceiptStatus.Approved => ("Đã nhập kho", "bg-success"),
+                PurchaseReceiptStatus.Cancelled => ("Đã hủy", "bg-secondary"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            return new PurchaseReceiptRow(
+                f.Id,
+                f.Code,
+                f.WarehouseId,
+                f.Warehouse.Name,
+                f.InvInTypeCode,
+                f.InvInTypeName,
+                f.SupplierName,
+                f.SupplierCode,
+                f.InvoiceNo,
+                f.InvoiceDate,
+                f.OrderNo,
+                f.UserDeliver,
+                f.Date,
+                f.Status,
+                statusLabel,
+                badgeClass,
+                f.TotalQty,
+                f.TotalAmount,
+                f.TotalVATAmount,
+                f.TotalAmountAfterVAT,
+                f.Lines.Count,
+                f.StockDocId,
+                f.StockDoc?.Code,
+                f.Remark,
+                f.CreatedBy,
+                f.CreatedAt,
+                f.ApprovedAt,
+                f.ApprovedBy
+            );
+        }).ToList();
+
+        return new PurchaseReceiptReport(
+            warehouseId,
+            whName,
+            status,
+            invInTypeCode,
+            fromDate,
+            toDate,
+            q,
+            totalReceipts,
+            pendingCount,
+            approvedCount,
+            cancelledCount,
+            totalQty,
+            totalAmount,
+            totalVAT,
+            totalAfterVAT,
+            rows
+        );
+    }
+
+    public Task<PurchaseReceipt?> GetPurchaseReceiptAsync(int id) =>
+        db.PurchaseReceipts
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+    public async Task<int> CreatePurchaseReceiptAsync(
+        PurchaseReceipt doc,
+        List<(int productId, int qty, decimal unitPrice, double vatRate, string? unitCode, string? note)> lines)
+    {
+        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lòng chọn kho nhập hàng.");
+        if (string.IsNullOrWhiteSpace(doc.SupplierName)) throw new InvalidOperationException("Vui lòng nhập tên nhà cung cấp / đối tác giao hàng.");
+        if (lines.Count == 0 || !lines.Any(l => l.productId > 0 && l.qty > 0))
+            throw new InvalidOperationException("Cần ít nhất 1 dòng mặt hàng có số lượng nhập > 0.");
+
+        if (string.IsNullOrWhiteSpace(doc.Code))
+        {
+            doc.Code = $"PN{DateTime.Now:yyMMdd}-{await db.PurchaseReceipts.CountAsync() + 1:D3}";
+        }
+
+        doc.Status = PurchaseReceiptStatus.Pending;
+        doc.CreatedAt = DateTime.Now;
+
+        foreach (var l in lines.Where(x => x.productId > 0 && x.qty > 0))
+        {
+            var unitPrice = l.unitPrice;
+            if (unitPrice <= 0)
+            {
+                var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == l.productId);
+                if (prod != null && prod.CostPrice > 0) unitPrice = prod.CostPrice;
+            }
+
+            doc.Lines.Add(new PurchaseReceiptLine
+            {
+                ProductId = l.productId,
+                Quantity = l.qty,
+                UnitPrice = unitPrice,
+                VATRate = l.vatRate >= 0 ? l.vatRate : 0,
+                UnitCode = l.unitCode?.Trim(),
+                Note = l.note?.Trim()
+            });
+        }
+
+        db.PurchaseReceipts.Add(doc);
+        await db.SaveChangesAsync();
+        return doc.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ApprovePurchaseReceiptAsync(int id)
+    {
+        var doc = await db.PurchaseReceipts
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho mua hàng.");
+        if (doc.Status != PurchaseReceiptStatus.Pending) return (false, "Phiếu không ở trạng thái Chờ duyệt.");
+        if (doc.Lines.Count == 0 || !doc.Lines.Any(l => l.Quantity > 0))
+            return (false, "Phiếu không có mặt hàng nào hợp lệ.");
+
+        // Tạo StockDoc (Phiếu nhập kho) để tăng tồn kho và ghi sổ
+        var stockDoc = new StockDoc
+        {
+            Type = DocType.In,
+            ToWarehouseId = doc.WarehouseId,
+            SupplierCode = doc.SupplierCode,
+            SupplierName = doc.SupplierName,
+            Date = doc.Date,
+            RefNo = doc.Code,
+            Note = $"Nhập kho mua hàng theo phiếu {doc.Code} - NCC: {doc.SupplierName}" + (string.IsNullOrWhiteSpace(doc.InvoiceNo) ? "" : $" - HĐ: {doc.InvoiceNo}"),
+            CreatedBy = doc.CreatedBy ?? "system",
+            Status = DocStatus.Draft,
+            CreatedAt = DateTime.Now
+        };
+
+        foreach (var line in doc.Lines.Where(l => l.Quantity > 0))
+        {
+            stockDoc.Lines.Add(new StockDocLine
+            {
+                ProductId = line.ProductId,
+                Quantity = line.Quantity
+            });
+        }
+
+        db.Docs.Add(stockDoc);
+        await db.SaveChangesAsync();
+
+        // Ghi sổ phiếu kho
+        var (postOk, postMsg) = await PostDocAsync(stockDoc.Id);
+        if (!postOk)
+        {
+            return (false, $"Lỗi ghi sổ phiếu nhập kho: {postMsg}");
+        }
+
+        doc.StockDocId = stockDoc.Id;
+        doc.Status = PurchaseReceiptStatus.Approved;
+        doc.ApprovedAt = DateTime.Now;
+        doc.ApprovedBy = "admin";
+
+        // Cập nhật giá vốn hiện hành của mặt hàng theo đơn giá nhập (nếu có)
+        foreach (var line in doc.Lines.Where(l => l.Quantity > 0 && l.UnitPrice > 0))
+        {
+            var prod = await db.Products.FirstOrDefaultAsync(p => p.Id == line.ProductId);
+            if (prod != null) prod.CostPrice = line.UnitPrice;
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã phê duyệt và nhập kho thành công phiếu {doc.Code}. Tổng {doc.TotalQty} mặt hàng đã vào kho {doc.Warehouse.Name}.");
+    }
+
+    public async Task<(bool ok, string msg)> CancelPurchaseReceiptAsync(int id)
+    {
+        var doc = await db.PurchaseReceipts.FirstOrDefaultAsync(f => f.Id == id);
+        if (doc == null) return (false, "Không tìm thấy phiếu nhập kho mua hàng.");
+        if (doc.Status == PurchaseReceiptStatus.Approved)
+            return (false, "Phiếu nhập kho mua hàng đã được phê duyệt ghi sổ kho, không thể hủy bỏ.");
+        if (doc.Status == PurchaseReceiptStatus.Cancelled)
+            return (false, "Phiếu này đã được hủy trước đó.");
+
+        doc.Status = PurchaseReceiptStatus.Cancelled;
+        await db.SaveChangesAsync();
+        return (true, $"Đã hủy phiếu nhập kho mua hàng {doc.Code}.");
     }
 
 }

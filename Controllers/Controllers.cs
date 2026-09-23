@@ -1814,6 +1814,158 @@ public class InventoryInFGController(IWmsService svc) : Controller
     }
 }
 
+// Phiếu nhập kho mua hàng (nghiệp vụ InvF_InventoryIn của Skycic)
+public class PurchaseReceiptController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, PurchaseReceiptStatus? status, string? invInTypeCode, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Status = status;
+        ViewBag.InvInTypeCode = invInTypeCode;
+        ViewBag.FromDate = fromDate?.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate?.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+        ViewBag.InvInTypes = await svc.InventoryInTypesAsync(null, true, null);
+
+        var report = await svc.PurchaseReceiptsAsync(warehouseId, status, invInTypeCode, fromDate, toDate, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> Create()
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.InvInTypes = await svc.InventoryInTypesAsync(null, true, null);
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, string? invInTypeCode, string supplierName, string? supplierCode,
+        string? invoiceNo, DateTime? invoiceDate, string? orderNo, string? userDeliver, string? vehicleNo, string? containerNo,
+        string? contractNo, DateTime? date, string? remark, int[]? productIds, int[]? quantities, decimal[]? unitPrices,
+        double[]? vatRates, string[]? unitCodes, string[]? notes)
+    {
+        if (warehouseId <= 0)
+        {
+            TempData["Error"] = "Vui lòng chọn kho nhập hàng.";
+            return RedirectToAction(nameof(Create));
+        }
+        if (string.IsNullOrWhiteSpace(supplierName))
+        {
+            TempData["Error"] = "Vui lòng nhập tên nhà cung cấp / đối tác giao hàng.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        var lines = new List<(int productId, int qty, decimal unitPrice, double vatRate, string? unitCode, string? note)>();
+        if (productIds != null)
+        {
+            for (int i = 0; i < productIds.Length; i++)
+            {
+                var pid = productIds[i];
+                var qty = (quantities != null && i < quantities.Length) ? quantities[i] : 0;
+                var price = (unitPrices != null && i < unitPrices.Length) ? unitPrices[i] : 0m;
+                var vat = (vatRates != null && i < vatRates.Length) ? vatRates[i] : 0d;
+                var unit = (unitCodes != null && i < unitCodes.Length) ? unitCodes[i] : null;
+                var note = (notes != null && i < notes.Length) ? notes[i] : null;
+                if (pid > 0 && qty > 0)
+                {
+                    lines.Add((pid, qty, price, vat, unit, note));
+                }
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            TempData["Error"] = "Cần ít nhất 1 dòng mặt hàng có số lượng nhập > 0.";
+            return RedirectToAction(nameof(Create));
+        }
+
+        try
+        {
+            var invInType = string.IsNullOrWhiteSpace(invInTypeCode) ? null : await svc.GetInventoryInTypeByCodeAsync(invInTypeCode);
+            var doc = new PurchaseReceipt
+            {
+                WarehouseId = warehouseId,
+                InvInTypeCode = invInTypeCode?.Trim(),
+                InvInTypeName = invInType?.Name,
+                SupplierName = supplierName.Trim(),
+                SupplierCode = supplierCode?.Trim(),
+                InvoiceNo = invoiceNo?.Trim(),
+                InvoiceDate = invoiceDate,
+                OrderNo = orderNo?.Trim(),
+                UserDeliver = userDeliver?.Trim(),
+                VehicleNo = vehicleNo?.Trim(),
+                ContainerNo = containerNo?.Trim(),
+                ContractNo = contractNo?.Trim(),
+                Date = date ?? DateTime.Today,
+                Remark = remark?.Trim(),
+                CreatedBy = "admin"
+            };
+
+            var id = await svc.CreatePurchaseReceiptAsync(doc, lines);
+            TempData["Success"] = $"Đã lập phiếu nhập kho mua hàng {doc.Code} (Chờ duyệt). Bấm 'Phê duyệt & Nhập kho' để ghi sổ tồn kho.";
+            return RedirectToAction(nameof(Detail), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+            return RedirectToAction(nameof(Create));
+        }
+    }
+
+    public async Task<IActionResult> Detail(int id)
+    {
+        var doc = await svc.GetPurchaseReceiptAsync(id);
+        if (doc == null) return NotFound();
+        return View(doc);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var (ok, msg) = await svc.ApprovePurchaseReceiptAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Cancel(int id)
+    {
+        var (ok, msg) = await svc.CancelPurchaseReceiptAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Detail), new { id });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, PurchaseReceiptStatus? status, string? invInTypeCode, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.PurchaseReceiptsAsync(warehouseId, status, invInTypeCode, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF');
+        sb.AppendLine("BẢNG KÊ PHIẾU NHẬP KHO MUA HÀNG");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Từ ngày:;{(report.FromDate.HasValue ? report.FromDate.Value.ToString("dd/MM/yyyy") : "Tất cả")};Đến ngày:;{(report.ToDate.HasValue ? report.ToDate.Value.ToString("dd/MM/yyyy") : "Tất cả")}");
+        sb.AppendLine($"Trạng thái lọc:;{(status.HasValue ? status.Value.ToString() : "Tất cả")};Loại nhập:;{report.InvInTypeCode ?? "Tất cả"}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phiếu;Ngày nhập;Kho nhập;Loại nhập;Nhà cung cấp;Số hóa đơn;Ngày HĐ;Số đơn hàng;Người giao;Tổng SL;Tiền hàng;Tiền VAT;Tổng sau VAT;Trạng thái;Phiếu kho liên kết;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var dateStr = r.Date.ToString("dd/MM/yyyy");
+            var invDateStr = r.InvoiceDate?.ToString("dd/MM/yyyy") ?? "—";
+            sb.AppendLine($"{stt++};\"{r.Code}\";{dateStr};\"{r.WarehouseName}\";\"{r.InvInTypeName ?? "—"}\";\"{r.SupplierName}\";\"{r.InvoiceNo ?? "—"}\";{invDateStr};\"{r.OrderNo ?? "—"}\";\"{r.UserDeliver ?? "—"}\";{r.TotalQty};{r.TotalAmount:F0};{r.TotalVATAmount:F0};{r.TotalAmountAfterVAT:F0};\"{r.StatusLabel}\";\"{r.StockDocCode ?? "—"}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;;;;TỔNG CỘNG:;{report.TotalQty};;{report.TotalAmount:F0};{report.TotalVATAmount:F0};{report.TotalAmountAfterVAT:F0};;Chờ duyệt: {report.PendingCount};Đã nhập kho: {report.ApprovedCount};Đã hủy: {report.CancelledCount}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BangKe_NhapKhoMuaHang_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 public class InventoryOutFGController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)

@@ -1,0 +1,410 @@
+@model PurchaseReceipt
+@{
+    ViewData["Title"] = $"Phiếu nhập kho mua hàng {Model.Code}";
+    var (statusLabel, badgeClass) = Model.Status switch
+    {
+        PurchaseReceiptStatus.Pending => ("Chờ duyệt", "bg-warning text-dark"),
+        PurchaseReceiptStatus.Approved => ("Đã nhập kho", "bg-success"),
+        PurchaseReceiptStatus.Cancelled => ("Đã hủy", "bg-secondary"),
+        _ => ("Khác", "bg-light text-dark")
+    };
+}
+
+<style>
+    @@media print {
+        body * { visibility: hidden; }
+        #prPrintArea, #prPrintArea * { visibility: visible; }
+        #prPrintArea { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; background: #fff; }
+        .no-print { display: none !important; }
+    }
+</style>
+
+<!-- Tiêu đề & Nút thao tác (no-print) -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 no-print">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/PurchaseReceipt" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Quay lại
+        </a>
+        <h4 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-truck text-primary me-2"></i>Phiếu nhập mua: <span class="text-primary font-monospace">@Model.Code</span>
+        </h4>
+        <span class="badge @badgeClass fs-6 px-3 py-2 ms-2">@statusLabel</span>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="button" onclick="window.print()" class="btn btn-outline-dark btn-sm">
+            <i class="bi bi-printer me-1"></i> In phiếu nhập kho A4
+        </button>
+
+        @if (Model.Status == PurchaseReceiptStatus.Pending)
+        {
+            <form method="post" action="/PurchaseReceipt/Approve/@Model.Id" class="d-inline" onsubmit="return confirm('Phê duyệt phiếu nhập mua @Model.Code? Toàn bộ @Model.TotalQty mặt hàng sẽ được ghi sổ tăng tồn kho.');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-success btn-sm fw-semibold">
+                    <i class="bi bi-check-circle me-1"></i> Phê duyệt & Nhập kho
+                </button>
+            </form>
+
+            <form method="post" action="/PurchaseReceipt/Cancel/@Model.Id" class="d-inline" onsubmit="return confirm('Hủy phiếu nhập kho mua hàng @Model.Code?');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-x-circle me-1"></i> Hủy phiếu
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+<!-- Alert trạng thái ghi sổ (no-print) -->
+@if (Model.Status == PurchaseReceiptStatus.Approved)
+{
+    <div class="alert alert-success d-flex align-items-center justify-content-between py-2 mb-3 no-print">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+            <div>
+                Phiếu đã được <b>Phê duyệt & Nhập kho</b> vào lúc <b>@(Model.ApprovedAt?.ToString("dd/MM/yyyy HH:mm"))</b> bởi <b>@Model.ApprovedBy</b>.
+                Số lượng hàng hóa đã được ghi sổ tăng tồn kho thực tế.
+            </div>
+        </div>
+        @if (Model.StockDocId.HasValue)
+        {
+            <a href="/Doc/Detail/@Model.StockDocId.Value" class="btn btn-sm btn-outline-success bg-white">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Xem Phiếu kho liên kết
+            </a>
+        }
+    </div>
+}
+else if (Model.Status == PurchaseReceiptStatus.Pending)
+{
+    <div class="alert alert-warning py-2 mb-3 no-print">
+        <i class="bi bi-hourglass-split me-1"></i>
+        Phiếu đang ở trạng thái <b>Chờ duyệt</b>. Bấm <b>"Phê duyệt & Nhập kho"</b> ở góc phải để chính thức tăng tồn kho hàng hóa.
+    </div>
+}
+
+<div class="row g-3 no-print">
+    <!-- KPI nhanh -->
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-info">
+            <div class="card-body p-3">
+                <div class="text-muted small">Tổng số lượng nhập</div>
+                <div class="stat-num text-info">@Model.TotalQty.ToString("N0")</div>
+                <div class="text-muted" style="font-size: 11px;">@Model.Lines.Count mặt hàng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-primary">
+            <div class="card-body p-3">
+                <div class="text-muted small">Tiền hàng (trước VAT)</div>
+                <div class="stat-num text-primary" style="font-size: 20px;">@Model.TotalAmount.ToString("N0") đ</div>
+                <div class="text-muted" style="font-size: 11px;">Tổng giá trị hàng hóa</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-danger">
+            <div class="card-body p-3">
+                <div class="text-muted small">Tiền thuế VAT</div>
+                <div class="stat-num text-danger" style="font-size: 20px;">@Model.TotalVATAmount.ToString("N0") đ</div>
+                <div class="text-muted" style="font-size: 11px;">Thuế GTGT đầu vào</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-4 border-success">
+            <div class="card-body p-3">
+                <div class="text-muted small">Tổng sau VAT</div>
+                <div class="stat-num text-success" style="font-size: 20px;">@Model.TotalAmountAfterVAT.ToString("N0") đ</div>
+                <div class="text-muted" style="font-size: 11px;">Giá trị nhập kho</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thông tin phiếu chi tiết -->
+    <div class="col-lg-12">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-dark">
+                    <i class="bi bi-card-heading me-1 text-primary"></i> Thông tin phiếu nhập kho mua hàng (InvF_InventoryIn)
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Mã chứng từ:</div>
+                        <div class="fw-bold font-monospace text-primary fs-6">@Model.Code</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Kho nhập hàng:</div>
+                        <div class="fw-bold text-dark">@Model.Warehouse.Name (@Model.Warehouse.Code)</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Loại hình nhập kho:</div>
+                        <div>
+                            @if (!string.IsNullOrWhiteSpace(Model.InvInTypeName))
+                            {
+                                <span class="badge bg-info-subtle text-info-emphasis border-info-subtle">@Model.InvInTypeName</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="text-muted small">Nhà cung cấp / Đối tác giao hàng:</div>
+                        <div class="fw-semibold text-dark">@Model.SupplierName @(string.IsNullOrWhiteSpace(Model.SupplierCode) ? "" : $"({Model.SupplierCode})")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Người giao hàng:</div>
+                        <div class="fw-semibold text-dark">@(Model.UserDeliver ?? "—")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Ngày nhập kho:</div>
+                        <div class="fw-semibold text-dark">@Model.Date.ToString("dd/MM/yyyy")</div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="text-muted small">Số hóa đơn mua:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.InvoiceNo ?? "—")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Ngày hóa đơn:</div>
+                        <div class="fw-semibold text-dark">@(Model.InvoiceDate?.ToString("dd/MM/yyyy") ?? "—")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Số đơn hàng / Hợp đồng:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.OrderNo ?? "—")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Số hợp đồng mua:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.ContractNo ?? "—")</div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="text-muted small">Biển số xe vận chuyển:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.VehicleNo ?? "—")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Số Container:</div>
+                        <div class="fw-semibold text-dark font-monospace">@(Model.ContainerNo ?? "—")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Người lập phiếu:</div>
+                        <div class="fw-semibold text-dark">@Model.CreatedBy (lúc @Model.CreatedAt.ToString("dd/MM/yyyy HH:mm"))</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Phiếu kho liên kết:</div>
+                        <div class="fw-semibold">
+                            @if (Model.StockDoc != null)
+                            {
+                                <a href="/Doc/Detail/@Model.StockDocId" class="text-success text-decoration-none font-monospace">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>@Model.StockDoc.Code (Đã ghi sổ)
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Chưa ghi sổ</span>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.Remark))
+                    {
+                        <div class="col-12">
+                            <div class="text-muted small">Ghi chú / Diễn giải:</div>
+                            <div class="p-2 bg-light rounded text-dark">@Model.Remark</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bảng danh sách mặt hàng nhập -->
+    <div class="col-lg-12">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold text-dark">
+                    <i class="bi bi-box-seam text-primary me-1"></i> Chi tiết mặt hàng nhập kho
+                </h6>
+                <span class="badge bg-secondary-subtle text-secondary">@Model.Lines.Count mặt hàng</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 50px;">STT</th>
+                                <th>Mã SP</th>
+                                <th>Tên hàng hóa</th>
+                                <th>ĐVT</th>
+                                <th class="text-end">Số lượng</th>
+                                <th class="text-end">Đơn giá nhập</th>
+                                <th class="text-end">Thành tiền</th>
+                                <th class="text-end">VAT (%)</th>
+                                <th class="text-end">Tiền VAT</th>
+                                <th class="text-end">Sau VAT</th>
+                                <th class="pe-3">Ghi chú</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int lineIdx = 1; }
+                            @foreach (var l in Model.Lines)
+                            {
+                                <tr>
+                                    <td class="ps-3 text-muted small">@(lineIdx++)</td>
+                                    <td class="fw-bold font-monospace text-primary">@l.Product.Code</td>
+                                    <td class="fw-semibold">
+                                        @l.Product.Name
+                                        <div class="text-muted small" style="font-size: 11px;">
+                                            <a href="/WarehouseCard?productId=@l.ProductId" class="text-decoration-none">
+                                                <i class="bi bi-journal-text me-1"></i>Xem thẻ kho
+                                            </a>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge bg-light text-dark border">@(string.IsNullOrWhiteSpace(l.UnitCode) ? l.Product.Uom : l.UnitCode)</span></td>
+                                    <td class="text-end text-success fw-bold fs-6">@l.Quantity.ToString("N0")</td>
+                                    <td class="text-end font-monospace">@l.UnitPrice.ToString("N0") đ</td>
+                                    <td class="text-end font-monospace fw-bold text-dark">@l.Amount.ToString("N0") đ</td>
+                                    <td class="text-end">@l.VATRate.ToString("0.#")%</td>
+                                    <td class="text-end font-monospace text-danger">@l.VATAmount.ToString("N0") đ</td>
+                                    <td class="text-end font-monospace fw-bold text-primary">@l.AmountAfterVAT.ToString("N0") đ</td>
+                                    <td class="small text-secondary pe-3">@(l.Note ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="4" class="ps-3 text-end">TỔNG CỘNG:</td>
+                                <td class="text-end text-success fs-6">@Model.TotalQty.ToString("N0")</td>
+                                <td></td>
+                                <td class="text-end text-dark">@Model.TotalAmount.ToString("N0") đ</td>
+                                <td></td>
+                                <td class="text-end text-danger">@Model.TotalVATAmount.ToString("N0") đ</td>
+                                <td class="text-end text-primary fs-6">@Model.TotalAmountAfterVAT.ToString("N0") đ</td>
+                                <td class="pe-3"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- KHU VỰC IN PHIẾU NHẬP KHO MUA HÀNG CHUẨN A4 (Hiển thị khi window.print) -->
+<!-- ========================================================================= -->
+<div id="prPrintArea" class="d-none d-print-block">
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+        <div>
+            <h5 class="fw-bold mb-1">CÔNG TY QUẢN TRỊ KHO & HẬU CẦN WMS</h5>
+            <div class="small text-muted">Địa chỉ: KCN Bắc Thăng Long, Hà Nội | Hotline: 1900-8888</div>
+            <div class="small text-muted">Phòng Quản lý Mua hàng & Kho hàng hóa</div>
+        </div>
+        <div class="text-end">
+            <div class="fw-bold fs-5 font-monospace text-dark">@Model.Code</div>
+            <div class="small text-muted">Mẫu số: 01-VT</div>
+            <div class="small text-muted">(Ban hành theo TT 200/2014/TT-BTC)</div>
+        </div>
+    </div>
+
+    <div class="text-center my-4">
+        <h3 class="fw-bold text-uppercase mb-1">PHIẾU NHẬP KHO</h3>
+        <div class="text-muted">Ngày nhập: ngày @Model.Date.Day tháng @Model.Date.Month năm @Model.Date.Year</div>
+        <div class="text-muted small">Số phiếu: <b>@Model.Code</b> | Hóa đơn: <b>@(Model.InvoiceNo ?? "—")</b></div>
+    </div>
+
+    <div class="row g-2 mb-4" style="font-size: 13px;">
+        <div class="col-6">
+            <div>- Họ tên người giao hàng: <b>@(Model.UserDeliver ?? ".........................")</b></div>
+            <div>- Theo hóa đơn số: <b>@(Model.InvoiceNo ?? "—")</b> ngày <b>@(Model.InvoiceDate?.ToString("dd/MM/yyyy") ?? "—")</b></div>
+            <div>- Nhà cung cấp: <b>@Model.SupplierName</b></div>
+        </div>
+        <div class="col-6">
+            <div>- Nhập tại kho: <b>@Model.Warehouse.Name</b> (Mã kho: @Model.Warehouse.Code)</div>
+            <div>- Địa điểm kho: <b>@(Model.Warehouse.Address ?? "Kho trung tâm")</b></div>
+            <div>- Lý do nhập kho: <b>@(Model.Remark ?? "Nhập kho mua hàng theo hóa đơn")</b></div>
+        </div>
+    </div>
+
+    <table class="table table-bordered border-dark align-middle mb-4" style="font-size: 13px;">
+        <thead>
+            <tr class="text-center bg-light">
+                <th style="width: 40px;">STT</th>
+                <th>Tên nhãn hiệu, quy cách hàng hóa</th>
+                <th>Mã số</th>
+                <th>ĐVT</th>
+                <th>Số lượng</th>
+                <th>Đơn giá (VNĐ)</th>
+                <th>Thành tiền (VNĐ)</th>
+                <th>VAT (%)</th>
+                <th>Tiền VAT (VNĐ)</th>
+            </tr>
+            <tr class="text-center text-muted" style="font-size: 11px;">
+                <th>A</th><th>B</th><th>C</th><th>D</th><th>1</th><th>2</th><th>3 = 1 x 2</th><th>4</th><th>5</th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ int printIdx = 1; }
+            @foreach (var l in Model.Lines)
+            {
+                <tr>
+                    <td class="text-center">@(printIdx++)</td>
+                    <td class="fw-bold">@l.Product.Name</td>
+                    <td class="text-center font-monospace">@l.Product.Code</td>
+                    <td class="text-center">@(string.IsNullOrWhiteSpace(l.UnitCode) ? l.Product.Uom : l.UnitCode)</td>
+                    <td class="text-end fw-bold">@l.Quantity.ToString("N0")</td>
+                    <td class="text-end font-monospace">@l.UnitPrice.ToString("N0")</td>
+                    <td class="text-end font-monospace fw-bold">@l.Amount.ToString("N0")</td>
+                    <td class="text-end">@l.VATRate.ToString("0.#")</td>
+                    <td class="text-end font-monospace">@l.VATAmount.ToString("N0")</td>
+                </tr>
+            }
+            <tr class="fw-bold">
+                <td colspan="4" class="text-end">Cộng:</td>
+                <td class="text-end">@Model.TotalQty.ToString("N0")</td>
+                <td></td>
+                <td class="text-end">@Model.TotalAmount.ToString("N0")</td>
+                <td></td>
+                <td class="text-end">@Model.TotalVATAmount.ToString("N0")</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="mb-4" style="font-size: 13px;">
+        <div>- Tổng số tiền (viết bằng chữ): <b>@Model.TotalAmountAfterVAT.ToString("N0") đồng chẵn.</b></div>
+        <div>- Số chứng từ gốc kèm theo: <b>01 Hóa đơn GTGT (@(Model.InvoiceNo ?? "—")), 01 Đơn hàng / Hợp đồng mua</b></div>
+    </div>
+
+    <!-- 4 Khối chữ ký xác nhận chuẩn Skycic / Kế toán kho -->
+    <div class="row text-center mt-5" style="font-size: 13px;">
+        <div class="col-3">
+            <div class="fw-bold">Người lập phiếu</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@Model.CreatedBy</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Người giao hàng</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@(Model.UserDeliver ?? ".........................")</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Thủ kho nhận hàng</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">@(Model.ApprovedBy ?? ".........................")</div>
+        </div>
+        <div class="col-3">
+            <div class="fw-bold">Kế toán trưởng</div>
+            <div class="text-muted small fst-italic">(Ký, họ tên)</div>
+            <div style="height: 70px;"></div>
+            <div class="fw-semibold">.........................</div>
+        </div>
+    </div>
+</div>

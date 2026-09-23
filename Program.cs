@@ -3907,6 +3907,114 @@ app.MapPost("/api/inventory-transactions", async (CreateInventoryTransactionDto 
     }
 });
 
+// API Phiếu nhập kho mua hàng (Purchase Receipt - port từ InvF_InventoryIn Skycic)
+app.MapGet("/api/purchase-receipts", async (int? warehouseId, PurchaseReceiptStatus? status, string? invInTypeCode, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.PurchaseReceiptsAsync(warehouseId, status, invInTypeCode, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/purchase-receipts/{id:int}", async (int id, IWmsService svc) =>
+{
+    var doc = await svc.GetPurchaseReceiptAsync(id);
+    if (doc == null) return Results.NotFound(new { error = "Không tìm thấy phiếu nhập kho mua hàng." });
+    return Results.Ok(new
+    {
+        doc.Id,
+        doc.Code,
+        Warehouse = doc.Warehouse.Name,
+        doc.WarehouseId,
+        doc.InvInTypeCode,
+        doc.InvInTypeName,
+        doc.SupplierName,
+        doc.SupplierCode,
+        doc.InvoiceNo,
+        InvoiceDate = doc.InvoiceDate?.ToString("yyyy-MM-dd"),
+        doc.OrderNo,
+        doc.UserDeliver,
+        doc.VehicleNo,
+        doc.ContainerNo,
+        doc.ContractNo,
+        Date = doc.Date.ToString("yyyy-MM-dd"),
+        Status = doc.Status.ToString(),
+        doc.TotalQty,
+        doc.TotalAmount,
+        doc.TotalVATAmount,
+        doc.TotalAmountAfterVAT,
+        doc.StockDocId,
+        StockDocCode = doc.StockDoc?.Code,
+        doc.Remark,
+        doc.CreatedBy,
+        doc.CreatedAt,
+        ApprovedAt = doc.ApprovedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        doc.ApprovedBy,
+        Lines = doc.Lines.Select(l => new
+        {
+            l.Id,
+            ProductCode = l.Product.Code,
+            ProductName = l.Product.Name,
+            l.Product.Uom,
+            l.ProductId,
+            l.Quantity,
+            l.UnitPrice,
+            l.VATRate,
+            l.Amount,
+            l.VATAmount,
+            l.AmountAfterVAT,
+            l.UnitCode,
+            l.Note
+        })
+    });
+});
+
+app.MapPost("/api/purchase-receipts", async (CreatePurchaseReceiptDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.SupplierName)) return Results.BadRequest(new { error = "Cần SupplierName." });
+    if (dto.Lines == null || dto.Lines.Count == 0) return Results.BadRequest(new { error = "Cần ít nhất 1 dòng mặt hàng nhập." });
+
+    try
+    {
+        var doc = new PurchaseReceipt
+        {
+            WarehouseId = dto.WarehouseId,
+            InvInTypeCode = dto.InvInTypeCode?.Trim(),
+            InvInTypeName = dto.InvInTypeName?.Trim(),
+            SupplierName = dto.SupplierName.Trim(),
+            SupplierCode = dto.SupplierCode?.Trim(),
+            InvoiceNo = dto.InvoiceNo?.Trim(),
+            InvoiceDate = dto.InvoiceDate,
+            OrderNo = dto.OrderNo?.Trim(),
+            UserDeliver = dto.UserDeliver?.Trim(),
+            VehicleNo = dto.VehicleNo?.Trim(),
+            ContainerNo = dto.ContainerNo?.Trim(),
+            ContractNo = dto.ContractNo?.Trim(),
+            Date = dto.Date ?? DateTime.Today,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+        var lines = dto.Lines.Select(l => (l.ProductId, l.Quantity, l.UnitPrice, l.VATRate, l.UnitCode, l.Note)).ToList();
+        var id = await svc.CreatePurchaseReceiptAsync(doc, lines);
+        return Results.Ok(new { id, code = doc.Code, status = doc.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/purchase-receipts/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApprovePurchaseReceiptAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/purchase-receipts/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.CancelPurchaseReceiptAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -4006,4 +4114,6 @@ record CreateVATRateDto(string VATRateCode, decimal Rate, string VATDesc, string
 record UpdateVATRateDto(decimal Rate, string VATDesc, string? Remark, bool? IsActive);
 record CalcVatDto(decimal NetAmount, string? VATRateCode);
 record CreateInventoryTransactionDto(int WarehouseId, int ProductId, InventoryTxnType TxnType, InventoryTxnQuality Quality, string? FunctionName, int QtyChTotalOK, int QtyChBlockOK, int QtyChTotalNG, int QtyChBlockNG, string? RefType, string? RefCode00, string? RefCode01, string? Remark);
+record CreatePurchaseReceiptDto(int WarehouseId, string? InvInTypeCode, string? InvInTypeName, string SupplierName, string? SupplierCode, string? InvoiceNo, DateTime? InvoiceDate, string? OrderNo, string? UserDeliver, string? VehicleNo, string? ContainerNo, string? ContractNo, DateTime? Date, string? Remark, List<PurchaseReceiptItemDto> Lines);
+record PurchaseReceiptItemDto(int ProductId, int Quantity, decimal UnitPrice, double VATRate, string? UnitCode, string? Note);
 

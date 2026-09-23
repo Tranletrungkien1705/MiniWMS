@@ -3582,3 +3582,124 @@ public record AgentDetailDto(
     int TotalShippedQty,
     List<StockDoc> RecentDispatches
 );
+
+/// <summary>Trạng thái phiếu nhập kho mua hàng (port từ InvF_InventoryIn - IF_InvInStatus Skycic).</summary>
+public enum PurchaseReceiptStatus
+{
+    Pending = 0,   // Mới lập / Chờ duyệt (IF_InvInStatus = 'PENDING')
+    Approved = 1,  // Đã duyệt & Nhập kho (tự động tăng tồn kho, ghi thẻ kho)
+    Cancelled = 2  // Đã hủy phiếu
+}
+
+/// <summary>
+/// Phiếu nhập kho mua hàng / nhập hàng từ nhà cung cấp (Purchase Receipt - port từ InvF_InventoryIn Skycic).
+/// Quản lý tiếp nhận hàng mua theo hóa đơn NCC, đơn giá nhập, thuế VAT, người giao hàng và quy trình phê duyệt nhập kho.
+/// </summary>
+public class PurchaseReceipt : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";                                 // Mã phiếu nhập (IF_InvInNo, vd: PN2603-001)
+    public int WarehouseId { get; set; }                                   // Kho nhập hàng (InvCodeIn)
+    public string? InvInTypeCode { get; set; }                             // Loại hình nhập kho (InvInType, port từ Mst_InvInType: IN_BUY, IN_PROD, IN_RETURN...)
+    public string? InvInTypeName { get; set; }                             // Tên loại hình nhập kho
+    public string SupplierName { get; set; } = "";                         // Tên nhà cung cấp / đối tác giao hàng
+    public string? SupplierCode { get; set; }                              // Mã nhà cung cấp
+    public string? InvoiceNo { get; set; }                                 // Số hóa đơn mua hàng (InvoiceNo)
+    public DateTime? InvoiceDate { get; set; }                             // Ngày hóa đơn (InvoiceDate)
+    public string? OrderNo { get; set; }                                   // Số đơn hàng / hợp đồng mua (OrderNo)
+    public string? UserDeliver { get; set; }                               // Người giao hàng (UserDeliver)
+    public string? VehicleNo { get; set; }                                 // Biển số xe vận chuyển (InvFCFInCode03)
+    public string? ContainerNo { get; set; }                               // Số container (InvFCFInCode02)
+    public string? ContractNo { get; set; }                                // Số hợp đồng mua hàng (InvFCFInCode01)
+    public DateTime Date { get; set; } = DateTime.Now;                     // Ngày nhập kho
+    public string CreatedBy { get; set; } = "";                            // Người lập phiếu
+    public PurchaseReceiptStatus Status { get; set; } = PurchaseReceiptStatus.Pending; // Trạng thái phiếu
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }                              // Thời điểm phê duyệt
+    public string? ApprovedBy { get; set; }                                // Người phê duyệt
+    public string? Remark { get; set; }                                    // Diễn giải / Ghi chú
+    public int? StockDocId { get; set; }                                   // Phiếu kho tự động sinh khi duyệt (StockDoc.Type = In)
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<PurchaseReceiptLine> Lines { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Quantity);
+    public decimal TotalAmount => Lines.Sum(l => l.Amount);                // Tổng tiền hàng trước VAT (TotalValIn)
+    public decimal TotalVATAmount => Lines.Sum(l => l.VATAmount);          // Tổng tiền thuế VAT (TotalValVAT)
+    public decimal TotalAmountAfterVAT => TotalAmount + TotalVATAmount;    // Tổng tiền sau VAT (TotalValInAfterDesc)
+}
+
+/// <summary>Dòng chi tiết mặt hàng nhập kho mua hàng (port từ InvF_InventoryInDtl Skycic).</summary>
+public class PurchaseReceiptLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int PurchaseReceiptId { get; set; }
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }                                      // Số lượng nhập (Qty)
+    public decimal UnitPrice { get; set; }                                 // Đơn giá nhập trước VAT (UPIn)
+    public double VATRate { get; set; } = 0;                               // Thuế suất VAT % (VAT)
+    public string? UnitCode { get; set; }                                  // Đơn vị tính (UnitCode)
+    public string? Note { get; set; }                                      // Ghi chú chi tiết
+
+    public PurchaseReceipt PurchaseReceipt { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    public decimal Amount => Quantity * UnitPrice;                         // Thành tiền trước VAT (ValInvIn)
+    public decimal VATAmount => Math.Round(Amount * (decimal)VATRate / 100m, 2); // Tiền thuế VAT (ValVAT)
+    public decimal AmountAfterVAT => Amount + VATAmount;                   // Thành tiền sau VAT (ValInAfterDesc)
+}
+
+/// <summary>Dòng hiển thị phiếu nhập kho mua hàng kèm nhãn trạng thái (port từ InvF_InventoryIn Skycic).</summary>
+public record PurchaseReceiptRow(
+    int Id,
+    string Code,
+    int WarehouseId,
+    string WarehouseName,
+    string? InvInTypeCode,
+    string? InvInTypeName,
+    string SupplierName,
+    string? SupplierCode,
+    string? InvoiceNo,
+    DateTime? InvoiceDate,
+    string? OrderNo,
+    string? UserDeliver,
+    DateTime Date,
+    PurchaseReceiptStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    int TotalQty,
+    decimal TotalAmount,
+    decimal TotalVATAmount,
+    decimal TotalAmountAfterVAT,
+    int TotalLines,
+    int? StockDocId,
+    string? StockDocCode,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    string? ApprovedBy
+);
+
+/// <summary>Báo cáo / Danh sách phiếu nhập kho mua hàng tổng hợp kèm 4 thẻ KPI (port từ InvF_InventoryIn Skycic).</summary>
+public record PurchaseReceiptReport(
+    int? WarehouseId,
+    string WarehouseName,
+    PurchaseReceiptStatus? StatusFilter,
+    string? InvInTypeCode,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    string? Keyword,
+    int TotalReceipts,
+    int PendingCount,
+    int ApprovedCount,
+    int CancelledCount,
+    int TotalQty,
+    decimal TotalAmount,
+    decimal TotalVATAmount,
+    decimal TotalAmountAfterVAT,
+    List<PurchaseReceiptRow> Rows
+);
