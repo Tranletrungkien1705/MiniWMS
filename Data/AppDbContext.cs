@@ -50,6 +50,7 @@ public class AppDbContext : DbContext
     public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
     public DbSet<Area> Areas => Set<Area>();
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
+    public DbSet<Department> Departments => Set<Department>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -59,6 +60,13 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<Department>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasIndex(x => new { x.OrgId, x.Level });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<ProductGroup>(e =>

@@ -2606,6 +2606,89 @@ app.MapDelete("/api/customer-groups/{id:int}", async (int id, IWmsService svc) =
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== BỘ PHẬN / PHÒNG BAN QUẢN LÝ KHO (Mst_Department Skycic) ====================
+app.MapGet("/api/departments", async (string? q, string? parentCode, int? level, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.DepartmentsReportAsync(q, parentCode, level, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/departments/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetDepartmentAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy bộ phận / phòng ban." });
+});
+
+app.MapGet("/api/departments/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetDepartmentByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy bộ phận / phòng ban." });
+});
+
+app.MapGet("/api/departments/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetDepartmentDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy bộ phận / phòng ban." });
+});
+
+app.MapPost("/api/departments", async (CreateDepartmentDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập tên bộ phận / phòng ban." });
+
+    var item = new Department
+    {
+        Code = dto.Code?.Trim() ?? "",
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        Level = dto.Level ?? 1,
+        MST = string.IsNullOrWhiteSpace(dto.MST) ? null : dto.MST.Trim(),
+        Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateDepartmentAsync(item);
+        return Results.Created($"/api/departments/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/departments/{id:int}", async (int id, UpdateDepartmentDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập tên bộ phận / phòng ban." });
+
+    var item = new Department
+    {
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        Level = dto.Level ?? 1,
+        MST = string.IsNullOrWhiteSpace(dto.MST) ? null : dto.MST.Trim(),
+        Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateDepartmentAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/departments/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleDepartmentStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/departments/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteDepartmentAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2677,3 +2760,5 @@ record CreateAreaDto(string? Code, string Name, string? Description, string? Par
 record UpdateAreaDto(string Name, string? Description, string? ParentCode, bool? IsActive);
 record CreateCustomerGroupDto(string? Code, string Name, string? Description, string? ParentCode, bool? IsActive);
 record UpdateCustomerGroupDto(string Name, string? Description, string? ParentCode, bool? IsActive);
+record CreateDepartmentDto(string? Code, string Name, string? ParentCode, string? BUCode, int? Level, string? MST, string? Description, bool? IsActive);
+record UpdateDepartmentDto(string Name, string? ParentCode, string? BUCode, int? Level, string? MST, string? Description, bool? IsActive);

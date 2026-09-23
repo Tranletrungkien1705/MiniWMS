@@ -4432,6 +4432,180 @@ public class CustomerGroupController(IWmsService svc) : Controller
     }
 }
 
+public class DepartmentController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, string? parentCode, int? level, bool? activeOnly)
+    {
+        var allDepts = await svc.DepartmentsAsync();
+        ViewBag.RootDepartments = allDepts.Where(d => string.IsNullOrWhiteSpace(d.ParentCode) || d.Level == 1).ToList();
+        ViewBag.Keyword = q;
+        ViewBag.ParentCode = parentCode;
+        ViewBag.Level = level;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.DepartmentsReportAsync(q, parentCode, level, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetDepartmentDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy bộ phận / phòng ban." });
+        return Json(new
+        {
+            id = detail.Department.Id,
+            code = detail.Department.Code,
+            name = detail.Department.Name,
+            parentCode = detail.Department.ParentCode,
+            parentName = detail.ParentDepartment?.Name,
+            buCode = detail.Department.BUCode,
+            level = detail.Department.Level,
+            mst = detail.Department.MST,
+            description = detail.Department.Description,
+            isActive = detail.Department.IsActive,
+            createdAt = detail.Department.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            totalSubDepartments = detail.TotalSubDepartments,
+            totalAssignedUsers = detail.TotalAssignedUsers,
+            totalDispatchedQty = detail.TotalDispatchedQty,
+            subDepartments = detail.SubDepartments.Select(s => new
+            {
+                id = s.Id,
+                code = s.Code,
+                name = s.Name,
+                level = s.Level,
+                buCode = s.BUCode,
+                isActive = s.IsActive
+            }),
+            assignedUsers = detail.AssignedUsers.Select(u => new
+            {
+                id = u.Id,
+                userCode = u.UserCode,
+                userName = u.UserName,
+                userRole = u.UserRole,
+                warehouseName = u.Warehouse?.Name,
+                email = u.Email,
+                phone = u.Phone
+            }),
+            recentDispatches = detail.RecentDispatches.Select(d => new
+            {
+                code = d.Code,
+                date = d.Date.ToString("dd/MM/yyyy"),
+                warehouseName = d.FromWarehouse?.Name ?? "—",
+                qty = d.TotalQty,
+                note = d.Note
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? parentCode, string? buCode, int level, string? mst, string? description, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên bộ phận / phòng ban.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new Department
+        {
+            Code = code,
+            Name = name,
+            ParentCode = parentCode,
+            BUCode = buCode,
+            Level = level > 0 ? level : 1,
+            MST = mst,
+            Description = description,
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateDepartmentAsync(item);
+            TempData["Success"] = $"Đã tạo mới bộ phận '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? parentCode, string? buCode, int level, string? mst, string? description, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên bộ phận / phòng ban.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new Department
+        {
+            Name = name,
+            ParentCode = parentCode,
+            BUCode = buCode,
+            Level = level > 0 ? level : 1,
+            MST = mst,
+            Description = description,
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateDepartmentAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleDepartmentStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteDepartmentAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, int? level, bool? activeOnly, string? q)
+    {
+        var report = await svc.DepartmentsReportAsync(q, parentCode, level, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC BỘ PHẬN & PHÒNG BAN QUẢN LÝ KHO (MST_DEPARTMENT)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc bộ phận cấp trên:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc cấp bậc:;{(level.HasValue ? $"Cấp {level.Value}" : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã bộ phận;Tên bộ phận - phòng ban;Cấp bậc;Bộ phận cấp trên;Đơn vị BU;Mã số thuế;Mô tả chức năng nhiệm vụ;Nhân sự phụ trách kho;Tổng cấp phát vật tư;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.LevelName}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.BUCode ?? ""}\";\"{r.MST ?? ""}\";\"{r.Description?.Replace("\"", "\"\"")}\";{r.AssignedUserCount};{r.TotalDispatchedQty};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ BỘ PHẬN:;{report.TotalDepartments};;;;;;;");
+        sb.AppendLine($";;KHỐI / BAN ĐIỀU HÀNH:;{report.RootBlocksCount};;;;;;;");
+        sb.AppendLine($";;PHÒNG BAN & PHÂN XƯỞNG:;{report.SubDepartmentsCount};;;;;;;");
+        sb.AppendLine($";;NHÂN SỰ KHO GẮN BỘ PHẬN:;{report.TotalAssignedUsers};;;;;;;");
+        sb.AppendLine($";;TỔNG VẬT TƯ CẤP PHÁT:;{report.TotalDispatchedQty};;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"BoPhanPhongBan_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 
 
 

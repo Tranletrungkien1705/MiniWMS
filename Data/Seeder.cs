@@ -226,10 +226,41 @@ public static class Seeder
 
             if (maps.Count > 0)
             {
+                foreach (var m in maps)
+                {
+                    m.DepartmentCode = m.UserRole.Contains("Kiểm kê") ? "PB_KCS" : "PB_QLKHO";
+                }
                 db.UserMapInventories.AddRange(maps);
                 await db.SaveChangesAsync();
             }
         }
+        else
+        {
+            var existingMaps = await db.UserMapInventories.ToListAsync();
+            bool mapChanged = false;
+            foreach (var m in existingMaps)
+            {
+                if (string.IsNullOrEmpty(m.DepartmentCode))
+                {
+                    m.DepartmentCode = m.UserRole.Contains("Kiểm kê") ? "PB_KCS" : "PB_QLKHO";
+                    mapChanged = true;
+                }
+            }
+            if (mapChanged) await db.SaveChangesAsync();
+        }
+
+        var existingOutDocs = await db.Docs.Where(d => d.Type == DocType.Out).ToListAsync();
+        bool docChanged = false;
+        foreach (var d in existingOutDocs)
+        {
+            if (string.IsNullOrEmpty(d.DepartmentCode))
+            {
+                d.DepartmentCode = "PX_LAPRAP";
+                d.DepartmentName = "Phân xưởng Lắp ráp & Hoàn thiện";
+                docChanged = true;
+            }
+        }
+        if (docChanged) await db.SaveChangesAsync();
         if (!await db.PartTypes.AnyAsync())
         {
             db.PartTypes.AddRange(
@@ -343,6 +374,27 @@ public static class Seeder
                 new CustomerGroup { Code = "DAILY_CAP2", Name = "Đại lý Cấp 2 — Cửa hàng ủy quyền", Description = "Đại lý cấp 2, điểm bán lẻ liên kết và chuỗi showroom theo tỉnh/thành", ParentCode = "GRP_DAILY", IsActive = true },
                 new CustomerGroup { Code = "B2B_DUAN", Name = "Dự án & Nhà thầu trọng điểm", Description = "Các hợp đồng cung ứng gói thầu lớn, yêu cầu hồ sơ KCS và tiến độ giao hàng", ParentCode = "GRP_B2B", IsActive = true },
                 new CustomerGroup { Code = "B2B_SI", Name = "Khách buôn sỉ quy mô lớn", Description = "Đối tác thương mại nhập hàng khối lượng lớn định kỳ hàng tháng", ParentCode = "GRP_B2B", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
+        if (!await db.Departments.AnyAsync())
+        {
+            db.Departments.AddRange(
+                // Cấp 1: Khối / Ban điều hành (Root Departments)
+                new Department { Code = "KHOI_LOG", Name = "Khối Chuỗi Cung ứng & Logistics", ParentCode = null, BUCode = "BU_SCM", Level = 1, MST = "0101234567-001", Description = "Quản lý hệ thống tổng kho, kho vùng trung chuyển, điều độ logistics và cấp phát vật tư", IsActive = true },
+                new Department { Code = "KHOI_SX", Name = "Khối Quản trị Sản xuất & Chế tạo", ParentCode = null, BUCode = "BU_MFG", Level = 1, MST = "0101234567-002", Description = "Quản trị toàn bộ chuỗi chế tạo, phân xưởng gia công, lắp ráp và kiểm soát chất lượng KCS", IsActive = true },
+                new Department { Code = "KHOI_KD", Name = "Khối Kinh doanh & Tiếp thị", ParentCode = null, BUCode = "BU_SALES", Level = 1, MST = "0101234567-003", Description = "Quản lý mạng lưới bán hàng B2B, hệ thống đại lý phân phối và bảo hành sau bán hàng", IsActive = true },
+                new Department { Code = "KHOI_TAICHINH", Name = "Khối Tài chính & Kế toán Doanh nghiệp", ParentCode = null, BUCode = "BU_FIN", Level = 1, MST = "0101234567-004", Description = "Kiểm soát hạch toán tài sản kho, giá vốn bình quân, đối soát tồn kho và chốt kỳ sổ sách", IsActive = true },
+
+                // Cấp 2: Phòng ban & Phân xưởng trực thuộc (Sub-departments & Workshops)
+                new Department { Code = "PB_QLKHO", Name = "Phòng Quản lý Kho vận & Vật tư", ParentCode = "KHOI_LOG", BUCode = "BU_SCM", Level = 2, MST = "0101234567-001", Description = "Tổ chức vận hành, bảo quản, đóng gói carton/hộp và kiểm kê định kỳ kho hàng", IsActive = true },
+                new Department { Code = "PX_LAPRAP", Name = "Phân xưởng Lắp ráp & Hoàn thiện", ParentCode = "KHOI_SX", BUCode = "BU_MFG", Level = 2, MST = "0101234567-002", Description = "Tiếp nhận linh kiện NVL, hoàn thiện thành phẩm và đóng số Serial/IMEI", IsActive = true },
+                new Department { Code = "PX_GIACONG", Name = "Phân xưởng Chế tạo & Cơ khí chính xác", ParentCode = "KHOI_SX", BUCode = "BU_MFG", Level = 2, MST = "0101234567-002", Description = "Gia công thô chi tiết, đúc khuôn, cắt gọt và xuất dùng vật tư nguyên liệu", IsActive = true },
+                new Department { Code = "PB_KCS", Name = "Phòng Kiểm soát Chất lượng (QA/QC - KCS)", ParentCode = "KHOI_SX", BUCode = "BU_MFG", Level = 2, MST = "0101234567-002", Description = "Giám định chất lượng hàng hóa nhập mua, nghiệm thu thành phẩm sản xuất trước nhập kho", IsActive = true },
+                new Department { Code = "PB_DIEUDO", Name = "Phòng Kế hoạch & Điều độ Sản xuất", ParentCode = "KHOI_SX", BUCode = "BU_MFG", Level = 2, MST = "0101234567-002", Description = "Lập kế hoạch nhu cầu vật tư (MRP), cấp phát xuất dùng và tiến độ đơn hàng", IsActive = true },
+                new Department { Code = "PB_BANHANG", Name = "Phòng Kinh doanh & Kênh Đại lý", ParentCode = "KHOI_KD", BUCode = "BU_SALES", Level = 2, MST = "0101234567-003", Description = "Tiếp nhận đơn đặt hàng, điều phối lệnh xuất kho giao cho đại lý và dự án", IsActive = true },
+                new Department { Code = "PB_BAOHANH", Name = "Trung tâm Kỹ thuật & Bảo hành", ParentCode = "KHOI_KD", BUCode = "BU_SALES", Level = 2, MST = "0101234567-003", Description = "Xử lý hàng khách trả, đổi trả linh kiện bảo hành và thẩm định sản phẩm NG", IsActive = true },
+                new Department { Code = "PB_KETOANKHO", Name = "Bộ phận Kế toán Kho & Thẻ kho", ParentCode = "KHOI_TAICHINH", BUCode = "BU_FIN", Level = 2, MST = "0101234567-004", Description = "Hạch toán nghiệp vụ nhập-xuất-tồn, tính giá vốn xuất kho và kiểm soát hao hụt", IsActive = true }
             );
             await db.SaveChangesAsync();
         }
@@ -2432,7 +2484,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2473,8 +2525,15 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"CustomerGroups\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"ParentCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CustomerGroups_OrgId_Code\" ON miniwms.\"CustomerGroups\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_CustomerGroups_OrgId_ParentCode\" ON miniwms.\"CustomerGroups\" (\"OrgId\", \"ParentCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Departments\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"ParentCode\" text NULL, \"BUCode\" text NULL, \"Level\" integer NOT NULL DEFAULT 1, \"MST\" text NULL, \"Description\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Departments_OrgId_Code\" ON miniwms.\"Departments\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Departments_OrgId_ParentCode\" ON miniwms.\"Departments\" (\"OrgId\", \"ParentCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Departments_OrgId_Level\" ON miniwms.\"Departments\" (\"OrgId\", \"Level\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"DepartmentCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"DepartmentName\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"UserMapInventories\" ADD COLUMN IF NOT EXISTS \"DepartmentCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvLevelTypeCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"AreaCode\" text NULL");
@@ -3067,7 +3126,26 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CustomerGroups_OrgId_Code"" ON ""CustomerGroups"" (""OrgId"", ""Code"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_CustomerGroups_OrgId_ParentCode"" ON ""CustomerGroups"" (""OrgId"", ""ParentCode"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_CustomerGroups_OrgId_ParentCode"" ON ""CustomerGroups"" (""OrgId"", ""ParentCode"");",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""DepartmentCode"" TEXT NULL;",
+            @"ALTER TABLE ""Docs"" ADD COLUMN ""DepartmentName"" TEXT NULL;",
+            @"ALTER TABLE ""UserMapInventories"" ADD COLUMN ""DepartmentCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""Departments"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""BUCode"" TEXT NULL,
+                ""Level"" INTEGER NOT NULL DEFAULT 1,
+                ""MST"" TEXT NULL,
+                ""Description"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Departments_OrgId_Code"" ON ""Departments"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Departments_OrgId_ParentCode"" ON ""Departments"" (""OrgId"", ""ParentCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Departments_OrgId_Level"" ON ""Departments"" (""OrgId"", ""Level"");"
         };
         foreach (var s in sql)
         {

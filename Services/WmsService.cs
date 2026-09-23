@@ -243,6 +243,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateCustomerGroupAsync(int id, CustomerGroup item);
     Task<(bool ok, string msg)> ToggleCustomerGroupStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteCustomerGroupAsync(int id);
+    Task<DepartmentReport> DepartmentsReportAsync(string? q = null, string? parentCode = null, int? level = null, bool? activeOnly = null);
+    Task<List<Department>> DepartmentsAsync(string? q = null, bool? activeOnly = null);
+    Task<Department?> GetDepartmentAsync(int id);
+    Task<Department?> GetDepartmentByCodeAsync(string code);
+    Task<DepartmentDetailDto?> GetDepartmentDetailAsync(int id);
+    Task<int> CreateDepartmentAsync(Department item);
+    Task<(bool ok, string msg)> UpdateDepartmentAsync(int id, Department item);
+    Task<(bool ok, string msg)> ToggleDepartmentStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteDepartmentAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -7963,6 +7972,257 @@ public class WmsService(AppDbContext db) : IWmsService
         db.CustomerGroups.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa nhóm khách hàng '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Bộ phận / Phòng ban kèm 4 thẻ KPI (port từ Mst_Department & Mst_DepartmentExt Skycic).</summary>
+    public async Task<DepartmentReport> DepartmentsReportAsync(string? q = null, string? parentCode = null, int? level = null, bool? activeOnly = null)
+    {
+        var query = db.Departments.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(d => d.Code.ToLower().Contains(kw) ||
+                                     d.Name.ToLower().Contains(kw) ||
+                                     (d.BUCode != null && d.BUCode.ToLower().Contains(kw)) ||
+                                     (d.MST != null && d.MST.ToLower().Contains(kw)) ||
+                                     (d.Description != null && d.Description.ToLower().Contains(kw)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode.Equals("ROOT", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(d => string.IsNullOrWhiteSpace(d.ParentCode) || d.Level == 1);
+            }
+            else
+            {
+                query = query.Where(d => d.ParentCode != null && d.ParentCode.ToLower() == parentCode.Trim().ToLower());
+            }
+        }
+
+        if (level.HasValue && level.Value > 0)
+        {
+            query = query.Where(d => d.Level == level.Value);
+        }
+
+        if (activeOnly.HasValue)
+        {
+            query = query.Where(d => d.IsActive == activeOnly.Value);
+        }
+
+        var allDepts = await db.Departments.ToListAsync();
+        var depts = await query.ToListAsync();
+
+        var users = await db.UserMapInventories.ToListAsync();
+        var outDocs = await db.Docs
+            .Where(d => d.DepartmentCode != null && (d.Type == DocType.Out || d.Status == DocStatus.Posted))
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var rows = depts
+            .OrderBy(d => d.Level)
+            .ThenBy(d => d.ParentCode ?? "")
+            .ThenBy(d => d.Code)
+            .Select(d =>
+            {
+                var parent = !string.IsNullOrWhiteSpace(d.ParentCode)
+                    ? allDepts.FirstOrDefault(p => p.Code.Equals(d.ParentCode, StringComparison.OrdinalIgnoreCase))
+                    : null;
+
+                var subCount = allDepts.Count(c => c.ParentCode != null && c.ParentCode.Equals(d.Code, StringComparison.OrdinalIgnoreCase));
+                var assignedUsersCount = users.Count(u => u.DepartmentCode != null && u.DepartmentCode.Equals(d.Code, StringComparison.OrdinalIgnoreCase));
+
+                var deptDocs = outDocs.Where(doc => doc.DepartmentCode != null && doc.DepartmentCode.Equals(d.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+                var dispatchedDocsCount = deptDocs.Count;
+                var totalDispatchedQty = deptDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity));
+
+                var levelName = d.Level switch
+                {
+                    1 => "Khối / Ban điều hành",
+                    2 => "Phòng ban chức năng",
+                    3 => "Phân xưởng / Tổ / Đội",
+                    _ => $"Cấp {d.Level}"
+                };
+
+                return new DepartmentRow(
+                    d.Id,
+                    d.Code,
+                    d.Name,
+                    d.ParentCode,
+                    parent?.Name,
+                    d.BUCode,
+                    d.Level,
+                    levelName,
+                    d.MST,
+                    d.Description,
+                    d.IsActive,
+                    d.CreatedAt,
+                    subCount,
+                    assignedUsersCount,
+                    dispatchedDocsCount,
+                    totalDispatchedQty
+                );
+            }).ToList();
+
+        int totalDepartments = allDepts.Count;
+        int rootBlocksCount = allDepts.Count(d => d.Level == 1 || string.IsNullOrWhiteSpace(d.ParentCode));
+        int subDepartmentsCount = allDepts.Count(d => d.Level > 1);
+        int totalAssignedUsers = users.Count(u => !string.IsNullOrWhiteSpace(u.DepartmentCode));
+        int totalAllDispatchedQty = outDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity));
+
+        return new DepartmentReport(
+            q,
+            parentCode,
+            level,
+            activeOnly,
+            totalDepartments,
+            rootBlocksCount,
+            subDepartmentsCount,
+            totalAssignedUsers,
+            totalAllDispatchedQty,
+            rows
+        );
+    }
+
+    public Task<List<Department>> DepartmentsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Departments.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(d => d.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(d => d.Code.ToLower().Contains(kw) || d.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(d => d.Level).ThenBy(d => d.Code).ToListAsync();
+    }
+
+    public Task<Department?> GetDepartmentAsync(int id) =>
+        db.Departments.FirstOrDefaultAsync(d => d.Id == id);
+
+    public Task<Department?> GetDepartmentByCodeAsync(string code) =>
+        db.Departments.FirstOrDefaultAsync(d => d.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<DepartmentDetailDto?> GetDepartmentDetailAsync(int id)
+    {
+        var item = await db.Departments.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.Departments.FirstOrDefaultAsync(d => d.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subDepartments = await db.Departments
+            .Where(d => d.ParentCode != null && d.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(d => d.Code)
+            .ToListAsync();
+
+        var assignedUsers = await db.UserMapInventories
+            .Where(u => u.DepartmentCode != null && u.DepartmentCode.ToLower() == item.Code.Trim().ToLower())
+            .Include(u => u.Warehouse)
+            .ToListAsync();
+
+        var recentDocs = await db.Docs
+            .Where(d => d.DepartmentCode != null && d.DepartmentCode.ToLower() == item.Code.Trim().ToLower())
+            .Include(d => d.Lines)
+            .Include(d => d.FromWarehouse)
+            .OrderByDescending(d => d.Date)
+            .Take(10)
+            .ToListAsync();
+
+        int totalDispatched = recentDocs.Sum(d => d.Lines.Sum(l => l.Quantity));
+
+        return new DepartmentDetailDto(item, parent, subDepartments, assignedUsers, subDepartments.Count, assignedUsers.Count, totalDispatched, recentDocs);
+    }
+
+    public async Task<int> CreateDepartmentAsync(Department item)
+    {
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"PB_{await db.Departments.CountAsync() + 1:D2}";
+        }
+        item.Name = item.Name.Trim();
+        item.ParentCode = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
+        item.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
+        item.MST = string.IsNullOrWhiteSpace(item.MST) ? null : item.MST.Trim();
+        item.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            var parent = await db.Departments.FirstOrDefaultAsync(p => p.Code == item.ParentCode);
+            if (parent != null && item.Level <= parent.Level)
+            {
+                item.Level = parent.Level + 1;
+            }
+        }
+        if (item.Level < 1) item.Level = 1;
+
+        bool exists = await db.Departments.AnyAsync(d => d.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã bộ phận '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.Departments.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateDepartmentAsync(int id, Department item)
+    {
+        var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+
+        existing.Name = item.Name.Trim();
+        var newParent = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
+        if (newParent != null && newParent.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Không thể chọn chính bộ phận này làm bộ phận cấp trên.");
+        }
+        existing.ParentCode = newParent;
+        existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
+        existing.MST = string.IsNullOrWhiteSpace(item.MST) ? null : item.MST.Trim();
+        existing.Description = string.IsNullOrWhiteSpace(item.Description) ? null : item.Description.Trim();
+        existing.Level = item.Level >= 1 ? item.Level : 1;
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin bộ phận '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleDepartmentStatusAsync(int id)
+    {
+        var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng bộ phận '{existing.Code}'." : $"Đã chuyển bộ phận '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteDepartmentAsync(int id)
+    {
+        var existing = await db.Departments.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bộ phận / phòng ban.");
+
+        bool hasSubDepts = await db.Departments.AnyAsync(d => d.ParentCode != null && d.ParentCode.ToUpper() == existing.Code.ToUpper());
+        bool hasAssignedUsers = await db.UserMapInventories.AnyAsync(u => u.DepartmentCode != null && u.DepartmentCode.ToUpper() == existing.Code.ToUpper());
+        bool hasDocs = await db.Docs.AnyAsync(doc => doc.DepartmentCode != null && doc.DepartmentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasSubDepts || hasAssignedUsers || hasDocs)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            var reasons = new List<string>();
+            if (hasSubDepts) reasons.Add("bộ phận cấp dưới trực thuộc");
+            if (hasAssignedUsers) reasons.Add("nhân sự quản lý kho");
+            if (hasDocs) reasons.Add("phiếu xuất cấp phát vật tư");
+            return (true, $"Bộ phận '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.Departments.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa bộ phận '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

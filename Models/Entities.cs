@@ -59,6 +59,8 @@ public class StockDoc : IOrgOwned
     public string? SupplierName { get; set; }   // Tên nhà cung cấp (khi nhập kho mua hàng)
     public string? CustomerCode { get; set; }   // Mã khách hàng (khi xuất kho bán hàng / giao đại lý)
     public string? CustomerName { get; set; }   // Tên khách hàng (khi xuất kho bán hàng / giao đại lý)
+    public string? DepartmentCode { get; set; } // Mã bộ phận / phòng ban nhận cấp phát / xuất dùng nội bộ (port từ Mst_Department Skycic)
+    public string? DepartmentName { get; set; } // Tên bộ phận / phòng ban nhận hàng
     public DateTime Date { get; set; } = DateTime.Now;
     public string? Note { get; set; }
     public string? RefNo { get; set; }
@@ -2120,6 +2122,7 @@ public class UserMapInventory : IOrgOwned
     public string UserRole { get; set; } = "Thủ kho chính";               // Vai trò phụ trách: Trưởng kho, Thủ kho chính, Nhân viên xuất nhập, Kiểm kê viên, Giám sát an toàn
     public string? Email { get; set; }                                    // Email liên lạc
     public string? Phone { get; set; }                                    // Số điện thoại liên hệ
+    public string? DepartmentCode { get; set; }                            // Mã bộ phận / phòng ban trực thuộc (port từ Sys_User.DepartmentCode & Mst_Department Skycic)
     public bool IsActive { get; set; } = true;                             // Trạng thái hiệu lực phân quyền (FlagActive: 1 - Hiệu lực, 0 - Tạm dừng)
     public string? Remark { get; set; }                                    // Ghi chú / Quyết định phân công nhiệm vụ
     public string AssignedBy { get; set; } = "admin";                     // Người phân công (LogLUBy)
@@ -2331,12 +2334,74 @@ public record CustomerGroupReport(
 );
 
 /// <summary>Chi tiết Nhóm khách hàng kèm danh sách các phân nhóm con, danh sách khách hàng trực thuộc và các giao dịch xuất kho gần nhất.</summary>
-public record CustomerGroupDetailDto(
+public record     CustomerGroupDetailDto(
     CustomerGroup Group,
     CustomerGroup? ParentGroup,
     List<CustomerGroup> SubGroups,
     List<Customer> Customers,
     int TotalCustomers,
+    int TotalDispatchedQty,
+    List<StockDoc> RecentDispatches
+);
+
+/// <summary>Danh mục Bộ phận & Phòng ban quản lý kho, nhận hàng & cấp phát vật tư (port từ Mst_Department & Mst_DepartmentExt Skycic: DepartmentCode, DepartmentName, DepartmentCodeParent, DepartmentBUCode, DepartmentLevel, MST, FlagActive, Remark).</summary>
+public class Department : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã bộ phận/phòng ban (DepartmentCode, vd: KHOI_SX, KHOI_LOG, PB_QLKHO, PX_LAPRAP...)
+    public string Name { get; set; } = "";             // Tên bộ phận/phòng ban (DepartmentName, vd: Phòng Quản lý Kho vận, Phân xưởng Lắp ráp...)
+    public string? ParentCode { get; set; }           // Mã bộ phận cấp trên (DepartmentCodeParent) - phân cấp cây Khối/Ban -> Phòng ban -> Phân xưởng/Tổ
+    public string? BUCode { get; set; }               // Đơn vị kinh doanh / Chi nhánh trực thuộc (DepartmentBUCode)
+    public int Level { get; set; } = 1;               // Cấp bậc phòng ban (DepartmentLevel: 1 = Khối/Ban, 2 = Phòng ban, 3 = Phân xưởng/Tổ/Đội)
+    public string? MST { get; set; }                  // Mã số thuế / Mã chi nhánh hạch toán (MST)
+    public string? Description { get; set; }          // Ghi chú chức năng nhiệm vụ, địa điểm làm việc (Remark)
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị bộ phận/phòng ban kèm thông tin cấp bậc, bộ phận cấp trên, số nhân sự kho và số lượng phiếu/hàng cấp phát.</summary>
+public record DepartmentRow(
+    int Id,
+    string Code,
+    string Name,
+    string? ParentCode,
+    string? ParentName,
+    string? BUCode,
+    int Level,
+    string LevelName,
+    string? MST,
+    string? Description,
+    bool IsActive,
+    DateTime CreatedAt,
+    int SubDepartmentCount,
+    int AssignedUserCount,
+    int DispatchedDocCount,
+    int TotalDispatchedQty
+);
+
+/// <summary>Báo cáo / Danh sách bộ phận phòng ban tổng hợp kèm 4 thẻ KPI.</summary>
+public record DepartmentReport(
+    string? Keyword,
+    string? ParentFilter,
+    int? LevelFilter,
+    bool? ActiveFilter,
+    int TotalDepartments,
+    int RootBlocksCount,       // Số Khối/Ban cấp 1
+    int SubDepartmentsCount,   // Số Phòng ban & Phân xưởng (Cấp 2 & 3)
+    int TotalAssignedUsers,    // Tổng nhân sự kho được phân công
+    int TotalDispatchedQty,    // Tổng lượng vật tư/hàng hóa xuất dùng nội bộ / cấp phát cho các bộ phận
+    List<DepartmentRow> Rows
+);
+
+/// <summary>Chi tiết Bộ phận/Phòng ban kèm danh sách bộ phận trực thuộc, danh sách nhân sự phụ trách kho và các phiếu xuất cấp phát gần nhất.</summary>
+public record DepartmentDetailDto(
+    Department Department,
+    Department? ParentDepartment,
+    List<Department> SubDepartments,
+    List<UserMapInventory> AssignedUsers,
+    int TotalSubDepartments,
+    int TotalAssignedUsers,
     int TotalDispatchedQty,
     List<StockDoc> RecentDispatches
 );

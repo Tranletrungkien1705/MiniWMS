@@ -1,0 +1,610 @@
+@model DepartmentReport
+@{
+    ViewData["Title"] = "Bộ phận / Phòng ban";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var parentCodeFilter = (string)(ViewBag.ParentCode ?? "");
+    var levelFilter = (int?)ViewBag.Level;
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var rootDepartments = ViewBag.RootDepartments as List<Department> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-diagram-3-fill text-primary me-2"></i>Danh mục Bộ phận & Phòng ban quản lý kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_Department</code> &amp; <code>Mst_DepartmentExt</code> (Skycic) — Quản lý danh mục phòng ban, khối ban điều hành và phân xưởng sản xuất theo phân cấp cây cha-con (DepartmentCode, DepartmentName, DepartmentCodeParent, DepartmentBUCode, DepartmentLevel, MST, FlagActive, Remark), liên kết nhân sự quản lý kho, bàn giao thành phẩm và theo dõi cấp phát vật tư/hàng hóa xuất dùng nội bộ</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Department/ExportCsv?q=@keyword&parentCode=@parentCodeFilter&level=@levelFilter&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <a href="/UserMapInventory" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-person-check me-1"></i> Phân quyền kho
+        </a>
+        <a href="/Doc?type=1" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-arrow-up me-1"></i> Phiếu cấp phát / xuất kho
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createDepartmentModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Bộ phận / Phòng ban
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ BỘ PHẬN</span>
+                    <i class="bi bi-diagram-3-fill text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalDepartments</div>
+                <div class="small text-muted">Khối ban, phòng ban &amp; phân xưởng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHỐI / BAN ĐIỀU HÀNH</span>
+                    <i class="bi bi-buildings text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.RootBlocksCount</div>
+                <div class="small text-muted">Cấp 1 — Khối điều hành trung tâm</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">PHÒNG BAN &amp; PHÂN XƯỞNG</span>
+                    <i class="bi bi-gear-wide-connected text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SubDepartmentsCount</div>
+                <div class="small text-muted">Cấp 2 &amp; 3 — Đơn vị vận hành &amp; SX</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NHÂN SỰ &amp; LƯỢNG CẤP PHÁT</span>
+                    <i class="bi bi-box-arrow-up text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.TotalAssignedUsers <span class="fs-6 fw-normal text-muted">ns</span> / @Model.TotalDispatchedQty.ToString("N0") <span class="fs-6 fw-normal text-muted">sp</span></div>
+                <div class="small text-muted">Tổng lượng vật tư cấp phát xuất dùng</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã, tên bộ phận, đơn vị BU, MST, mô tả..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="parentCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả bộ phận cấp trên --</option>
+                    <option value="ROOT" selected="@(parentCodeFilter == "ROOT")">★ Chỉ hiển thị Khối/Ban điều hành (Cấp 1)</option>
+                    @foreach (var rd in rootDepartments)
+                    {
+                        <option value="@rd.Code" selected="@(parentCodeFilter == rd.Code)">@rd.Name (@rd.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="level" class="form-select form-select-sm">
+                    <option value="">-- Tất cả cấp bậc --</option>
+                    <option value="1" selected="@(levelFilter == 1)">Cấp 1 — Khối / Ban điều hành</option>
+                    <option value="2" selected="@(levelFilter == 2)">Cấp 2 — Phòng ban chức năng</option>
+                    <option value="3" selected="@(levelFilter == 3)">Cấp 3 — Phân xưởng / Tổ / Đội</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái --</option>
+                    <option value="true" selected="@(activeOnly == true)">Đang áp dụng</option>
+                    <option value="false" selected="@(activeOnly == false)">Tạm dừng</option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="Lọc dữ liệu">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                @if (!string.IsNullOrEmpty(keyword) || !string.IsNullOrEmpty(parentCodeFilter) || levelFilter.HasValue || activeOnly.HasValue)
+                {
+                    <a href="/Department" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Bộ phận / Phòng ban -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 50px;">STT</th>
+                    <th style="width: 120px;">Mã bộ phận</th>
+                    <th>Tên Bộ phận / Phòng ban &amp; Cấp bậc</th>
+                    <th>Bộ phận cấp trên</th>
+                    <th>Đơn vị BU / MST</th>
+                    <th>Mô tả chức năng &amp; Địa điểm</th>
+                    <th class="text-center" style="width: 110px;">Nhân sự kho</th>
+                    <th class="text-end" style="width: 130px;">Cấp phát vật tư</th>
+                    <th class="text-center" style="width: 110px;">Trạng thái</th>
+                    <th class="text-end" style="width: 150px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    bool isRoot = r.Level == 1;
+                    <tr class="@(isRoot ? "table-light-subtle" : "")">
+                        <td class="text-center text-muted small">@idx</td>
+                        <td>
+                            <span class="badge @(isRoot ? "bg-primary text-white" : "bg-light text-dark border") font-monospace">
+                                @r.Code
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                @if (r.Level == 2)
+                                {
+                                    <span class="text-muted me-2 font-monospace">└─</span>
+                                }
+                                else if (r.Level >= 3)
+                                {
+                                    <span class="text-muted me-2 font-monospace" style="padding-left: 15px;">└──</span>
+                                }
+                                <div>
+                                    <div class="fw-bold @(isRoot ? "text-primary" : "text-dark")">@r.Name</div>
+                                    <div class="mt-1">
+                                        @if (r.Level == 1)
+                                        {
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">
+                                                <i class="bi bi-buildings me-1"></i>Cấp 1 — Khối / Ban
+                                            </span>
+                                        }
+                                        else if (r.Level == 2)
+                                        {
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;">
+                                                <i class="bi bi-diagram-3 me-1"></i>Cấp 2 — Phòng ban
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning-subtle text-dark border border-warning-subtle" style="font-size: 10px;">
+                                                <i class="bi bi-gear me-1"></i>Cấp 3 — Phân xưởng / Tổ
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.ParentCode))
+                            {
+                                <div>
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                        @(r.ParentName ?? r.ParentCode)
+                                    </span>
+                                </div>
+                                <span class="small text-muted font-monospace" style="font-size: 10.5px;">@r.ParentCode</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small italic">— Khối điều hành gốc —</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.BUCode))
+                            {
+                                <span class="badge bg-light text-dark border font-monospace me-1">@r.BUCode</span>
+                            }
+                            @if (!string.IsNullOrEmpty(r.MST))
+                            {
+                                <div class="small text-muted font-monospace">MST: @r.MST</div>
+                            }
+                            @if (string.IsNullOrEmpty(r.BUCode) && string.IsNullOrEmpty(r.MST))
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-truncate" style="max-width: 220px;" title="@r.Description">
+                                @(r.Description ?? "—")
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            @if (r.AssignedUserCount > 0)
+                            {
+                                <a href="/UserMapInventory" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none px-2 py-1" title="Xem danh sách nhân sự phụ trách kho">
+                                    <i class="bi bi-person-check me-1"></i>@r.AssignedUserCount ns
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-muted border px-2 py-1">0 ns</span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (r.TotalDispatchedQty > 0)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-bold">
+                                    @r.TotalDispatchedQty.ToString("N0") <span class="fw-normal small">sp</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0 sp</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="bi bi-check-circle me-1"></i>Áp dụng
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" title="Xem chi tiết bộ phận, nhân sự & cấp phát" onclick="openDetailModal(@r.Id)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa bộ phận" onclick="openEditModal(@r.Id, '@Html.Raw(r.Code)', '@Html.Raw(r.Name)', '@Html.Raw(r.ParentCode ?? "")', '@Html.Raw(r.BUCode ?? "")', @r.Level, '@Html.Raw(r.MST ?? "")', '@Html.Raw(r.Description ?? "")', @(r.IsActive ? "true" : "false"))">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form asp-action="Toggle" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn @(r.IsActive ? "btn-outline-warning" : "btn-outline-success")" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt lại")">
+                                        <i class="bi @(r.IsActive ? "bi-pause" : "bi-play")"></i>
+                                    </button>
+                                </form>
+                                <form asp-action="Delete" method="post" class="d-inline" onsubmit="return confirm('Bạn chắc chắn muốn xóa bộ phận @r.Code? (Nếu bộ phận đang có đơn vị con, nhân sự kho hoặc lịch sử cấp phát, hệ thống sẽ tự động chuyển sang trạng thái Ngừng áp dụng để bảo vệ dữ liệu).');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-danger" title="Xóa bộ phận">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    idx++;
+                }
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="10" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                            Không tìm thấy bộ phận / phòng ban nào phù hợp với bộ lọc hiện tại.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Bộ phận / Phòng ban -->
+<div class="modal fade" id="createDepartmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="Create" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm mới Bộ phận / Phòng ban</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã bộ phận / phòng ban <span class="text-muted">(để trống để hệ thống tự sinh mã PB_xx)</span></label>
+                        <input type="text" name="code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="VD: KHOI_SX, PB_QLKHO, PX_LAPRAP..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên bộ phận / phòng ban <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-sm" required placeholder="VD: Phòng Quản lý Kho vận, Phân xưởng Lắp ráp..." />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label small fw-semibold">Bộ phận cấp trên (Khối / Ban)</label>
+                            <select name="parentCode" id="createParentSelect" class="form-select form-select-sm" onchange="autoSetCreateLevel()">
+                                <option value="">-- Là Khối / Ban điều hành gốc (Cấp 1) --</option>
+                                @foreach (var rd in rootDepartments)
+                                {
+                                    <option value="@rd.Code" data-level="@rd.Level">@rd.Name (@rd.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label small fw-semibold">Cấp bậc bộ phận</label>
+                            <select name="level" id="createLevelSelect" class="form-select form-select-sm">
+                                <option value="1">Cấp 1 — Khối / Ban</option>
+                                <option value="2" selected>Cấp 2 — Phòng ban</option>
+                                <option value="3">Cấp 3 — Phân xưởng/Tổ</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Đơn vị kinh doanh (BU)</label>
+                            <input type="text" name="buCode" class="form-control form-control-sm text-uppercase font-monospace" placeholder="VD: BU_SCM, BU_MFG..." />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã số thuế / Mã chi nhánh</label>
+                            <input type="text" name="mst" class="form-control form-control-sm font-monospace" placeholder="VD: 0101234567-001" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Chức năng, nhiệm vụ &amp; Địa điểm làm việc</label>
+                        <textarea name="description" rows="2" class="form-control form-control-sm" placeholder="VD: Quản lý bảo quản kho, cấp phát vật tư lắp ráp, nhận thành phẩm..."></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu thông tin</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sửa Bộ phận / Phòng ban -->
+<div class="modal fade" id="editDepartmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editDepartmentForm" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Chỉnh sửa Bộ phận / Phòng ban</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã bộ phận / phòng ban</label>
+                        <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên bộ phận / phòng ban <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control form-control-sm" required />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label small fw-semibold">Bộ phận cấp trên (Khối / Ban)</label>
+                            <select name="parentCode" id="editParentSelect" class="form-select form-select-sm">
+                                <option value="">-- Là Khối / Ban điều hành gốc (Cấp 1) --</option>
+                                @foreach (var rd in rootDepartments)
+                                {
+                                    <option value="@rd.Code">@rd.Name (@rd.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label small fw-semibold">Cấp bậc bộ phận</label>
+                            <select name="level" id="editLevelSelect" class="form-select form-select-sm">
+                                <option value="1">Cấp 1 — Khối / Ban</option>
+                                <option value="2">Cấp 2 — Phòng ban</option>
+                                <option value="3">Cấp 3 — Phân xưởng/Tổ</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Đơn vị kinh doanh (BU)</label>
+                            <input type="text" name="buCode" id="editBUCode" class="form-control form-control-sm text-uppercase font-monospace" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã số thuế / Mã chi nhánh</label>
+                            <input type="text" name="mst" id="editMST" class="form-control form-control-sm font-monospace" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Chức năng, nhiệm vụ &amp; Địa điểm làm việc</label>
+                        <textarea name="description" id="editDescription" rows="2" class="form-control form-control-sm"></textarea>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small" for="editIsActive">Đang áp dụng hoạt động</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chi tiết Bộ phận / Phòng ban -->
+<div class="modal fade" id="detailDepartmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-info-circle text-info me-2"></i>Chi tiết Bộ phận / Phòng ban</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailModalBody">
+                <div class="text-center py-4 text-muted">
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div> Đang tải thông tin chi tiết...
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function autoSetCreateLevel() {
+        const sel = document.getElementById('createParentSelect');
+        const lvlSel = document.getElementById('createLevelSelect');
+        if (!sel.value) {
+            lvlSel.value = '1';
+        } else {
+            lvlSel.value = '2';
+        }
+    }
+
+    function openEditModal(id, code, name, parentCode, buCode, level, mst, description, isActive) {
+        const form = document.getElementById('editDepartmentForm');
+        form.action = '/Department/Update/' + id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editParentSelect').value = parentCode || '';
+        document.getElementById('editBUCode').value = buCode || '';
+        document.getElementById('editLevelSelect').value = level || 1;
+        document.getElementById('editMST').value = mst || '';
+        document.getElementById('editDescription').value = description || '';
+        document.getElementById('editIsActive').checked = isActive;
+
+        new bootstrap.Modal(document.getElementById('editDepartmentModal')).show();
+    }
+
+    async function openDetailModal(id) {
+        const modal = new bootstrap.Modal(document.getElementById('detailDepartmentModal'));
+        modal.show();
+
+        const body = document.getElementById('detailModalBody');
+        body.innerHTML = '<div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Đang tải thông tin chi tiết...</div>';
+
+        try {
+            const res = await fetch('/Department/Detail/' + id);
+            if (!res.ok) throw new Error('Không thể tải chi tiết');
+            const data = await res.json();
+
+            let subHtml = '';
+            if (data.subDepartments && data.subDepartments.length > 0) {
+                subHtml = '<div class="table-responsive mb-3"><table class="table table-sm table-bordered align-middle mb-0"><thead class="table-light"><tr><th>Mã đơn vị</th><th>Tên bộ phận / phân xưởng</th><th>Cấp bậc</th><th>BU</th><th>Trạng thái</th></tr></thead><tbody>';
+                data.subDepartments.forEach(s => {
+                    subHtml += `<tr>
+                        <td><span class="badge bg-light text-dark border font-monospace">${s.code}</span></td>
+                        <td class="fw-semibold">${s.name}</td>
+                        <td><span class="badge bg-info-subtle text-info border">Cấp ${s.level}</span></td>
+                        <td>${s.buCode || '—'}</td>
+                        <td>${s.isActive ? '<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Áp dụng</span>' : '<span class="text-secondary small">Tạm dừng</span>'}</td>
+                    </tr>`;
+                });
+                subHtml += '</tbody></table></div>';
+            } else {
+                subHtml = '<div class="text-muted small py-2 fst-italic">Chưa có phân nhóm / đơn vị trực thuộc.</div>';
+            }
+
+            let usersHtml = '';
+            if (data.assignedUsers && data.assignedUsers.length > 0) {
+                usersHtml = '<div class="table-responsive mb-3"><table class="table table-sm table-bordered align-middle mb-0"><thead class="table-light"><tr><th>Tài khoản</th><th>Họ và tên</th><th>Vai trò</th><th>Kho phụ trách</th><th>Liên hệ</th></tr></thead><tbody>';
+                data.assignedUsers.forEach(u => {
+                    usersHtml += `<tr>
+                        <td><span class="badge bg-light text-dark border font-monospace">${u.userCode}</span></td>
+                        <td class="fw-semibold text-primary">${u.userName}</td>
+                        <td><span class="badge bg-primary-subtle text-primary border">${u.userRole}</span></td>
+                        <td>${u.warehouseName || '—'}</td>
+                        <td class="small text-muted">${u.phone || u.email || '—'}</td>
+                    </tr>`;
+                });
+                usersHtml += '</tbody></table></div>';
+            } else {
+                usersHtml = '<div class="text-muted small py-2 fst-italic">Chưa có nhân sự kho nào thuộc bộ phận này.</div>';
+            }
+
+            let docsHtml = '';
+            if (data.recentDispatches && data.recentDispatches.length > 0) {
+                docsHtml = '<div class="table-responsive mb-0"><table class="table table-sm table-bordered align-middle mb-0"><thead class="table-light"><tr><th>Mã phiếu xuất</th><th>Ngày cấp phát</th><th>Từ kho</th><th class="text-end">Số lượng sp</th><th>Ghi chú cấp phát</th></tr></thead><tbody>';
+                data.recentDispatches.forEach(d => {
+                    docsHtml += `<tr>
+                        <td><a href="/Doc" class="badge bg-light text-primary border font-monospace text-decoration-none">${d.code}</a></td>
+                        <td>${d.date}</td>
+                        <td>${d.warehouseName}</td>
+                        <td class="text-end fw-bold text-success">${Number(d.qty).toLocaleString()}</td>
+                        <td class="small text-muted">${d.note || '—'}</td>
+                    </tr>`;
+                });
+                docsHtml += '</tbody></table></div>';
+            } else {
+                docsHtml = '<div class="text-muted small py-2 fst-italic">Chưa có phiếu xuất cấp phát vật tư nào phát sinh cho bộ phận này.</div>';
+            }
+
+            body.innerHTML = `
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded border">
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="badge bg-primary fs-6 me-2 font-monospace">${data.code}</span>
+                                <span class="badge ${data.isActive ? 'bg-success' : 'bg-secondary'}">${data.isActive ? 'Đang áp dụng' : 'Tạm dừng'}</span>
+                            </div>
+                            <h5 class="fw-bold text-dark mb-1">${data.name}</h5>
+                            <div class="small text-muted mb-2">Cấp bậc: <strong>Cấp ${data.level}</strong> ${data.parentName ? `(Trực thuộc: <strong>${data.parentName}</strong>)` : '(Khối điều hành gốc)'}</div>
+                            <div class="small text-muted mb-1">Đơn vị kinh doanh (BU): <strong>${data.buCode || '—'}</strong></div>
+                            <div class="small text-muted mb-1">Mã số thuế / MST: <strong>${data.mst || '—'}</strong></div>
+                            <div class="small text-muted">Ngày khởi tạo: <strong>${data.createdAt}</strong></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <h6 class="fw-bold mb-2"><i class="bi bi-file-text text-secondary me-2"></i>Chức năng &amp; Nhiệm vụ</h6>
+                            <p class="small text-muted mb-3">${data.description || 'Chưa cập nhật mô tả chức năng nhiệm vụ.'}</p>
+                            <div class="d-flex gap-2">
+                                <div class="p-2 bg-white rounded border flex-fill text-center">
+                                    <div class="small text-muted">Đơn vị con</div>
+                                    <div class="fs-5 fw-bold text-info">${data.totalSubDepartments}</div>
+                                </div>
+                                <div class="p-2 bg-white rounded border flex-fill text-center">
+                                    <div class="small text-muted">Nhân sự kho</div>
+                                    <div class="fs-5 fw-bold text-primary">${data.totalAssignedUsers}</div>
+                                </div>
+                                <div class="p-2 bg-white rounded border flex-fill text-center">
+                                    <div class="small text-muted">Vật tư cấp phát</div>
+                                    <div class="fs-5 fw-bold text-success">${Number(data.totalDispatchedQty).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="fw-bold text-dark mt-3 mb-2"><i class="bi bi-diagram-3 text-primary me-2"></i>Đơn vị &amp; Phân xưởng trực thuộc (${data.totalSubDepartments})</h6>
+                ${subHtml}
+
+                <h6 class="fw-bold text-dark mt-3 mb-2"><i class="bi bi-person-check text-success me-2"></i>Nhân sự phụ trách kho thuộc bộ phận (${data.totalAssignedUsers})</h6>
+                ${usersHtml}
+
+                <h6 class="fw-bold text-dark mt-3 mb-2"><i class="bi bi-box-arrow-up text-warning me-2"></i>Phiếu xuất cấp phát vật tư gần nhất</h6>
+                ${docsHtml}
+            `;
+        } catch (err) {
+            body.innerHTML = `<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Không thể tải chi tiết: ${err.message}</div>`;
+        }
+    }
+</script>
+}
