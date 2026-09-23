@@ -1629,6 +1629,35 @@ app.MapGet("/api/reports/inventory-valuation", async (int? warehouseId, Inventor
     });
 });
 
+// API Báo cáo Giá trị tồn kho theo Kho (port từ Rpt_Inv_InventoryBalance_ByInvCodeLeaf Skycic)
+app.MapGet("/api/reports/inventory-balance-by-warehouse", async (int? warehouseId, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.LeafWarehouseBalanceReportAsync(warehouseId, q, asOfDate);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/reports/inventory-balance-by-inv-leaf", async (int? warehouseId, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.LeafWarehouseBalanceReportAsync(warehouseId, q, asOfDate);
+    return Results.Ok(new
+    {
+        warehouse = report.WarehouseName,
+        warehouseId = report.WarehouseId,
+        asOfDate = report.AsOfDate.ToString("yyyy-MM-dd"),
+        summary = new
+        {
+            totalWarehouses = report.TotalWarehouses,
+            totalItems = report.TotalItems,
+            totalQtyOK = report.TotalQtyOK,
+            totalQtyBlockOK = report.TotalQtyBlockOK,
+            totalQtyAvailOK = report.TotalQtyAvailOK,
+            grandTotalValInv = report.GrandTotalValInv,
+            topWarehouse = new { id = report.TopWarehouseId, name = report.TopWarehouseName, value = report.TopWarehouseValInv, percent = report.TopWarehousePercent }
+        },
+        items = report.Rows
+    });
+});
+
 // API Quản lý Loại mặt hàng kho (port từ Mst_PartType Skycic)
 app.MapGet("/api/part-types", async (string? q, bool? activeOnly, IWmsService svc) =>
 {

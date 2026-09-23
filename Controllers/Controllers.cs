@@ -6803,3 +6803,45 @@ public class InventoryTransactionController(IWmsService svc) : Controller
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
 }
+public class LeafWarehouseBalanceController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, string? q = null, DateTime? asOfDate = null)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.AsOfDate = (asOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+
+        var report = await svc.LeafWarehouseBalanceReportAsync(warehouseId, q, asOfDate);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? q = null, DateTime? asOfDate = null)
+    {
+        var report = await svc.LeafWarehouseBalanceReportAsync(warehouseId, q, asOfDate);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị tiếng Việt chuẩn
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO GIÁ TRỊ TỒN KHO THEO KHO (PORT TỪ RPT_INV_INVENTORYBALANCE_BYINVCODELEAF)");
+        sb.AppendLine($"Kho áp dụng:;{report.WarehouseName};Mốc chốt số liệu:;{report.AsOfDate:dd/MM/yyyy};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng số kho:;{report.TotalWarehouses};Tổng số mặt hàng:;{report.TotalItems};Tổng tồn vật lý:;{report.TotalQtyOK};Tổng tạm khóa:;{report.TotalQtyBlockOK};Tổng khả dụng:;{report.TotalQtyAvailOK};Tổng giá trị tồn kho:;{report.GrandTotalValInv:N0} đ");
+        sb.AppendLine($"Kho đóng góp lớn nhất:;{report.TopWarehouseName};Giá trị:;{report.TopWarehouseValInv:N0} đ;Tỷ trọng:;{report.TopWarehousePercent:F2}%");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã kho;Tên kho;Loại kho;Cấp kho;Vùng;Số mặt hàng;Tồn vật lý (On-hand);Tạm khóa (Blocked);Tồn khả dụng (Avail);Tổng giá trị tồn (đ);Tỷ trọng giá trị (%);Xếp hạng kho");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.WarehouseCode}\";\"{r.WarehouseName.Replace("\"", "\"\"")}\";\"{r.InvTypeCode ?? "—"}\";\"{r.InvLevelTypeCode ?? "—"}\";\"{r.AreaCode ?? "—"}\";{r.TotalItems};{r.QtyTotalOK};{r.QtyBlockOK};{r.QtyAvailOK};{r.TotalValInv:F0};{r.InvPercent:F2}%;\"{r.RankLabel}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalWarehouses} kho;{report.TotalItems};{report.TotalQtyOK};{report.TotalQtyBlockOK};{report.TotalQtyAvailOK};{report.GrandTotalValInv:F0};100.0%;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_GiaTriTonKhoTheoKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}

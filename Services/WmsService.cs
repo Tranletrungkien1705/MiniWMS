@@ -110,6 +110,7 @@ public interface IWmsService
     Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
     Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
     Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
+    Task<LeafWarehouseBalanceReport> LeafWarehouseBalanceReportAsync(int? warehouseId, string? keyword = null, DateTime? asOfDate = null);
     Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null);
     Task<InventoryTransactionReport> InventoryTransactionReportAsync(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<int> CreateInventoryTransactionAsync(InventoryTransaction txn);
@@ -5738,6 +5739,230 @@ public class WmsService(AppDbContext db) : IWmsService
             classCCount,
             classCVal,
             rows
+        );
+    }
+
+    /// <summary>BÃ¡o cÃ¡o GiÃ¡ trá»‹ tá»“n kho theo Kho (port tá»« Rpt_Inv_InventoryBalance_ByInvCodeLeaf Skycic).
+    /// Äá»‹nh giÃ¡ tá»“n kho theo tá»«ng kho (kho cáº¥p lÃ¡) vÃ  tÃ­nh tá»· trá»ng Ä‘Ã³ng gÃ³p giÃ¡ trá»‹ cá»§a má»—i kho trÃªn tá»•ng tÃ i sáº£n kho.</summary>
+    public async Task<LeafWarehouseBalanceReport> LeafWarehouseBalanceReportAsync(
+        int? warehouseId,
+        string? keyword = null,
+        DateTime? asOfDate = null)
+    {
+        string whName = "ToÃ n há»‡ thá»‘ng";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        DateTime targetDate = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        // 1. Tá»“n váº­t lÃ½ thá»±c táº¿ tá»« cÃ¡c phiáº¿u Ä Ãƒ GHI Sá»” tÃ­nh Ä‘áº¿n má»‘c thá»i gian targetDate
+        var postedDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= targetDate)
+            .Include(d => d.Lines)
+            .ToListAsync();
+
+        var mapPhysical = new Dictionary<(int whId, int prodId), int>();
+        void AddPhysical(int wh, int pid, int q)
+        {
+            mapPhysical.TryGetValue((wh, pid), out var cur);
+            mapPhysical[(wh, pid)] = cur + q;
+        }
+
+        foreach (var d in postedDocs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to) AddPhysical(to, l.ProductId, l.Quantity);
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr) AddPhysical(fr, l.ProductId, -l.Quantity);
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } f) AddPhysical(f, l.ProductId, -l.Quantity);
+                    if (d.ToWarehouseId is { } t) AddPhysical(t, l.ProductId, l.Quantity);
+                }
+            }
+        }
+
+        // 2. Sá»‘ lÆ°á»£ng hÃ ng bá»‹ táº¡m khÃ³a / phong tá»a vá»‘n (QtyBlockOK)
+        var mapBlock = new Dictionary<(int whId, int prodId), int>();
+        void AddBlock(int wh, int pid, int q)
+        {
+            if (q <= 0) return;
+            mapBlock.TryGetValue((wh, pid), out var cur);
+            mapBlock[(wh, pid)] = cur + q;
+        }
+
+        var serials = await db.StockSerials
+            .Where(s => (s.Status == StockSerialStatus.Locked || s.Status == StockSerialStatus.DamagedNG) && s.InDate <= targetDate)
+            .ToListAsync();
+        foreach (var s in serials) AddBlock(s.WarehouseId, s.ProductId, 1);
+
+        var draftOutDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Draft && (d.Type == DocType.Out || d.Type == DocType.Transfer) && d.Date <= targetDate)
+            .Include(d => d.Lines)
+            .ToListAsync();
+        foreach (var d in draftOutDocs)
+        {
+            if (d.FromWarehouseId is { } fWh)
+            {
+                foreach (var l in d.Lines) AddBlock(fWh, l.ProductId, l.Quantity);
+            }
+        }
+
+        var pendingMoveOrders = await db.MoveOrders
+            .Where(m => (m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved) && m.Date <= targetDate)
+            .Include(m => m.Lines)
+            .ToListAsync();
+        foreach (var m in pendingMoveOrders)
+        {
+            foreach (var l in m.Lines) AddBlock(m.FromWarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var draftRetSups = await db.ReturnToSuppliers
+            .Where(r => r.Status == ReturnSupStatus.Draft && r.Date <= targetDate)
+            .Include(r => r.Lines)
+            .ToListAsync();
+        foreach (var r in draftRetSups)
+        {
+            foreach (var l in r.Lines) AddBlock(r.WarehouseId, l.ProductId, l.Quantity);
+        }
+
+        var pendingOutFGs = await db.InventoryOutFGs
+            .Where(f => f.Status == InvOutFGStatus.Pending && f.Date <= targetDate)
+            .Include(f => f.Lines)
+            .ToListAsync();
+        foreach (var f in pendingOutFGs)
+        {
+            foreach (var l in f.Lines) AddBlock(f.WarehouseId, l.ProductId, l.Qty);
+        }
+
+        // 3. GiÃ¡ vá»‘n kho hiá»‡n hÃ nh hoáº·c táº¡i thá»i Ä‘iá»ƒm targetDate tá»« CostPriceHist
+        var currentCostPrices = await db.CostPriceHists
+            .Where(c => c.EffectDate <= targetDate)
+            .OrderByDescending(c => c.EffectDate)
+            .ThenByDescending(c => c.Id)
+            .ToListAsync();
+
+        var costPriceLookup = new Dictionary<(int? whId, int prodId), decimal>();
+        foreach (var c in currentCostPrices)
+        {
+            if (!costPriceLookup.ContainsKey((c.WarehouseId, c.ProductId)))
+                costPriceLookup[(c.WarehouseId, c.ProductId)] = c.CostPrice;
+        }
+
+        var allProducts = await db.Products.ToDictionaryAsync(p => p.Id, p => p);
+
+        // 4. Tá»•ng há»£p giÃ¡ trá»‹ tá»“n theo tá»«ng kho (kho cáº¥p lÃ¡)
+        var rows = new List<LeafWarehouseBalanceRow>();
+        foreach (var wh in targetWarehouses)
+        {
+            int whItems = 0, whQtyOk = 0, whQtyBlock = 0, whQtyAvail = 0;
+            decimal whValInv = 0m;
+
+            foreach (var kv in mapPhysical)
+            {
+                if (kv.Key.whId != wh.Id) continue;
+                int totalOk = kv.Value;
+                if (totalOk <= 0) continue;
+
+                int prodId = kv.Key.prodId;
+                int rawBlock = mapBlock.GetValueOrDefault((wh.Id, prodId), 0);
+                int blockOk = Math.Min(totalOk, rawBlock);
+                int availOk = Math.Max(0, totalOk - blockOk);
+
+                decimal cost = 0m;
+                if (allProducts.TryGetValue(prodId, out var prod)) cost = prod.CostPrice;
+                if (costPriceLookup.TryGetValue((wh.Id, prodId), out var whCost) && whCost > 0)
+                    cost = whCost;
+                else if (costPriceLookup.TryGetValue((null, prodId), out var sysCost) && sysCost > 0)
+                    cost = sysCost;
+
+                whItems++;
+                whQtyOk += totalOk;
+                whQtyBlock += blockOk;
+                whQtyAvail += availOk;
+                whValInv += totalOk * cost;
+            }
+
+            if (whItems == 0 && whValInv <= 0) continue;
+
+            rows.Add(new LeafWarehouseBalanceRow(
+                wh.Id, wh.Code, wh.Name,
+                wh.InvTypeCode, wh.InvLevelTypeCode, wh.AreaCode,
+                whItems, whQtyOk, whQtyBlock, whQtyAvail, whValInv,
+                0.0, "", ""));
+        }
+
+        // 5. Sáº¯p xáº¿p giáº£m dáº§n theo giÃ¡ trá»‹ tá»“n vÃ  tÃ­nh tá»· trá»ng %
+        decimal grandTotalValInv = rows.Sum(r => r.TotalValInv);
+        var sorted = rows.OrderByDescending(r => r.TotalValInv).ToList();
+        var finalRows = new List<LeafWarehouseBalanceRow>();
+        foreach (var r in sorted)
+        {
+            double pct = grandTotalValInv > 0
+                ? Math.Round((double)(r.TotalValInv / grandTotalValInv * 100m), 2)
+                : 0.0;
+
+            string rankLabel, rankBadge;
+            if (pct >= 30.0)
+            {
+                rankLabel = "Kho trá»ng Ä‘iá»ƒm";
+                rankBadge = "bg-danger text-white";
+            }
+            else if (pct >= 10.0)
+            {
+                rankLabel = "Kho trung bÃ¬nh";
+                rankBadge = "bg-warning text-dark";
+            }
+            else
+            {
+                rankLabel = "Kho nhá»";
+                rankBadge = "bg-secondary text-white";
+            }
+
+            finalRows.Add(r with { InvPercent = pct, RankLabel = rankLabel, RankBadgeClass = rankBadge });
+        }
+
+        // 6. Lá»c theo tá»« khÃ³a
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var k = keyword.Trim().ToLowerInvariant();
+            finalRows = finalRows.Where(r =>
+                r.WarehouseCode.ToLowerInvariant().Contains(k) ||
+                r.WarehouseName.ToLowerInvariant().Contains(k)).ToList();
+        }
+
+        int totalWarehouses = finalRows.Count;
+        int totalItems = finalRows.Sum(r => r.TotalItems);
+        int totalQtyOk = finalRows.Sum(r => r.QtyTotalOK);
+        int totalQtyBlock = finalRows.Sum(r => r.QtyBlockOK);
+        int totalQtyAvail = finalRows.Sum(r => r.QtyAvailOK);
+        decimal grandTotal = finalRows.Sum(r => r.TotalValInv);
+
+        var top = finalRows.OrderByDescending(r => r.TotalValInv).FirstOrDefault();
+
+        return new LeafWarehouseBalanceReport(
+            warehouseId,
+            whName,
+            asOfDate ?? DateTime.Today,
+            keyword,
+            totalWarehouses,
+            totalItems,
+            totalQtyOk,
+            totalQtyBlock,
+            totalQtyAvail,
+            grandTotal,
+            top?.WarehouseId ?? 0,
+            top?.WarehouseName ?? "—",
+            top?.TotalValInv ?? 0m,
+            top?.InvPercent ?? 0.0,
+            finalRows
         );
     }
 

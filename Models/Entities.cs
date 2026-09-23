@@ -3746,3 +3746,41 @@ public record PurchaseReceiptReport(
     decimal TotalAmountAfterVAT,
     List<PurchaseReceiptRow> Rows
 );
+/// <summary>Dòng báo cáo Giá trị tồn kho theo Kho (port từ Rpt_Inv_InventoryBalance_ByInvCodeLeaf Skycic).
+/// Mỗi kho được coi là một nút "kho cấp lá" (leaf warehouse) — nơi thực tế chứa hàng hoá và phát sinh giá trị tồn.</summary>
+public record LeafWarehouseBalanceRow(
+    int WarehouseId,
+    string WarehouseCode,
+    string WarehouseName,
+    string? InvTypeCode,        // Loại kho (KHO_TONG, KHO_NVL, KHO_TP...)
+    string? InvLevelTypeCode,   // Cấp kho (CAP_1, CAP_2, CAP_3, HUB, KHO_DAILY)
+    string? AreaCode,           // Vùng / Khu vực kho
+    int TotalItems,             // Số mặt hàng có tồn tại kho
+    int QtyTotalOK,             // Tổng số lượng tồn vật lý thực tế (QtyTotalOK)
+    int QtyBlockOK,             // Tổng số lượng tạm khóa / phong tỏa (QtyBlockOK)
+    int QtyAvailOK,             // Tổng số lượng khả dụng (QtyAvailOK = QtyTotalOK - QtyBlockOK)
+    decimal TotalValInv,        // Tổng giá trị tồn kho của kho (TotalValInv = Σ QtyTotalOK * UPInv)
+    double InvPercent,          // Tỷ trọng % giá trị kho trên tổng giá trị toàn hệ thống (InvPercent Skycic)
+    string RankLabel,           // Xếp hạng kho theo giá trị (Kho trọng điểm / Kho trung bình / Kho nhỏ)
+    string RankBadgeClass       // badge color
+);
+
+/// <summary>Báo cáo Giá trị tồn kho theo Kho tổng hợp (port từ Rpt_Inv_InventoryBalance_ByInvCodeLeaf Skycic).
+/// Định giá tồn kho theo từng kho cấp lá và tính tỷ trọng đóng góp giá trị của mỗi kho trên tổng tài sản kho.</summary>
+public record LeafWarehouseBalanceReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,
+    string? Keyword,
+    int TotalWarehouses,        // Tổng số kho có phát sinh giá trị tồn
+    int TotalItems,             // Tổng số mặt hàng (theo kho, có thể trùng mặt hàng giữa các kho)
+    int TotalQtyOK,             // Tổng số lượng tồn vật lý toàn hệ thống
+    int TotalQtyBlockOK,        // Tổng số lượng tạm khóa toàn hệ thống
+    int TotalQtyAvailOK,        // Tổng số lượng khả dụng toàn hệ thống
+    decimal GrandTotalValInv,   // Tổng giá trị tồn kho toàn hệ thống (VNĐ)
+    int TopWarehouseId,         // Kho đóng góp giá trị lớn nhất
+    string TopWarehouseName,    // Tên kho đóng góp giá trị lớn nhất
+    decimal TopWarehouseValInv, // Giá trị tồn của kho lớn nhất
+    double TopWarehousePercent, // Tỷ trọng % của kho lớn nhất
+    List<LeafWarehouseBalanceRow> Rows
+);
