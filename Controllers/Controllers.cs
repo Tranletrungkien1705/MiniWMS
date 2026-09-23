@@ -5390,6 +5390,158 @@ public class CustomerSourceController(IWmsService svc) : Controller
     }
 }
 
+public class GovTaxOfficeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? parentCode, int? level, bool? activeOnly, string? q)
+    {
+        var allOffices = await svc.GovTaxOfficesAsync();
+        ViewBag.RootOffices = allOffices.Where(o => string.IsNullOrWhiteSpace(o.ParentCode)).ToList();
+        ViewBag.ParentCode = parentCode ?? "";
+        ViewBag.Level = level;
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.GovTaxOfficesReportAsync(q, parentCode, level, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetGovTaxOfficeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy cơ quan thuế." });
+
+        return Json(new
+        {
+            id = detail.Office.Id,
+            code = detail.Office.Code,
+            name = detail.Office.Name,
+            parentCode = detail.Office.ParentCode,
+            parentName = detail.ParentOffice?.Name,
+            buCode = detail.Office.BUCode,
+            level = detail.Office.Level,
+            provinceCode = detail.Office.ProvinceCode,
+            districtCode = detail.Office.DistrictCode,
+            address = detail.Office.Address,
+            contactEmail = detail.Office.ContactEmail,
+            contactPhone = detail.Office.ContactPhone,
+            isActive = detail.Office.IsActive,
+            createdAt = detail.Office.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            totalSubOffices = detail.TotalSubOffices,
+            totalManagedCustomers = detail.TotalManagedCustomers,
+            subOffices = detail.SubOffices.Select(s => new { s.Id, s.Code, s.Name, s.Level, s.IsActive }),
+            customers = detail.Customers.Select(c => new { c.Id, c.Code, c.Name, c.CustomerType, c.Province, c.TaxCode })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? parentCode, string? provinceCode, string? districtCode, string? address, string? contactEmail, string? contactPhone, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên cơ quan thuế.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new GovTaxOffice
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            ProvinceCode = provinceCode?.Trim(),
+            DistrictCode = districtCode?.Trim(),
+            Address = address?.Trim(),
+            ContactEmail = contactEmail?.Trim(),
+            ContactPhone = contactPhone?.Trim(),
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateGovTaxOfficeAsync(item);
+            TempData["Success"] = $"Đã tạo mới cơ quan thuế '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? parentCode, string? provinceCode, string? districtCode, string? address, string? contactEmail, string? contactPhone, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên cơ quan thuế.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new GovTaxOffice
+        {
+            Name = name.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            ProvinceCode = provinceCode?.Trim(),
+            DistrictCode = districtCode?.Trim(),
+            Address = address?.Trim(),
+            ContactEmail = contactEmail?.Trim(),
+            ContactPhone = contactPhone?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateGovTaxOfficeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleGovTaxOfficeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteGovTaxOfficeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, int? level, bool? activeOnly, string? q)
+    {
+        var report = await svc.GovTaxOfficesReportAsync(q, parentCode, level, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC CƠ QUAN THUẾ QUẢN LÝ (MST_GOVTAXID)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc cơ quan cấp trên:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc cấp bậc:;{(level.HasValue ? level.Value.ToString() : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã cơ quan thuế;Tên cơ quan thuế;Cấp bậc;Cơ quan cấp trên;Mã đơn vị nghiệp vụ;Mã tỉnh;Mã huyện;Địa chỉ;Email;Điện thoại;Số cơ quan trực thuộc;Số KH/NCC quản lý;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.LevelName}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.BUCode ?? ""}\";\"{r.ProvinceCode ?? ""}\";\"{r.DistrictCode ?? ""}\";\"{r.Address?.Replace("\"", "\"\"")}\";\"{r.ContactEmail ?? ""}\";\"{r.ContactPhone ?? ""}\";{r.SubOfficeCount};{r.ManagedCustomerCount};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ CƠ QUAN THUẾ:;{report.TotalOffices};;;;;;;;;;;;;");
+        sb.AppendLine($";;CỤC THUẾ CẤP GỐC:;{report.RootOfficesCount};;;;;;;;;;;;;");
+        sb.AppendLine($";;CHI CỤC / ĐỘI THUẾ:;{report.SubOfficesCount};;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG KH/NCC GẮN CQT:;{report.TotalManagedCustomers};;;;;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"CoQuanThue_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class MoveOrdTypeController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? urgentOnly)

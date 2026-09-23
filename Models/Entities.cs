@@ -2565,6 +2565,71 @@ public record DepartmentDetailDto(
     List<StockDoc> RecentDispatches
 );
 
+/// <summary>Danh mục Cơ quan thuế quản lý (Tax Authority / Tax Office - port từ Mst_GovTaxID Skycic: GovTaxID, GovTaxIDParent, GovTaxIDBUCode, GovTaxIDBUPattern, GovTaxIDLevel, ProvinceCode, DistrictCode, GovTaxName, Address, ContactEmail, ContactPhone, FlagActive).
+/// Phân cấp cây Cục thuế -> Chi cục thuế -> Đội thuế; dùng để phân loại khách hàng/NCC theo cơ quan thuế quản lý địa bàn.</summary>
+public class GovTaxOffice : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";            // Mã cơ quan thuế (GovTaxID, vd: 0100231226, 0100231226-001...)
+    public string Name { get; set; } = "";            // Tên cơ quan thuế (GovTaxName, vd: Cục Thuế TP Hà Nội, Chi cục Thuế Quận Hoàn Kiếm...)
+    public string? ParentCode { get; set; }           // Mã cơ quan thuế cấp trên (GovTaxIDParent) - phân cấp Cục -> Chi cục -> Đội
+    public string? BUCode { get; set; }               // Mã đơn vị nghiệp vụ (GovTaxIDBUCode) - đường dẫn vật chất hóa cây phân cấp
+    public string? BUPattern { get; set; }            // Mẫu đường dẫn đơn vị nghiệp vụ (GovTaxIDBUPattern) - dùng LIKE truy vấn cây con
+    public int Level { get; set; } = 1;               // Cấp bậc cơ quan thuế (GovTaxIDLevel: 0 = Cục, 1 = Chi cục, 2 = Đội thuế...)
+    public string? ProvinceCode { get; set; }         // Mã tỉnh / thành phố (ProvinceCode)
+    public string? DistrictCode { get; set; }         // Mã quận / huyện (DistrictCode)
+    public string? Address { get; set; }              // Địa chỉ trụ sở cơ quan thuế (Address)
+    public string? ContactEmail { get; set; }         // Email liên hệ (ContactEmail)
+    public string? ContactPhone { get; set; }         // Điện thoại liên hệ (ContactPhone)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị cơ quan thuế kèm thông tin cấp trên, cấp bậc và số khách hàng/NCC trực thuộc quản lý.</summary>
+public record GovTaxOfficeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? ParentCode,
+    string? ParentName,
+    string? BUCode,
+    int Level,
+    string LevelName,
+    string? ProvinceCode,
+    string? DistrictCode,
+    string? Address,
+    string? ContactEmail,
+    string? ContactPhone,
+    bool IsActive,
+    DateTime CreatedAt,
+    int SubOfficeCount,
+    int ManagedCustomerCount
+);
+
+/// <summary>Báo cáo / Danh sách cơ quan thuế quản lý tổng hợp kèm 4 thẻ KPI.</summary>
+public record GovTaxOfficeReport(
+    string? Keyword,
+    string? ParentFilter,
+    int? LevelFilter,
+    bool? ActiveFilter,
+    int TotalOffices,
+    int RootOfficesCount,      // Số Cục thuế cấp gốc
+    int SubOfficesCount,       // Số Chi cục / Đội thuế trực thuộc
+    int TotalManagedCustomers, // Tổng khách hàng / NCC được gán cơ quan thuế quản lý
+    List<GovTaxOfficeRow> Rows
+);
+
+/// <summary>Chi tiết Cơ quan thuế kèm danh sách cơ quan trực thuộc và khách hàng/NCC thuộc địa bàn quản lý.</summary>
+public record GovTaxOfficeDetailDto(
+    GovTaxOffice Office,
+    GovTaxOffice? ParentOffice,
+    List<GovTaxOffice> SubOffices,
+    List<Customer> Customers,
+    int TotalSubOffices,
+    int TotalManagedCustomers
+);
+
 /// <summary>Danh mục Nguồn khách hàng & Kênh tiếp nhận đối tác kho (port từ Mst_CustomerSource Skycic: CustomerSourceCode, CustomerSourceName, CustomerSourceDesc, CustomerSourceCodeParent, CustomerSourceBUCode, FlagActive).</summary>
 public class CustomerSource : IOrgOwned
 {

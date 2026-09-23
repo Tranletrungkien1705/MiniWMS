@@ -3158,6 +3158,91 @@ app.MapDelete("/api/customer-sources/{id:int}", async (int id, IWmsService svc) 
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== CƠ QUAN THUẾ QUẢN LÝ (Mst_GovTaxID Skycic) ====================
+app.MapGet("/api/gov-tax-offices", async (string? q, string? parentCode, int? level, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.GovTaxOfficesReportAsync(q, parentCode, level, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/gov-tax-offices/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetGovTaxOfficeAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy cơ quan thuế." });
+});
+
+app.MapGet("/api/gov-tax-offices/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetGovTaxOfficeByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy cơ quan thuế." });
+});
+
+app.MapGet("/api/gov-tax-offices/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetGovTaxOfficeDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy cơ quan thuế." });
+});
+
+app.MapPost("/api/gov-tax-offices", async (CreateGovTaxOfficeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên cơ quan thuế." });
+
+    var item = new GovTaxOffice
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        ProvinceCode = dto.ProvinceCode?.Trim(),
+        DistrictCode = dto.DistrictCode?.Trim(),
+        Address = dto.Address?.Trim(),
+        ContactEmail = dto.ContactEmail?.Trim(),
+        ContactPhone = dto.ContactPhone?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateGovTaxOfficeAsync(item);
+        return Results.Ok(new { success = true, id, code = item.Code });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/gov-tax-offices/{id:int}", async (int id, UpdateGovTaxOfficeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên cơ quan thuế." });
+
+    var item = new GovTaxOffice
+    {
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        ProvinceCode = dto.ProvinceCode?.Trim(),
+        DistrictCode = dto.DistrictCode?.Trim(),
+        Address = dto.Address?.Trim(),
+        ContactEmail = dto.ContactEmail?.Trim(),
+        ContactPhone = dto.ContactPhone?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateGovTaxOfficeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/gov-tax-offices/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleGovTaxOfficeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/gov-tax-offices/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteGovTaxOfficeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // ==================== LOẠI HÌNH & MỤC ĐÍCH ĐIỀU CHUYỂN KHO (Mst_MoveOrdType Skycic) ====================
 app.MapGet("/api/move-ord-types", async (string? q, bool? activeOnly, bool? urgentOnly, IWmsService svc) =>
 {
@@ -4321,4 +4406,6 @@ record CalcVatDto(decimal NetAmount, string? VATRateCode);
 record CreateInventoryTransactionDto(int WarehouseId, int ProductId, InventoryTxnType TxnType, InventoryTxnQuality Quality, string? FunctionName, int QtyChTotalOK, int QtyChBlockOK, int QtyChTotalNG, int QtyChBlockNG, string? RefType, string? RefCode00, string? RefCode01, string? Remark);
 record CreatePurchaseReceiptDto(int WarehouseId, string? InvInTypeCode, string? InvInTypeName, string SupplierName, string? SupplierCode, string? InvoiceNo, DateTime? InvoiceDate, string? OrderNo, string? UserDeliver, string? VehicleNo, string? ContainerNo, string? ContractNo, DateTime? Date, string? Remark, List<PurchaseReceiptItemDto> Lines);
 record PurchaseReceiptItemDto(int ProductId, int Quantity, decimal UnitPrice, double VATRate, string? UnitCode, string? Note);
+record CreateGovTaxOfficeDto(string? Code, string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
+record UpdateGovTaxOfficeDto(string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
 

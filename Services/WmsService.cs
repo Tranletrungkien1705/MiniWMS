@@ -289,6 +289,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateCustomerSourceAsync(int id, CustomerSource item);
     Task<(bool ok, string msg)> ToggleCustomerSourceStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteCustomerSourceAsync(int id);
+    Task<GovTaxOfficeReport> GovTaxOfficesReportAsync(string? q = null, string? parentCode = null, int? level = null, bool? activeOnly = null);
+    Task<List<GovTaxOffice>> GovTaxOfficesAsync(string? q = null, bool? activeOnly = null);
+    Task<GovTaxOffice?> GetGovTaxOfficeAsync(int id);
+    Task<GovTaxOffice?> GetGovTaxOfficeByCodeAsync(string code);
+    Task<GovTaxOfficeDetailDto?> GetGovTaxOfficeDetailAsync(int id);
+    Task<int> CreateGovTaxOfficeAsync(GovTaxOffice item);
+    Task<(bool ok, string msg)> UpdateGovTaxOfficeAsync(int id, GovTaxOffice item);
+    Task<(bool ok, string msg)> ToggleGovTaxOfficeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteGovTaxOfficeAsync(int id);
     Task<MoveOrdTypeReport> MoveOrdTypesReportAsync(string? q = null, bool? activeOnly = null, bool? urgentOnly = null);
     Task<List<MoveOrdType>> MoveOrdTypesAsync(string? q = null, bool? activeOnly = null);
     Task<MoveOrdType?> GetMoveOrdTypeAsync(int id);
@@ -9538,6 +9547,274 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     /// <summary>BÃ¡o cÃ¡o / Danh sÃ¡ch loáº¡i hÃ¬nh Ä‘iá»u chuyá»ƒn kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_MoveOrdType Skycic: MoveOrdType, MoveOrdTypeName, FlagActive, LogLUDTimeUTC, LogLUBy).</summary>
+    // ===== Danh má»¥c CÆ¡ quan thuáº¿ quáº£n lÃ½ (port tá»« Mst_GovTaxID Skycic) =====
+
+    private static string GovTaxLevelName(int level) => level switch
+    {
+        0 => "Cá»¥c Thuáº¿",
+        1 => "Chi cá»¥c Thuáº¿",
+        2 => "Äá»™i Thuáº¿",
+        _ => $"Cáº¥p {level}"
+    };
+
+    /// <summary>BÃ¡o cÃ¡o danh má»¥c CÆ¡ quan thuáº¿ quáº£n lÃ½ kÃ¨m 4 tháº» KPI (port tá»« Mst_GovTaxID Skycic).</summary>
+    public async Task<GovTaxOfficeReport> GovTaxOfficesReportAsync(string? q = null, string? parentCode = null, int? level = null, bool? activeOnly = null)
+    {
+        var query = db.GovTaxOffices.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode.Equals("ROOT", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(o => string.IsNullOrEmpty(o.ParentCode));
+            else
+                query = query.Where(o => o.ParentCode != null && o.ParentCode.ToLower() == parentCode.Trim().ToLower());
+        }
+
+        if (level.HasValue)
+            query = query.Where(o => o.Level == level.Value);
+
+        if (activeOnly.HasValue)
+            query = query.Where(o => o.IsActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(o => o.Code.ToLower().Contains(kw) ||
+                                     o.Name.ToLower().Contains(kw) ||
+                                     (o.Address != null && o.Address.ToLower().Contains(kw)) ||
+                                     (o.ContactEmail != null && o.ContactEmail.ToLower().Contains(kw)) ||
+                                     (o.ContactPhone != null && o.ContactPhone.ToLower().Contains(kw)));
+        }
+
+        var allOffices = await db.GovTaxOffices.ToListAsync();
+        var offices = await query.ToListAsync();
+        var customers = await db.Customers.ToListAsync();
+
+        var officeDict = allOffices.ToDictionary(o => o.Code.ToUpperInvariant(), o => o.Name);
+
+        var rows = offices.Select(o =>
+        {
+            var parentUpper = o.ParentCode?.ToUpperInvariant();
+            string? parentName = (parentUpper != null && officeDict.TryGetValue(parentUpper, out var pName)) ? pName : null;
+
+            var childCodes = allOffices.Where(sub => sub.ParentCode != null && sub.ParentCode.Equals(o.Code, StringComparison.OrdinalIgnoreCase)).Select(sub => sub.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int managedCustomers = customers.Count(c => !string.IsNullOrEmpty(c.TaxCode) && (c.TaxCode.Equals(o.Code, StringComparison.OrdinalIgnoreCase) || childCodes.Contains(c.TaxCode)));
+
+            return new GovTaxOfficeRow(
+                o.Id,
+                o.Code,
+                o.Name,
+                o.ParentCode,
+                parentName,
+                o.BUCode,
+                o.Level,
+                GovTaxLevelName(o.Level),
+                o.ProvinceCode,
+                o.DistrictCode,
+                o.Address,
+                o.ContactEmail,
+                o.ContactPhone,
+                o.IsActive,
+                o.CreatedAt,
+                allOffices.Count(sub => sub.ParentCode != null && sub.ParentCode.Equals(o.Code, StringComparison.OrdinalIgnoreCase)),
+                managedCustomers
+            );
+        }).OrderBy(r => string.IsNullOrWhiteSpace(r.ParentCode) ? r.Code : r.ParentCode)
+          .ThenBy(r => r.Level)
+          .ThenBy(r => r.Code)
+          .ToList();
+
+        int totalOffices = allOffices.Count;
+        int rootOfficesCount = allOffices.Count(o => string.IsNullOrWhiteSpace(o.ParentCode));
+        int subOfficesCount = totalOffices - rootOfficesCount;
+        int totalManagedCustomers = customers.Count(c => !string.IsNullOrEmpty(c.TaxCode));
+
+        return new GovTaxOfficeReport(
+            q,
+            parentCode,
+            level,
+            activeOnly,
+            totalOffices,
+            rootOfficesCount,
+            subOfficesCount,
+            totalManagedCustomers,
+            rows
+        );
+    }
+
+    public Task<List<GovTaxOffice>> GovTaxOfficesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.GovTaxOffices.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(o => o.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(o => o.Code.ToLower().Contains(kw) || o.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(o => string.IsNullOrWhiteSpace(o.ParentCode) ? o.Code : o.ParentCode)
+                    .ThenBy(o => o.Code)
+                    .ToListAsync();
+    }
+
+    public Task<GovTaxOffice?> GetGovTaxOfficeAsync(int id) =>
+        db.GovTaxOffices.FirstOrDefaultAsync(o => o.Id == id);
+
+    public Task<GovTaxOffice?> GetGovTaxOfficeByCodeAsync(string code) =>
+        db.GovTaxOffices.FirstOrDefaultAsync(o => o.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<GovTaxOfficeDetailDto?> GetGovTaxOfficeDetailAsync(int id)
+    {
+        var item = await db.GovTaxOffices.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.GovTaxOffices.FirstOrDefaultAsync(o => o.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subOffices = await db.GovTaxOffices
+            .Where(o => o.ParentCode != null && o.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(o => o.Code)
+            .ToListAsync();
+
+        var childCodes = subOffices.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var customers = await db.Customers
+            .Where(c => !string.IsNullOrEmpty(c.TaxCode) && (c.TaxCode.ToLower() == item.Code.Trim().ToLower() || childCodes.Contains(c.TaxCode)))
+            .OrderBy(c => c.Code)
+            .ToListAsync();
+
+        return new GovTaxOfficeDetailDto(item, parent, subOffices, customers, subOffices.Count, customers.Count);
+    }
+
+    public async Task<int> CreateGovTaxOfficeAsync(GovTaxOffice item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("TÃªn cÆ¡ quan thuáº¿ khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"CQT_{await db.GovTaxOffices.CountAsync() + 1:D4}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("CÆ¡ quan thuáº¿ cáº¥p trÃªn khÃ´ng thá»ƒ lÃ  chÃ­nh cÆ¡ quan nÃ y.");
+        }
+
+        bool exists = await db.GovTaxOffices.AnyAsync(o => o.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"MÃ£ cÆ¡ quan thuáº¿ '{item.Code}' Ä‘Ã£ tá»“n táº¡i trong há»‡ thá»‘ng.");
+
+        item.CreatedAt = DateTime.Now;
+        db.GovTaxOffices.Add(item);
+        await db.SaveChangesAsync();
+        await RecomputeGovTaxBUAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateGovTaxOfficeAsync(int id, GovTaxOffice item)
+    {
+        var existing = await db.GovTaxOffices.FirstOrDefaultAsync(o => o.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cÆ¡ quan thuáº¿.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "TÃªn cÆ¡ quan thuáº¿ khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            var pCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+                return (false, "CÆ¡ quan thuáº¿ cáº¥p trÃªn khÃ´ng thá»ƒ lÃ  chÃ­nh cÆ¡ quan nÃ y.");
+            existing.ParentCode = pCode;
+        }
+        else
+        {
+            existing.ParentCode = null;
+        }
+
+        existing.Name = item.Name.Trim();
+        existing.ProvinceCode = item.ProvinceCode?.Trim();
+        existing.DistrictCode = item.DistrictCode?.Trim();
+        existing.Address = item.Address?.Trim();
+        existing.ContactEmail = item.ContactEmail?.Trim();
+        existing.ContactPhone = item.ContactPhone?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        await RecomputeGovTaxBUAsync();
+        return (true, $"ÄÃ£ cáº­p nháº­t cÆ¡ quan thuáº¿ '{existing.Code}' thÃ nh cÃ´ng.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleGovTaxOfficeStatusAsync(int id)
+    {
+        var existing = await db.GovTaxOffices.FirstOrDefaultAsync(o => o.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cÆ¡ quan thuáº¿.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"ÄÃ£ kÃch hoáº¡t cÆ¡ quan thuáº¿ '{existing.Code}'." : $"ÄÃ£ chuyá»ƒn cÆ¡ quan thuáº¿ '{existing.Code}' sang tráº¡ng thÃ¡i Táº¡m dá»«ng Ã¡p dá»¥ng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteGovTaxOfficeAsync(int id)
+    {
+        var existing = await db.GovTaxOffices.FirstOrDefaultAsync(o => o.Id == id);
+        if (existing == null) return (false, "KhÃ´ng tÃ¬m tháº¥y cÆ¡ quan thuáº¿.");
+
+        bool hasCustomers = await db.Customers.AnyAsync(c => c.TaxCode != null && c.TaxCode.ToUpper() == existing.Code.ToUpper());
+        bool hasSubOffices = await db.GovTaxOffices.AnyAsync(o => o.ParentCode != null && o.ParentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasCustomers || hasSubOffices)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            var reasons = new List<string>();
+            if (hasCustomers) reasons.Add("khÃ¡ch hÃ ng/NCC Ä‘ang liÃªn káº¿t");
+            if (hasSubOffices) reasons.Add("cÆ¡ quan thuáº¿ trá»±c thuá»™c");
+            return (true, $"CÆ¡ quan thuáº¿ '{existing.Code}' Ä‘ang cÃ³ {string.Join(", ", reasons)} nÃªn Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i Ngá»«ng Ã¡p dá»¥ng thay vÃ¬ xÃ³a háº³n.");
+        }
+
+        db.GovTaxOffices.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"ÄÃ£ xÃ³a cÆ¡ quan thuáº¿ '{existing.Code}'.");
+    }
+
+    /// <summary>TÃ­nh láº¡i Ä‘Æ°á»ng dáº«n Ä‘Æ¡n vá»‹ nghiá»‡p vá»¥ (BUCode/BUPattern) vÃ  cáº¥p báº­c (Level) cho toÃ n bá»™ cÃ¢y cÆ¡ quan thuáº¿ (port tá»« Mst_GovTaxID_UpdBU Skycic).</summary>
+    private async Task RecomputeGovTaxBUAsync()
+    {
+        var all = await db.GovTaxOffices.ToListAsync();
+        var byCode = all.ToDictionary(o => o.Code.ToUpperInvariant(), o => o);
+
+        int ResolveLevel(GovTaxOffice o, HashSet<string> visiting)
+        {
+            if (string.IsNullOrWhiteSpace(o.ParentCode)) return 0;
+            var pUpper = o.ParentCode.ToUpperInvariant();
+            if (!byCode.TryGetValue(pUpper, out var parent) || !visiting.Add(pUpper)) return 0;
+            return ResolveLevel(parent, visiting) + 1;
+        }
+
+        string ResolveBU(GovTaxOffice o, HashSet<string> visiting)
+        {
+            if (string.IsNullOrWhiteSpace(o.ParentCode)) return o.Code;
+            var pUpper = o.ParentCode.ToUpperInvariant();
+            if (!byCode.TryGetValue(pUpper, out var parent) || !visiting.Add(pUpper)) return o.Code;
+            return ResolveBU(parent, visiting) + "." + o.Code;
+        }
+
+        foreach (var o in all)
+        {
+            o.Level = ResolveLevel(o, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            o.BUCode = ResolveBU(o, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            o.BUPattern = o.BUCode + "%";
+        }
+        await db.SaveChangesAsync();
+    }
+
     public async Task<MoveOrdTypeReport> MoveOrdTypesReportAsync(string? q = null, bool? activeOnly = null, bool? urgentOnly = null)
     {
         var query = db.MoveOrdTypes.AsQueryable();

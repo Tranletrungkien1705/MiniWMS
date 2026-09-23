@@ -55,6 +55,7 @@ public class AppDbContext : DbContext
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<CustomerSource> CustomerSources => Set<CustomerSource>();
+    public DbSet<GovTaxOffice> GovTaxOffices => Set<GovTaxOffice>();
     public DbSet<MoveOrdType> MoveOrdTypes => Set<MoveOrdType>();
     public DbSet<Dealer> Dealers => Set<Dealer>();
     public DbSet<TempPrintType> TempPrintTypes => Set<TempPrintType>();
@@ -94,6 +95,13 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<GovTaxOffice>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasIndex(x => new { x.OrgId, x.Level });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<ProductGroup>(e =>

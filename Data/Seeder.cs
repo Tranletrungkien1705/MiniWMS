@@ -625,6 +625,23 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.GovTaxOffices.AnyAsync())
+        {
+            db.GovTaxOffices.AddRange(
+                // Cấp 0: Cục Thuế (Root Tax Departments)
+                new GovTaxOffice { Code = "0100231226", Name = "Cục Thuế TP Hà Nội", ParentCode = null, BUCode = "0100231226", BUPattern = "0100231226%", Level = 0, ProvinceCode = "01", DistrictCode = null, Address = "Số 187 Giảng Võ, Q. Đống Đa, TP Hà Nội", ContactEmail = "cucthue.hanoi@gdt.gov.vn", ContactPhone = "024.3851.5000", IsActive = true },
+                new GovTaxOffice { Code = "0301234567", Name = "Cục Thuế TP Hồ Chí Minh", ParentCode = null, BUCode = "0301234567", BUPattern = "0301234567%", Level = 0, ProvinceCode = "79", DistrictCode = null, Address = "Số 138 Nguyễn Thị Minh Khai, Q.3, TP Hồ Chí Minh", ContactEmail = "cucthue.hcm@gdt.gov.vn", ContactPhone = "028.3930.5000", IsActive = true },
+                // Cấp 1: Chi cục Thuế (Sub Tax Offices)
+                new GovTaxOffice { Code = "0100231226-001", Name = "Chi cục Thuế Quận Hoàn Kiếm", ParentCode = "0100231226", BUCode = "0100231226.0100231226-001", BUPattern = "0100231226.0100231226-001%", Level = 1, ProvinceCode = "01", DistrictCode = "001", Address = "Số 8 Lê Thái Tổ, Q. Hoàn Kiếm, TP Hà Nội", ContactEmail = "cct.hoankiem@gdt.gov.vn", ContactPhone = "024.3825.3000", IsActive = true },
+                new GovTaxOffice { Code = "0100231226-002", Name = "Chi cục Thuế Quận Đống Đa", ParentCode = "0100231226", BUCode = "0100231226.0100231226-002", BUPattern = "0100231226.0100231226-002%", Level = 1, ProvinceCode = "01", DistrictCode = "006", Address = "Số 187 Giảng Võ, Q. Đống Đa, TP Hà Nội", ContactEmail = "cct.dongda@gdt.gov.vn", ContactPhone = "024.3851.5001", IsActive = true },
+                new GovTaxOffice { Code = "0301234567-001", Name = "Chi cục Thuế Quận 1", ParentCode = "0301234567", BUCode = "0301234567.0301234567-001", BUPattern = "0301234567.0301234567-001%", Level = 1, ProvinceCode = "79", DistrictCode = "760", Address = "Số 138 Nguyễn Thị Minh Khai, Q.1, TP Hồ Chí Minh", ContactEmail = "cct.quan1@gdt.gov.vn", ContactPhone = "028.3930.5001", IsActive = true },
+                // Cấp 2: Đội Thuế (Tax Teams)
+                new GovTaxOffice { Code = "0100231226-001-01", Name = "Đội Thuế số 1 - Q. Hoàn Kiếm", ParentCode = "0100231226-001", BUCode = "0100231226.0100231226-001.0100231226-001-01", BUPattern = "0100231226.0100231226-001.0100231226-001-01%", Level = 2, ProvinceCode = "01", DistrictCode = "001", Address = "Số 8 Lê Thái Tổ, Q. Hoàn Kiếm, TP Hà Nội", ContactEmail = "doi1.hoankiem@gdt.gov.vn", ContactPhone = "024.3825.3001", IsActive = true },
+                new GovTaxOffice { Code = "0100231226-002-01", Name = "Đội Thuế số 1 - Q. Đống Đa", ParentCode = "0100231226-002", BUCode = "0100231226.0100231226-002.0100231226-002-01", BUPattern = "0100231226.0100231226-002.0100231226-002-01%", Level = 2, ProvinceCode = "01", DistrictCode = "006", Address = "Số 187 Giảng Võ, Q. Đống Đa, TP Hà Nội", ContactEmail = "doi1.dongda@gdt.gov.vn", ContactPhone = "024.3851.5002", IsActive = true },
+                new GovTaxOffice { Code = "0301234567-001-01", Name = "Đội Thuế số 1 - Q.1 (ngừng dùng)", ParentCode = "0301234567-001", BUCode = "0301234567.0301234567-001.0301234567-001-01", BUPattern = "0301234567.0301234567-001.0301234567-001-01%", Level = 2, ProvinceCode = "79", DistrictCode = "760", Address = "Số 138 Nguyễn Thị Minh Khai, Q.1, TP Hồ Chí Minh", ContactEmail = "doi1.quan1@gdt.gov.vn", ContactPhone = "028.3930.5002", IsActive = false }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
