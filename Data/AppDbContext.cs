@@ -61,6 +61,7 @@ public class AppDbContext : DbContext
     public DbSet<TempPrint> TempPrints => Set<TempPrint>();
     public DbSet<CurrencyExchange> CurrencyExchanges => Set<CurrencyExchange>();
     public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
+    public DbSet<SpecUnit> SpecUnits => Set<SpecUnit>();
     public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
     public DbSet<VATRate> VATRates => Set<VATRate>();
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
@@ -389,6 +390,19 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ModelCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<SpecUnit>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.SpecCode, x.UnitCode }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.SpecCode });
+            e.Property(x => x.Qty).HasPrecision(18, 4);
+            e.Property(x => x.Length).HasPrecision(18, 4);
+            e.Property(x => x.Width).HasPrecision(18, 4);
+            e.Property(x => x.Height).HasPrecision(18, 4);
+            e.Property(x => x.Volume).HasPrecision(18, 4);
+            e.Property(x => x.Weight).HasPrecision(18, 4);
+            e.Ignore(x => x.ComputedVolumeM3);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<SpecPrice>(e =>

@@ -6466,6 +6466,135 @@ public class ProductSpecController(IWmsService svc) : Controller
     }
 }
 
+// ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+public class SpecUnitController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? specCode, string? unitCode, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.SpecCode = specCode;
+        ViewBag.UnitCode = unitCode;
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Specs = await svc.ProductSpecsAsync();
+        ViewBag.Units = await svc.PartUnitsAsync();
+
+        var report = await svc.SpecUnitsReportAsync(q, specCode, unitCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string specCode, string unitCode, string? standardUnitCode, string? specUnitDesc, decimal qty, decimal length, decimal width, decimal height, decimal volume, decimal weight, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(specCode) || string.IsNullOrWhiteSpace(unitCode))
+        {
+            TempData["Error"] = "Mã quy cách sản phẩm và đơn vị tính không được để trống.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new SpecUnit
+            {
+                SpecCode = specCode.Trim().ToUpper(),
+                UnitCode = unitCode.Trim(),
+                StandardUnitCode = string.IsNullOrWhiteSpace(standardUnitCode) ? "cái" : standardUnitCode.Trim(),
+                SpecUnitDesc = specUnitDesc?.Trim(),
+                Qty = qty > 0m ? qty : 1m,
+                Length = length,
+                Width = width,
+                Height = height,
+                Volume = volume,
+                Weight = weight,
+                IsActive = isActive,
+                Remark = remark?.Trim()
+            };
+            await svc.CreateSpecUnitAsync(item);
+            TempData["Success"] = $"Đã thêm quy cách đóng gói '{item.SpecCode}' / '{item.UnitCode}' thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, string? standardUnitCode, string? specUnitDesc, decimal qty, decimal length, decimal width, decimal height, decimal volume, decimal weight, bool isActive, string? remark)
+    {
+        var item = new SpecUnit
+        {
+            StandardUnitCode = string.IsNullOrWhiteSpace(standardUnitCode) ? "cái" : standardUnitCode.Trim(),
+            SpecUnitDesc = specUnitDesc?.Trim(),
+            Qty = qty > 0m ? qty : 1m,
+            Length = length,
+            Width = width,
+            Height = height,
+            Volume = volume,
+            Weight = weight,
+            IsActive = isActive,
+            Remark = remark?.Trim()
+        };
+
+        var (ok, msg) = await svc.UpdateSpecUnitAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleSpecUnitStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteSpecUnitAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? specCode, string? unitCode, bool? activeOnly)
+    {
+        var report = await svc.SpecUnitsReportAsync(q, specCode, unitCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PRDCENTER_MST_SPECUNIT)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số dòng:;{report.TotalUnits};Đang áp dụng:;{report.ActiveCount};Số quy cách:;{report.DistinctSpecsCount};Số đơn vị:;{report.DistinctUnitsCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã quy cách;Tên quy cách;Dòng Model;Đơn vị tính;ĐVT chuẩn;Số lượng quy đổi;Dài (cm);Rộng (cm);Cao (cm);Thể tích (m3);Khối lượng (kg);Trạng thái;Mô tả đóng gói;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.SpecCode}\";\"{(r.SpecName ?? "").Replace("\"", "\"\"")}\";\"{r.ModelCode ?? ""}\";\"{r.UnitCode}\";\"{r.StandardUnitCode ?? ""}\";{r.Qty};{r.Length};{r.Width};{r.Height};{r.Volume};{r.Weight};\"{statusStr}\";\"{(r.SpecUnitDesc ?? "").Replace("\"", "\"\"")}\";\"{(r.Remark ?? "").Replace("\"", "\"\"")}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG DÒNG QUY CÁCH ĐÓNG GÓI:;{report.TotalUnits};;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG THỂ TÍCH (m3):;{report.TotalVolumeM3};;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG KHỐI LƯỢNG (kg):;{report.TotalWeightKg};;;;;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"QuyCachDongGoiTheoDonVi_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 // ==================== QUẢN LÝ BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
 public class SpecPriceController(IWmsService svc) : Controller
 {

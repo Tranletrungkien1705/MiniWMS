@@ -3909,6 +3909,119 @@ public static class Seeder
             await db.SaveChangesAsync();
         }
 
+        // ==================== SEED QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+        if (!await db.SpecUnits.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.SpecUnits.AddRange(
+                new SpecUnit
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-L",
+                    UnitCode = "cái",
+                    StandardUnitCode = "cái",
+                    SpecUnitDesc = "Đơn vị bán lẻ 1 áo sơ mi Slimfit Trắng L, gấp gói túi PE trong suốt",
+                    Qty = 1m,
+                    Length = 35m, Width = 25m, Height = 4m,
+                    Volume = 0.0035m, Weight = 0.35m,
+                    IsActive = true,
+                    Remark = "Đơn vị cơ sở để quy đổi lên hộp/thùng",
+                    CreatedAt = now.AddDays(-60)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-L",
+                    UnitCode = "hộp",
+                    StandardUnitCode = "cái",
+                    SpecUnitDesc = "Hộp combo 5 áo sơ mi, hộp carton cứng in logo, đóng đai nhựa",
+                    Qty = 5m,
+                    Length = 40m, Width = 30m, Height = 12m,
+                    Volume = 0.0144m, Weight = 1.9m,
+                    IsActive = true,
+                    Remark = "Quy cách đóng hộp quà tặng doanh nghiệp",
+                    CreatedAt = now.AddDays(-58)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-L",
+                    UnitCode = "thùng",
+                    StandardUnitCode = "cái",
+                    SpecUnitDesc = "Thùng 12 hộp xếp 2 lớp, đóng đai nhựa, dán tem QR WMS",
+                    Qty = 60m,
+                    Length = 62m, Width = 42m, Height = 30m,
+                    Volume = 0.0781m, Weight = 24.5m,
+                    IsActive = true,
+                    Remark = "Quy cách xuất kho theo thùng cho đại lý cấp 1",
+                    CreatedAt = now.AddDays(-55)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-QUAN-JN-DEN-32",
+                    UnitCode = "cái",
+                    StandardUnitCode = "chiếc",
+                    SpecUnitDesc = "Đơn vị bán lẻ 1 quần Jeans Nam Đen size 32, gấp gói túi PE",
+                    Qty = 1m,
+                    Length = 38m, Width = 28m, Height = 5m,
+                    Volume = 0.0053m, Weight = 0.65m,
+                    IsActive = true,
+                    Remark = "Mặt hàng quản lý Serial từng chiếc",
+                    CreatedAt = now.AddDays(-45)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-QUAN-JN-DEN-32",
+                    UnitCode = "thùng",
+                    StandardUnitCode = "chiếc",
+                    SpecUnitDesc = "Thùng 20 quần Jeans xếp phẳng, lót giấy chống ẩm, đóng đai",
+                    Qty = 20m,
+                    Length = 60m, Width = 40m, Height = 25m,
+                    Volume = 0.06m, Weight = 13.5m,
+                    IsActive = true,
+                    Remark = "Quy cách xuất kho theo thùng",
+                    CreatedAt = now.AddDays(-42)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-GIAT-XA-CAN-3L",
+                    UnitCode = "can",
+                    StandardUnitCode = "can",
+                    SpecUnitDesc = "Can nhựa HDPE 3.5 lít kèm nắp định lượng 60ml",
+                    Qty = 1m,
+                    Length = 18m, Width = 12m, Height = 28m,
+                    Volume = 0.006m, Weight = 3.7m,
+                    IsActive = true,
+                    Remark = "Đơn vị cơ sở, theo dõi Date sản xuất & HSD FEFO",
+                    CreatedAt = now.AddDays(-30)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-GIAT-XA-CAN-3L",
+                    UnitCode = "thùng",
+                    StandardUnitCode = "can",
+                    SpecUnitDesc = "Thùng 6 can xếp 2 lớp, lót xốp chống va đập, đóng đai nhựa",
+                    Qty = 6m,
+                    Length = 40m, Width = 28m, Height = 30m,
+                    Volume = 0.0336m, Weight = 22.8m,
+                    IsActive = true,
+                    Remark = "Quy cách xuất kho theo thùng cho kênh bán buôn",
+                    CreatedAt = now.AddDays(-28)
+                },
+                new SpecUnit
+                {
+                    SpecCode = "SPC-AO-KHOAC-DA-XL",
+                    UnitCode = "cái",
+                    StandardUnitCode = "cái",
+                    SpecUnitDesc = "Đơn vị bán lẻ 1 áo khoác da bò, bọc túi vải không dệt + hộp cứng",
+                    Qty = 1m,
+                    Length = 45m, Width = 35m, Height = 8m,
+                    Volume = 0.0126m, Weight = 1.8m,
+                    IsActive = true,
+                    Remark = "Sản phẩm giá trị cao, quét serial từng chiếc",
+                    CreatedAt = now.AddDays(-25)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
+
         // ==================== SEED BẢNG GIÁ QUY CÁCH SẢN PHẨM (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
         if (!await db.SpecPrices.AnyAsync())
         {
@@ -4131,7 +4244,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4199,6 +4312,9 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_ModelCode\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"ModelCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"SpecPrices\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"SpecCode\" text NOT NULL, \"UnitCode\" text NOT NULL, \"BuyPrice\" numeric NOT NULL DEFAULT 0, \"SellPrice\" numeric NOT NULL DEFAULT 0, \"CurrencyCode\" text NOT NULL DEFAULT 'VND', \"VATRateCode\" text NULL, \"DiscountVND\" numeric NOT NULL DEFAULT 0, \"EffectDTimeStart\" timestamp NOT NULL DEFAULT now(), \"EffectDTimeEnd\" timestamp NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SpecPrices_OrgId_SpecCode_UnitCode\" ON miniwms.\"SpecPrices\" (\"OrgId\", \"SpecCode\", \"UnitCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"SpecUnits\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"SpecCode\" text NOT NULL, \"UnitCode\" text NOT NULL, \"StandardUnitCode\" text NULL, \"SpecUnitDesc\" text NULL, \"Qty\" numeric NOT NULL DEFAULT 1, \"Length\" numeric NOT NULL DEFAULT 0, \"Width\" numeric NOT NULL DEFAULT 0, \"Height\" numeric NOT NULL DEFAULT 0, \"Volume\" numeric NOT NULL DEFAULT 0, \"Weight\" numeric NOT NULL DEFAULT 0, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SpecUnits_OrgId_SpecCode_UnitCode\" ON miniwms.\"SpecUnits\" (\"OrgId\", \"SpecCode\", \"UnitCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_SpecUnits_OrgId_SpecCode\" ON miniwms.\"SpecUnits\" (\"OrgId\", \"SpecCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"VATRates\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"VATRateCode\" text NOT NULL, \"Rate\" numeric NOT NULL DEFAULT 0, \"VATDesc\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_VATRates_OrgId_VATRateCode\" ON miniwms.\"VATRates\" (\"OrgId\", \"VATRateCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"PartColors\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"NameVN\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4990,6 +5106,26 @@ public static class Seeder
                 ""UpdatedAt"" TEXT NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SpecPrices_OrgId_SpecCode_UnitCode"" ON ""SpecPrices"" (""OrgId"", ""SpecCode"", ""UnitCode"");",
+            @"CREATE TABLE IF NOT EXISTS ""SpecUnits"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""SpecCode"" TEXT NOT NULL,
+                ""UnitCode"" TEXT NOT NULL,
+                ""StandardUnitCode"" TEXT NULL,
+                ""SpecUnitDesc"" TEXT NULL,
+                ""Qty"" NUMERIC NOT NULL DEFAULT 1,
+                ""Length"" NUMERIC NOT NULL DEFAULT 0,
+                ""Width"" NUMERIC NOT NULL DEFAULT 0,
+                ""Height"" NUMERIC NOT NULL DEFAULT 0,
+                ""Volume"" NUMERIC NOT NULL DEFAULT 0,
+                ""Weight"" NUMERIC NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SpecUnits_OrgId_SpecCode_UnitCode"" ON ""SpecUnits"" (""OrgId"", ""SpecCode"", ""UnitCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_SpecUnits_OrgId_SpecCode"" ON ""SpecUnits"" (""OrgId"", ""SpecCode"");",
             @"CREATE TABLE IF NOT EXISTS ""VATRates"" (
                 ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                 ""OrgId"" TEXT NOT NULL,

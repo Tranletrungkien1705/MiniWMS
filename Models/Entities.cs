@@ -3167,6 +3167,70 @@ public record ProductSpecDetailDto(
 );
 
 
+// ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+
+/// <summary>Quy cách đóng gói theo Đơn vị tính của Quy cách sản phẩm (port từ OS_PrdCenter_Mst_SpecUnit &amp; Mst_SpecUnit Skycic).
+/// Mỗi dòng gắn một Quy cách sản phẩm (SpecCode) với một Đơn vị tính (UnitCode) kèm số lượng quy đổi,
+/// kích thước đóng gói (Dài x Rộng x Cao), thể tích, khối lượng và đơn vị chuẩn quy đổi.</summary>
+public class SpecUnit : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SpecCode { get; set; } = "";            // Mã quy cách sản phẩm (SpecCode, FK liên kết ProductSpec.Code)
+    public string UnitCode { get; set; } = "";            // Đơn vị tính đóng gói (UnitCode, vd: cái, hộp, thùng, pallet)
+    public string? StandardUnitCode { get; set; }          // Đơn vị chuẩn quy đổi (StandardUnitCode, vd: cái)
+    public string? SpecUnitDesc { get; set; }              // Mô tả quy cách đóng gói theo đơn vị (SpecUnitDesc)
+    public decimal Qty { get; set; } = 1m;                 // Số lượng quy đổi về đơn vị chuẩn (Qty)
+    public decimal Length { get; set; } = 0m;              // Chiều dài đóng gói (Length, cm)
+    public decimal Width { get; set; } = 0m;               // Chiều rộng đóng gói (Width, cm)
+    public decimal Height { get; set; } = 0m;              // Chiều cao đóng gói (Height, cm)
+    public decimal Volume { get; set; } = 0m;              // Thể tích đóng gói (Volume, m3)
+    public decimal Weight { get; set; } = 0m;              // Khối lượng đóng gói (Weight, kg)
+    public bool IsActive { get; set; } = true;             // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public string? Remark { get; set; }                    // Ghi chú quy cách đóng gói (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Thể tích tính từ kích thước (m3) = (Length * Width * Height) / 1,000,000 khi Volume chưa được nhập.</summary>
+    public decimal ComputedVolumeM3 => Volume > 0m ? Volume : Math.Round((Length * Width * Height) / 1000000m, 4);
+}
+
+/// <summary>Dòng hiển thị Quy cách đóng gói theo Đơn vị tính kèm tên quy cách sản phẩm và đơn vị chuẩn.</summary>
+public record SpecUnitRow(
+    int Id,
+    string SpecCode,
+    string? SpecName,
+    string? ModelCode,
+    string UnitCode,
+    string? StandardUnitCode,
+    string? SpecUnitDesc,
+    decimal Qty,
+    decimal Length,
+    decimal Width,
+    decimal Height,
+    decimal Volume,
+    decimal Weight,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo / Danh sách Quy cách đóng gói theo Đơn vị tính tổng hợp kèm 4 thẻ KPI (port từ Mst_SpecUnit Skycic).</summary>
+public record SpecUnitReport(
+    string? Keyword,
+    string? SpecCodeFilter,
+    string? UnitCodeFilter,
+    bool? ActiveFilter,
+    int TotalUnits,
+    int ActiveCount,
+    int DistinctSpecsCount,
+    int DistinctUnitsCount,
+    decimal TotalVolumeM3,
+    decimal TotalWeightKg,
+    List<SpecUnitRow> Rows
+);
+
+
 // ==================== QUẢN LÝ BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
 
 /// <summary>Bảng giá quy cách sản phẩm kho (port từ OS_PrdCenter_Mst_SpecPrice & Mst_SpecPrice Skycic: SpecCode, UnitCode, BuyPrice, SellPrice, CurrencyCode, VATRateCode, DiscountVND, EffectDTimeStart, EffectDTimeEnd, FlagActive, Remark).</summary>

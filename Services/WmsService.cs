@@ -353,6 +353,13 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item);
     Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteProductSpecAsync(int id);
+    Task<SpecUnitReport> SpecUnitsReportAsync(string? q = null, string? specCode = null, string? unitCode = null, bool? activeOnly = null);
+    Task<List<SpecUnit>> SpecUnitsAsync(string? specCode = null, bool? activeOnly = null);
+    Task<SpecUnit?> GetSpecUnitAsync(int id);
+    Task<int> CreateSpecUnitAsync(SpecUnit item);
+    Task<(bool ok, string msg)> UpdateSpecUnitAsync(int id, SpecUnit item);
+    Task<(bool ok, string msg)> ToggleSpecUnitStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteSpecUnitAsync(int id);
     Task<SpecPriceReport> SpecPricesReportAsync(string? q = null, string? specCode = null, string? unitCode = null, string? currencyCode = null, bool? activeOnly = null);
     Task<List<SpecPrice>> SpecPricesAsync(bool? activeOnly = null);
     Task<SpecPrice?> GetSpecPriceAsync(int id);
@@ -11873,6 +11880,143 @@ public class WmsService(AppDbContext db) : IWmsService
         db.ProductSpecs.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"ÄÃ£ xÃ³a quy cÃ¡ch '{existing.Name}' ({existing.Code}) thÃ nh cÃ´ng.");
+    }
+
+    // ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+    public async Task<SpecUnitReport> SpecUnitsReportAsync(string? q = null, string? specCode = null, string? unitCode = null, bool? activeOnly = null)
+    {
+        var query = db.SpecUnits.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(u => u.SpecCode.ToLower().Contains(kw)
+                || u.UnitCode.ToLower().Contains(kw)
+                || (u.SpecUnitDesc != null && u.SpecUnitDesc.ToLower().Contains(kw))
+                || (u.Remark != null && u.Remark.ToLower().Contains(kw)));
+        }
+        if (!string.IsNullOrWhiteSpace(specCode))
+        {
+            query = query.Where(u => u.SpecCode == specCode.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(unitCode))
+        {
+            query = query.Where(u => u.UnitCode == unitCode.Trim());
+        }
+        if (activeOnly == true)
+        {
+            query = query.Where(u => u.IsActive);
+        }
+
+        var units = await query.OrderBy(u => u.SpecCode).ThenBy(u => u.UnitCode).ToListAsync();
+        var allUnits = await db.SpecUnits.ToListAsync();
+        var specDict = (await db.ProductSpecs.ToListAsync()).ToDictionary(s => s.Code, s => s);
+
+        int totalUnits = allUnits.Count;
+        int activeCount = allUnits.Count(u => u.IsActive);
+        int distinctSpecs = allUnits.Select(u => u.SpecCode).Distinct().Count();
+        int distinctUnits = allUnits.Select(u => u.UnitCode).Distinct().Count();
+        decimal totalVolume = allUnits.Sum(u => u.ComputedVolumeM3);
+        decimal totalWeight = allUnits.Sum(u => u.Weight);
+
+        var rows = units.Select(u =>
+        {
+            specDict.TryGetValue(u.SpecCode, out var spec);
+            return new SpecUnitRow(
+                u.Id,
+                u.SpecCode,
+                spec?.Name,
+                spec?.ModelCode,
+                u.UnitCode,
+                u.StandardUnitCode,
+                u.SpecUnitDesc,
+                u.Qty,
+                u.Length,
+                u.Width,
+                u.Height,
+                u.ComputedVolumeM3,
+                u.Weight,
+                u.IsActive,
+                u.Remark,
+                u.CreatedAt
+            );
+        }).ToList();
+
+        return new SpecUnitReport(q, specCode, unitCode, activeOnly, totalUnits, activeCount, distinctSpecs, distinctUnits, totalVolume, totalWeight, rows);
+    }
+
+    public Task<List<SpecUnit>> SpecUnitsAsync(string? specCode = null, bool? activeOnly = null)
+    {
+        var q = db.SpecUnits.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(specCode)) q = q.Where(u => u.SpecCode == specCode.Trim());
+        if (activeOnly == true) q = q.Where(u => u.IsActive);
+        return q.OrderBy(u => u.SpecCode).ThenBy(u => u.UnitCode).ToListAsync();
+    }
+
+    public Task<SpecUnit?> GetSpecUnitAsync(int id) =>
+        db.SpecUnits.FirstOrDefaultAsync(u => u.Id == id);
+
+    public async Task<int> CreateSpecUnitAsync(SpecUnit item)
+    {
+        item.SpecCode = item.SpecCode.Trim().ToUpper();
+        item.UnitCode = item.UnitCode.Trim();
+        if (string.IsNullOrWhiteSpace(item.StandardUnitCode)) item.StandardUnitCode = "cái";
+        if (item.Qty <= 0m) item.Qty = 1m;
+
+        bool exists = await db.SpecUnits.AnyAsync(u => u.SpecCode == item.SpecCode && u.UnitCode == item.UnitCode);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Quy cách đóng gói cho đơn vị '{item.UnitCode}' của quy cách '{item.SpecCode}' đã tồn tại.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.SpecUnits.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateSpecUnitAsync(int id, SpecUnit item)
+    {
+        var existing = await db.SpecUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách đóng gói theo đơn vị.");
+
+        existing.StandardUnitCode = !string.IsNullOrWhiteSpace(item.StandardUnitCode) ? item.StandardUnitCode.Trim() : "cái";
+        existing.SpecUnitDesc = item.SpecUnitDesc?.Trim();
+        existing.Qty = item.Qty > 0m ? item.Qty : 1m;
+        existing.Length = item.Length;
+        existing.Width = item.Width;
+        existing.Height = item.Height;
+        existing.Volume = item.Volume;
+        existing.Weight = item.Weight;
+        existing.IsActive = item.IsActive;
+        existing.Remark = item.Remark?.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật quy cách đóng gói '{existing.SpecCode}' / '{existing.UnitCode}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleSpecUnitStatusAsync(int id)
+    {
+        var existing = await db.SpecUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách đóng gói theo đơn vị.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
+        return (true, $"Đã {status} quy cách đóng gói '{existing.SpecCode}' / '{existing.UnitCode}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteSpecUnitAsync(int id)
+    {
+        var existing = await db.SpecUnits.FirstOrDefaultAsync(u => u.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách đóng gói theo đơn vị.");
+
+        db.SpecUnits.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa quy cách đóng gói '{existing.SpecCode}' / '{existing.UnitCode}' thành công.");
     }
 
     // ==================== Báº¢NG GIÃ QUY CÃCH Sáº¢N PHáº¨M KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================

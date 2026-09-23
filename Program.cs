@@ -3821,6 +3821,83 @@ app.MapDelete("/api/product-specs/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+app.MapGet("/api/spec-units", async (string? q, string? specCode, string? unitCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.SpecUnitsReportAsync(q, specCode, unitCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/spec-units/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetSpecUnitAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy quy cách đóng gói theo đơn vị." });
+});
+
+app.MapPost("/api/spec-units", async (CreateSpecUnitDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SpecCode) || string.IsNullOrWhiteSpace(dto.UnitCode))
+        return Results.BadRequest(new { error = "Mã quy cách sản phẩm và đơn vị tính không được để trống." });
+
+    var item = new SpecUnit
+    {
+        SpecCode = dto.SpecCode.Trim().ToUpper(),
+        UnitCode = dto.UnitCode.Trim(),
+        StandardUnitCode = string.IsNullOrWhiteSpace(dto.StandardUnitCode) ? "cái" : dto.StandardUnitCode.Trim(),
+        SpecUnitDesc = dto.SpecUnitDesc?.Trim(),
+        Qty = dto.Qty > 0m ? dto.Qty : 1m,
+        Length = dto.Length,
+        Width = dto.Width,
+        Height = dto.Height,
+        Volume = dto.Volume,
+        Weight = dto.Weight,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateSpecUnitAsync(item);
+        return Results.Created($"/api/spec-units/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/spec-units/{id:int}", async (int id, UpdateSpecUnitDto dto, IWmsService svc) =>
+{
+    var item = new SpecUnit
+    {
+        StandardUnitCode = string.IsNullOrWhiteSpace(dto.StandardUnitCode) ? "cái" : dto.StandardUnitCode.Trim(),
+        SpecUnitDesc = dto.SpecUnitDesc?.Trim(),
+        Qty = dto.Qty > 0m ? dto.Qty : 1m,
+        Length = dto.Length,
+        Width = dto.Width,
+        Height = dto.Height,
+        Volume = dto.Volume,
+        Weight = dto.Weight,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    var (ok, msg) = await svc.UpdateSpecUnitAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/spec-units/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleSpecUnitStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/spec-units/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteSpecUnitAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // ==================== BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
 app.MapGet("/api/spec-prices", async (string? q, string? specCode, string? unitCode, string? currencyCode, bool? activeOnly, IWmsService svc) =>
 {
@@ -4227,6 +4304,8 @@ record CreateCurrencyExchangeDto(string Code, string Name, string? Symbol, decim
 record UpdateCurrencyExchangeDto(string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
 record CreateProductSpecDto(string Code, string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
 record UpdateProductSpecDto(string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
+record CreateSpecUnitDto(string SpecCode, string UnitCode, string? StandardUnitCode, string? SpecUnitDesc, decimal Qty, decimal Length, decimal Width, decimal Height, decimal Volume, decimal Weight, string? Remark, bool? IsActive);
+record UpdateSpecUnitDto(string? StandardUnitCode, string? SpecUnitDesc, decimal Qty, decimal Length, decimal Width, decimal Height, decimal Volume, decimal Weight, string? Remark, bool? IsActive);
 record CreateSpecPriceDto(string SpecCode, string UnitCode, decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
 record UpdateSpecPriceDto(decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
 record CreateVATRateDto(string VATRateCode, decimal Rate, string VATDesc, string? Remark, bool? IsActive);
