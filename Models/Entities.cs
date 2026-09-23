@@ -1836,6 +1836,77 @@ public record BrandDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Danh mục Màu sắc hàng hóa kho (Part Color - port từ Mst_PartColor Skycic: PartColorCode, PartColorName, PartColorNameVN, FlagActive).</summary>
+public class PartColor : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã màu (PartColorCode, vd: DEN, TRANG, XANH-NAVY, DO-DAM)
+    public string Name { get; set; } = "";          // Tên màu (PartColorName, vd: Black, White, Navy Blue)
+    public string? NameVN { get; set; }             // Tên màu tiếng Việt (PartColorNameVN, vd: Đen, Trắng, Xanh navy)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mô tả sắc độ màu (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Gán màu sắc cho mặt hàng kho (Map Part Color - port từ Mst_MapPartColor Skycic: PartCode, PartColorCode, FlagDefault, FlagActive).</summary>
+public class PartColorMap : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int ProductId { get; set; }              // Mặt hàng được gán màu (PartCode)
+    public string PartColorCode { get; set; } = ""; // Mã màu gán cho mặt hàng (PartColorCode)
+    public bool IsDefault { get; set; } = false;    // Màu mặc định của mặt hàng (FlagDefault: 1 - Mặc định, 0 - Phụ)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng thông tin hiển thị màu sắc kèm số lượng mặt hàng gán màu và tổng tồn.</summary>
+public record PartColorRow(
+    int Id,
+    string Code,
+    string Name,
+    string? NameVN,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách màu sắc hàng hóa tổng hợp kèm 4 thẻ KPI.</summary>
+public record PartColorReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalColors,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<PartColorRow> Rows
+);
+
+/// <summary>Dòng chi tiết mặt hàng gán một màu sắc (kèm cờ mặc định).</summary>
+public record PartColorProductRow(
+    int MapId,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    bool IsDefault,
+    bool IsActive,
+    int StockQty
+);
+
+/// <summary>Chi tiết Màu sắc kèm danh sách mặt hàng được gán màu.</summary>
+public record PartColorDetailDto(
+    PartColor Item,
+    List<PartColorProductRow> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
 /// <summary>Danh mục Đơn vị tính hàng hóa / vật tư kho (Unit of Measure - UOM - port từ Mst_PartUnit Skycic: PartUnitCode, PartUnitName, FlagUnitStd, FlagActive, Remark).</summary>
 public class PartUnit : IOrgOwned
 {

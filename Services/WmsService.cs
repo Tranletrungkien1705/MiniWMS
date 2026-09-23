@@ -144,6 +144,18 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item);
     Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteBrandAsync(int id);
+    Task<PartColorReport> PartColorsReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<PartColor>> PartColorsAsync(string? q = null, bool? activeOnly = null);
+    Task<PartColor?> GetPartColorAsync(int id);
+    Task<PartColor?> GetPartColorByCodeAsync(string code);
+    Task<PartColorDetailDto?> GetPartColorDetailAsync(int id);
+    Task<int> CreatePartColorAsync(PartColor item);
+    Task<(bool ok, string msg)> UpdatePartColorAsync(int id, PartColor item);
+    Task<(bool ok, string msg)> TogglePartColorStatusAsync(int id);
+    Task<(bool ok, string msg)> DeletePartColorAsync(int id);
+    Task<(bool ok, string msg)> MapPartColorAsync(int productId, string partColorCode, bool isDefault);
+    Task<(bool ok, string msg)> UnmapPartColorAsync(int mapId);
+    Task<(bool ok, string msg)> SetDefaultPartColorAsync(int mapId);
     Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null);
     Task<List<PartUnit>> PartUnitsAsync(string? q = null, bool? activeOnly = null);
     Task<PartUnit?> GetPartUnitAsync(int id);
@@ -6144,6 +6156,213 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     /// <summary>BÃ¡o cÃ¡o danh má»¥c ÄÆ¡n vá»‹ tÃ­nh hÃ ng hÃ³a tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_PartUnit Skycic).</summary>
+    public async Task<PartColorReport> PartColorsReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartColors.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) ||
+                                     c.Name.ToLower().Contains(kw) ||
+                                     (c.NameVN != null && c.NameVN.ToLower().Contains(kw)) ||
+                                     (c.Remark != null && c.Remark.ToLower().Contains(kw)));
+        }
+
+        var colors = await query.OrderBy(c => c.Code).ToListAsync();
+        var maps = await db.PartColorMaps.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var mapGroup = maps
+            .GroupBy(m => m.PartColorCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = colors.Select(c =>
+        {
+            var mList = mapGroup.TryGetValue(c.Code, out var ml) ? ml : new List<PartColorMap>();
+            var pIds = mList.Select(m => m.ProductId).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new PartColorRow(c.Id, c.Code, c.Name, c.NameVN, c.Remark, c.IsActive, c.CreatedAt, pIds.Count, totalStock);
+        }).ToList();
+
+        int totalColors = await db.PartColors.CountAsync();
+        int activeCount = await db.PartColors.CountAsync(c => c.IsActive);
+        int inactiveCount = totalColors - activeCount;
+        int mappedProds = maps.Select(m => m.ProductId).Distinct().Count();
+
+        return new PartColorReport(q, activeOnly, totalColors, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<PartColor>> PartColorsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartColors.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) || c.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(c => c.Code).ToListAsync();
+    }
+
+    public Task<PartColor?> GetPartColorAsync(int id) =>
+        db.PartColors.FirstOrDefaultAsync(c => c.Id == id);
+
+    public Task<PartColor?> GetPartColorByCodeAsync(string code) =>
+        db.PartColors.FirstOrDefaultAsync(c => c.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<PartColorDetailDto?> GetPartColorDetailAsync(int id)
+    {
+        var c = await db.PartColors.FirstOrDefaultAsync(x => x.Id == id);
+        if (c == null) return null;
+
+        var maps = await db.PartColorMaps
+            .Where(m => m.PartColorCode.ToLower() == c.Code.ToLower())
+            .ToListAsync();
+        var pIds = maps.Select(m => m.ProductId).ToHashSet();
+        var products = await db.Products.Where(p => pIds.Contains(p.Id)).OrderBy(p => p.Code).ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var rows = products.Select(p =>
+        {
+            var map = maps.First(m => m.ProductId == p.Id);
+            int stock = balances.Where(bal => bal.ProductId == p.Id).Sum(bal => bal.Qty);
+            return new PartColorProductRow(map.Id, p.Id, p.Code, p.Name, p.Uom, map.IsDefault, map.IsActive, stock);
+        }).ToList();
+
+        return new PartColorDetailDto(c, rows, rows.Count, rows.Sum(r => r.StockQty));
+    }
+
+    public async Task<int> CreatePartColorAsync(PartColor item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Ten mau sac khong duoc de trong.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"CLR{await db.PartColors.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.PartColors.AnyAsync(c => c.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Ma mau sac '{item.Code}' da ton tai trong he thong.");
+
+        item.CreatedAt = DateTime.Now;
+        db.PartColors.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdatePartColorAsync(int id, PartColor item)
+    {
+        var existing = await db.PartColors.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay mau sac.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Ten mau sac khong duoc de trong.");
+
+        existing.Name = item.Name.Trim();
+        existing.NameVN = item.NameVN?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Da cap nhat thong tin mau sac '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> TogglePartColorStatusAsync(int id)
+    {
+        var existing = await db.PartColors.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay mau sac.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Da kich hoat ap dung mau sac '{existing.Code}'." : $"Da chuyen mau sac '{existing.Code}' sang trang thai Ngung ap dung.");
+    }
+
+    public async Task<(bool ok, string msg)> DeletePartColorAsync(int id)
+    {
+        var existing = await db.PartColors.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay mau sac.");
+
+        bool isUsed = await db.PartColorMaps.AnyAsync(m => m.PartColorCode.ToLower() == existing.Code.ToLower());
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Mau sac '{existing.Code}' dang duoc gan cho mat hang trong kho nen da chuyen sang trang thai Ngung ap dung thay vi xoa han.");
+        }
+
+        db.PartColors.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Da xoa mau sac '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> MapPartColorAsync(int productId, string partColorCode, bool isDefault)
+    {
+        if (productId <= 0) return (false, "Can chon mat hang de gan mau.");
+        if (string.IsNullOrWhiteSpace(partColorCode)) return (false, "Can chon mau sac de gan.");
+
+        var code = partColorCode.Trim().ToUpperInvariant();
+        var color = await db.PartColors.FirstOrDefaultAsync(c => c.Code == code);
+        if (color == null) return (false, $"Mau sac '{code}' khong ton tai trong danh muc.");
+        if (!color.IsActive) return (false, $"Mau sac '{code}' dang ngung ap dung, khong the gan cho mat hang.");
+
+        var product = await db.Products.FirstOrDefaultAsync(p => p.Id == productId);
+        if (product == null) return (false, "Khong tim thay mat hang.");
+
+        var existing = await db.PartColorMaps.FirstOrDefaultAsync(m => m.ProductId == productId && m.PartColorCode == code);
+        if (existing != null)
+        {
+            existing.IsActive = true;
+            if (isDefault) existing.IsDefault = true;
+            await db.SaveChangesAsync();
+            return (true, $"Mau '{code}' da duoc gan san cho mat hang '{product.Code}'.");
+        }
+
+        if (isDefault)
+        {
+            var others = await db.PartColorMaps.Where(m => m.ProductId == productId && m.IsDefault).ToListAsync();
+            foreach (var o in others) o.IsDefault = false;
+        }
+
+        db.PartColorMaps.Add(new PartColorMap
+        {
+            ProductId = productId,
+            PartColorCode = code,
+            IsDefault = isDefault,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+        return (true, $"Da gan mau '{code}' cho mat hang '{product.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> UnmapPartColorAsync(int mapId)
+    {
+        var map = await db.PartColorMaps.FirstOrDefaultAsync(m => m.Id == mapId);
+        if (map == null) return (false, "Khong tim thay lien ket mau - mat hang.");
+
+        db.PartColorMaps.Remove(map);
+        await db.SaveChangesAsync();
+        return (true, $"Da go mau '{map.PartColorCode}' khoi mat hang.");
+    }
+
+    public async Task<(bool ok, string msg)> SetDefaultPartColorAsync(int mapId)
+    {
+        var map = await db.PartColorMaps.FirstOrDefaultAsync(m => m.Id == mapId);
+        if (map == null) return (false, "Khong tim thay lien ket mau - mat hang.");
+
+        var others = await db.PartColorMaps.Where(m => m.ProductId == map.ProductId && m.IsDefault).ToListAsync();
+        foreach (var o in others) o.IsDefault = false;
+        map.IsDefault = true;
+        await db.SaveChangesAsync();
+        return (true, $"Da dat mau '{map.PartColorCode}' lam mau mac dinh cua mat hang.");
+    }
+
     public async Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null)
     {
         var query = db.PartUnits.AsQueryable();

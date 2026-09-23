@@ -1,0 +1,471 @@
+@model PartColorReport
+@{
+    ViewData["Title"] = "Màu sắc hàng hóa";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-palette text-primary me-2"></i>Danh mục Màu sắc hàng hóa kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_PartColor</code> &amp; <code>Mst_MapPartColor</code> (Skycic) — Chuẩn hóa bảng màu hàng hóa, gán màu cho từng mặt hàng và đánh dấu màu mặc định</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/PartColor/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/Product" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-seam me-1"></i> Danh sách mặt hàng
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createColorModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Màu sắc
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG MÀU SẮC</span>
+                    <i class="bi bi-palette text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalColors</div>
+                <div class="small text-muted">Bảng màu hàng hóa trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng gán cho mặt hàng và phiếu xuất nhập</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NGỪNG ÁP DỤNG</span>
+                    <i class="bi bi-pause-circle text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@Model.InactiveCount</div>
+                <div class="small text-muted">Tạm khóa / Hạn chế gán màu mới</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẶT HÀNG ĐÃ GÁN MÀU</span>
+                    <i class="bi bi-boxes text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.TotalProductsMapped</div>
+                <div class="small text-muted">Sản phẩm trong kho đã gắn ít nhất 1 màu</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm kiếm theo mã, tên màu, tên tiếng Việt hoặc mô tả..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Ngừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/PartColor" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Màu sắc -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 140px;">Mã màu</th>
+                        <th>Tên màu</th>
+                        <th style="width: 160px;">Tên tiếng Việt</th>
+                        <th>Mô tả / Sắc độ</th>
+                        <th class="text-center" style="width: 130px;">Số mặt hàng</th>
+                        <th class="text-end" style="width: 130px;">Tổng tồn kho</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 180px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy màu sắc nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary border-primary-subtle font-monospace px-2 py-1">@row.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.Name</div>
+                                    <div class="small text-muted">Ngày tạo: @row.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(row.NameVN))
+                                    {
+                                        <span class="badge bg-light text-dark border"><i class="bi bi-translate me-1 text-primary"></i>@row.NameVN</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="text-secondary small">@(string.IsNullOrWhiteSpace(row.Remark) ? "—" : row.Remark)</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.ProductCount > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-0" onclick="viewColorProducts(@row.Id, '@row.Code', '@row.Name')">
+                                            <i class="bi bi-box me-1"></i>@row.ProductCount sp
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">0 sp</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <span class="fw-bold @(row.TotalStockQty > 0 ? "text-dark" : "text-muted")">@row.TotalStockQty.ToString("N0")</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border-secondary-subtle px-2 py-1">
+                                            <i class="bi bi-dash-circle me-1"></i>Ngừng áp dụng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin" onclick="editColor(@row.Id, '@row.Code', '@row.Name', '@(row.NameVN?.Replace("'", "\\'") ?? "")', '@(row.Remark?.Replace("'", "\\'") ?? "")', @(row.IsActive.ToString().ToLower()))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" asp-action="Toggle" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái màu @row.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-@(row.IsActive ? "warning" : "success")" title="@(row.IsActive ? "Ngừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(row.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Delete" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa màu @row.Code? (Nếu đã gán cho mặt hàng sẽ chuyển sang Ngừng áp dụng)');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa màu sắc">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Màu sắc -->
+<div class="modal fade" id="createColorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Màu sắc mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã màu (PartColorCode) <span class="text-danger">*</span></label>
+                        <input type="text" name="code" class="form-control text-uppercase" placeholder="Ví dụ: DEN, TRANG, XANH-NAVY, DO-DAM..." required maxlength="20" />
+                        <div class="form-text small">Viết tắt in hoa không dấu, không trùng lặp trong hệ thống.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên màu (PartColorName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: Black, White, Navy Blue..." required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên màu tiếng Việt (PartColorNameVN)</label>
+                        <input type="text" name="nameVN" class="form-control" placeholder="Ví dụ: Đen, Trắng, Xanh navy..." maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Sắc độ (Remark)</label>
+                        <textarea name="remark" class="form-control" rows="3" placeholder="Mô tả sắc độ, mã màu tham chiếu Pantone..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu màu sắc</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sửa Màu sắc -->
+<div class="modal fade" id="editColorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Update" id="editColorForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Cập nhật Màu sắc</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã màu (PartColorCode)</label>
+                        <input type="text" id="editCode" class="form-control text-uppercase bg-light" readonly />
+                        <div class="form-text small">Mã định danh không thể thay đổi sau khi tạo.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên màu <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control" required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên màu tiếng Việt (PartColorNameVN)</label>
+                        <input type="text" name="nameVN" id="editNameVN" class="form-control" maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Sắc độ (Remark)</label>
+                        <textarea name="remark" id="editRemark" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small fw-semibold" for="editIsActive">Đang áp dụng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách mặt hàng gán màu -->
+<div class="modal fade" id="viewColorProductsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-boxes text-info me-2"></i>Mặt hàng gán màu: <span id="viewColorTitle" class="badge bg-primary ms-1"></span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <span class="text-muted small">Tổng số mặt hàng: </span><span id="viewColorTotalProds" class="fw-bold">0</span> |
+                        <span class="text-muted small">Tổng tồn kho vật lý: </span><span id="viewColorTotalStock" class="fw-bold text-primary">0</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="openMapModal()">
+                        <i class="bi bi-plus-lg me-1"></i>Gán màu cho mặt hàng
+                    </button>
+                </div>
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="ps-3">Mã hàng</th>
+                                <th>Tên hàng hoá</th>
+                                <th>ĐVT</th>
+                                <th class="text-end">Tồn kho</th>
+                                <th class="text-center">Mặc định</th>
+                                <th class="text-end pe-3">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="viewColorProductsTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải danh sách mặt hàng...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Gán màu cho mặt hàng -->
+<div class="modal fade" id="mapColorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Map">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="partColorCode" id="mapColorCode" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-link-45deg text-primary me-2"></i>Gán màu <span id="mapColorCodeLabel" class="badge bg-primary ms-1"></span> cho mặt hàng</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Chọn mặt hàng <span class="text-danger">*</span></label>
+                        <select name="productId" id="mapProductSelect" class="form-select" required>
+                            <option value="">-- Đang tải danh sách mặt hàng... --</option>
+                        </select>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isDefault" value="true" id="mapIsDefault" />
+                        <label class="form-check-label small fw-semibold" for="mapIsDefault">Đặt làm màu mặc định của mặt hàng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Gán màu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    var currentColorCode = '';
+    var currentColorId = 0;
+
+    function editColor(id, code, name, nameVN, remark, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editNameVN').value = nameVN;
+        document.getElementById('editRemark').value = remark;
+        document.getElementById('editIsActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editColorModal')).show();
+    }
+
+    function viewColorProducts(id, code, name) {
+        currentColorId = id;
+        currentColorCode = code;
+        document.getElementById('viewColorTitle').innerText = code + ' — ' + name;
+        document.getElementById('viewColorTotalProds').innerText = '...';
+        document.getElementById('viewColorTotalStock').innerText = '...';
+        var tbody = document.getElementById('viewColorProductsTableBody');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải danh sách mặt hàng...</td></tr>';
+
+        new bootstrap.Modal(document.getElementById('viewColorProductsModal')).show();
+
+        fetch('/PartColor/Detail?id=' + id)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('viewColorTotalProds').innerText = data.totalProducts;
+                document.getElementById('viewColorTotalStock').innerText = Number(data.totalStockQty).toLocaleString('vi-VN');
+
+                if (!data.products || data.products.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Chưa có mặt hàng nào được gán màu này.</td></tr>';
+                    return;
+                }
+
+                var html = '';
+                data.products.forEach(p => {
+                    var defBadge = p.isDefault
+                        ? '<span class="badge bg-warning-subtle text-warning border-warning-subtle"><i class="bi bi-star-fill me-1"></i>Mặc định</span>'
+                        : '<form method="post" action="/PartColor/SetDefault" class="d-inline">' +
+                          '<input type="hidden" name="mapId" value="' + p.mapId + '" />' +
+                          '<button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2" title="Đặt làm màu mặc định"><i class="bi bi-star"></i></button></form>';
+                    html += '<tr>' +
+                        '<td class="ps-3 fw-semibold font-monospace">' + p.productCode + '</td>' +
+                        '<td>' + p.productName + '</td>' +
+                        '<td>' + p.uom + '</td>' +
+                        '<td class="text-end fw-bold">' + Number(p.stockQty).toLocaleString('vi-VN') + '</td>' +
+                        '<td class="text-center">' + defBadge + '</td>' +
+                        '<td class="text-end pe-3">' +
+                            '<form method="post" action="/PartColor/Unmap" class="d-inline" onsubmit="return confirm(\'Gỡ màu khỏi mặt hàng này?\');">' +
+                            '<input type="hidden" name="mapId" value="' + p.mapId + '" />' +
+                            '<button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Gỡ màu"><i class="bi bi-x-lg"></i></button></form>' +
+                        '</td>' +
+                        '</tr>';
+                });
+                tbody.innerHTML = html;
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">Lỗi tải dữ liệu mặt hàng.</td></tr>';
+            });
+    }
+
+    function openMapModal() {
+        document.getElementById('mapColorCode').value = currentColorCode;
+        document.getElementById('mapColorCodeLabel').innerText = currentColorCode;
+        document.getElementById('mapIsDefault').checked = false;
+        var sel = document.getElementById('mapProductSelect');
+        sel.innerHTML = '<option value="">-- Đang tải danh sách mặt hàng... --</option>';
+        new bootstrap.Modal(document.getElementById('mapColorModal')).show();
+
+        fetch('/PartColor/Products')
+            .then(res => res.json())
+            .then(data => {
+                if (!data || data.length === 0) {
+                    sel.innerHTML = '<option value="">-- Chưa có mặt hàng nào --</option>';
+                    return;
+                }
+                var html = '<option value="">-- Chọn mặt hàng --</option>';
+                data.forEach(p => { html += '<option value="' + p.id + '">' + p.code + ' — ' + p.name + '</option>'; });
+                sel.innerHTML = html;
+            })
+            .catch(() => { sel.innerHTML = '<option value="">-- Lỗi tải danh sách --</option>'; });
+    }
+</script>
+}

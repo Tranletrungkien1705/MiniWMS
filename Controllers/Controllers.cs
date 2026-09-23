@@ -2795,6 +2795,176 @@ public class BrandController(IWmsService svc) : Controller
     }
 }
 
+public class PartColorController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.PartColorsReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetPartColorDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy màu sắc." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            nameVN = detail.Item.NameVN,
+            remark = detail.Item.Remark,
+            isActive = detail.Item.IsActive,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                mapId = p.MapId,
+                p.ProductId,
+                p.ProductCode,
+                p.ProductName,
+                p.Uom,
+                p.IsDefault,
+                p.IsActive,
+                p.StockQty
+            })
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Products(string? q)
+    {
+        var products = await svc.ProductsAsync();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            products = products.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw)).ToList();
+        }
+        return Json(products.Select(p => new { p.Id, p.Code, p.Name, p.Uom }));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? nameVN, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên màu sắc.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new PartColor
+            {
+                Code = code?.Trim().ToUpperInvariant() ?? "",
+                Name = name.Trim(),
+                NameVN = nameVN?.Trim(),
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreatePartColorAsync(item);
+            TempData["Success"] = $"Đã tạo mới màu sắc '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? nameVN, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên màu sắc.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new PartColor
+        {
+            Name = name.Trim(),
+            NameVN = nameVN?.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdatePartColorAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.TogglePartColorStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeletePartColorAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Map(int productId, string partColorCode, bool isDefault = false)
+    {
+        var (ok, msg) = await svc.MapPartColorAsync(productId, partColorCode, isDefault);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetDefault(int mapId)
+    {
+        var (ok, msg) = await svc.SetDefaultPartColorAsync(mapId);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Unmap(int mapId)
+    {
+        var (ok, msg) = await svc.UnmapPartColorAsync(mapId);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.PartColorsReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC MÀU SẮC HÀNG HÓA KHO (MST_PARTCOLOR)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã màu;Tên màu;Tên màu (VN);Trạng thái;Số mặt hàng;Tổng tồn kho;Ghi chú;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.NameVN?.Replace("\"", "\"\"") ?? "—"}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ MÀU SẮC:;{report.TotalColors};;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG ĐÃ GÁN MÀU:;{report.TotalProductsMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"MauSac_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class PartUnitController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? standardOnly)

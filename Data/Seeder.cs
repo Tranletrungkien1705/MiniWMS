@@ -465,6 +465,19 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.PartColors.AnyAsync())
+        {
+            db.PartColors.AddRange(
+                new PartColor { Code = "DEN", Name = "Black", NameVN = "Đen", IsActive = true, Remark = "Màu đen cơ bản, dễ phối đồ, phù hợp trang phục công sở và dạo phố" },
+                new PartColor { Code = "TRANG", Name = "White", NameVN = "Trắng", IsActive = true, Remark = "Màu trắng tinh khôi, sáng sủa cho sơ mi và áo thun" },
+                new PartColor { Code = "XANH-NAVY", Name = "Navy Blue", NameVN = "Xanh navy", IsActive = true, Remark = "Xanh navy đậm lịch lãm, phổ biến cho âu phục và jeans" },
+                new PartColor { Code = "XANH-DUONG", Name = "Blue", NameVN = "Xanh dương", IsActive = true, Remark = "Xanh dương denim đặc trưng cho quần jeans và sơ mi casual" },
+                new PartColor { Code = "DO-DAM", Name = "Dark Red", NameVN = "Đỏ đậm", IsActive = true, Remark = "Đỏ đậm sang trọng cho váy đầm dạ hội và phụ kiện" },
+                new PartColor { Code = "NAU-DA", Name = "Leather Brown", NameVN = "Nâu da", IsActive = true, Remark = "Nâu da bò tự nhiên cho thắt lưng, ví da thủ công" },
+                new PartColor { Code = "XAM", Name = "Gray", NameVN = "Xám", IsActive = false, Remark = "Xám ghi trung tính, tạm ngừng áp dụng để chuẩn hóa bảng màu" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.PartUnits.AnyAsync())
         {
             db.PartUnits.AddRange(
@@ -606,6 +619,37 @@ public static class Seeder
                 new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", ModelCode = "MD-AP-LEATHER", PMType = "LEATHER", ProductGrpCode = "GRP_THAT_LUNG", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
                 new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", ModelCode = "MD-NEM-LUX", PMType = "SILK", ProductGrpCode = "GRP_VAY_DAM", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
+        }
+        if (!await db.PartColorMaps.AnyAsync())
+        {
+            var seedProds = await db.Products.ToListAsync();
+            int Pid(string code) => seedProds.FirstOrDefault(p => p.Code == code)?.Id ?? 0;
+            var colorMaps = new List<PartColorMap>();
+            if (Pid("AO-001") > 0)
+            {
+                colorMaps.Add(new PartColorMap { ProductId = Pid("AO-001"), PartColorCode = "TRANG", IsDefault = true, IsActive = true });
+                colorMaps.Add(new PartColorMap { ProductId = Pid("AO-001"), PartColorCode = "XANH-NAVY", IsDefault = false, IsActive = true });
+            }
+            if (Pid("QUAN-001") > 0)
+            {
+                colorMaps.Add(new PartColorMap { ProductId = Pid("QUAN-001"), PartColorCode = "XANH-DUONG", IsDefault = true, IsActive = true });
+                colorMaps.Add(new PartColorMap { ProductId = Pid("QUAN-001"), PartColorCode = "DEN", IsDefault = false, IsActive = true });
+            }
+            if (Pid("PK-001") > 0)
+            {
+                colorMaps.Add(new PartColorMap { ProductId = Pid("PK-001"), PartColorCode = "NAU-DA", IsDefault = true, IsActive = true });
+                colorMaps.Add(new PartColorMap { ProductId = Pid("PK-001"), PartColorCode = "DEN", IsDefault = false, IsActive = true });
+            }
+            if (Pid("VAY-001") > 0)
+            {
+                colorMaps.Add(new PartColorMap { ProductId = Pid("VAY-001"), PartColorCode = "DO-DAM", IsDefault = true, IsActive = true });
+                colorMaps.Add(new PartColorMap { ProductId = Pid("VAY-001"), PartColorCode = "DEN", IsDefault = false, IsActive = true });
+            }
+            if (colorMaps.Count > 0)
+            {
+                db.PartColorMaps.AddRange(colorMaps);
+                await db.SaveChangesAsync();
+            }
         }
         else
         {
@@ -3908,7 +3952,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -3978,6 +4022,11 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SpecPrices_OrgId_SpecCode_UnitCode\" ON miniwms.\"SpecPrices\" (\"OrgId\", \"SpecCode\", \"UnitCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"VATRates\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"VATRateCode\" text NOT NULL, \"Rate\" numeric NOT NULL DEFAULT 0, \"VATDesc\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_VATRates_OrgId_VATRateCode\" ON miniwms.\"VATRates\" (\"OrgId\", \"VATRateCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PartColors\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"NameVN\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartColors_OrgId_Code\" ON miniwms.\"PartColors\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"PartColorMaps\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"ProductId\" integer NOT NULL, \"PartColorCode\" text NOT NULL, \"IsDefault\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartColorMaps_OrgId_ProductId_PartColorCode\" ON miniwms.\"PartColorMaps\" (\"OrgId\", \"ProductId\", \"PartColorCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_PartColorMaps_OrgId_PartColorCode\" ON miniwms.\"PartColorMaps\" (\"OrgId\", \"PartColorCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -4778,7 +4827,30 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL
             );",
             @"CREATE INDEX IF NOT EXISTS ""IX_InventoryTransactions_OrgId_WarehouseId_ProductId_CreatedAt"" ON ""InventoryTransactions"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""CreatedAt"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryTransactions_OrgId_TxnType"" ON ""InventoryTransactions"" (""OrgId"", ""TxnType"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryTransactions_OrgId_TxnType"" ON ""InventoryTransactions"" (""OrgId"", ""TxnType"");",
+            @"CREATE TABLE IF NOT EXISTS ""PartColors"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL DEFAULT '',
+                ""NameVN"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartColors_OrgId_Code"" ON ""PartColors"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""PartColorMaps"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""PartColorCode"" TEXT NOT NULL,
+                ""IsDefault"" INTEGER NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL,
+                CONSTRAINT ""FK_PartColorMaps_Products_ProductId"" FOREIGN KEY (""ProductId"") REFERENCES ""Products"" (""Id"") ON DELETE CASCADE
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartColorMaps_OrgId_ProductId_PartColorCode"" ON ""PartColorMaps"" (""OrgId"", ""ProductId"", ""PartColorCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_PartColorMaps_OrgId_PartColorCode"" ON ""PartColorMaps"" (""OrgId"", ""PartColorCode"");"
         };
         foreach (var s in sql)
         {

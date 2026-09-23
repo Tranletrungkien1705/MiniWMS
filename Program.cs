@@ -1692,6 +1692,100 @@ app.MapDelete("/api/brands/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Màu sắc hàng hóa kho & Gán màu cho mặt hàng (Part Color Management - port từ Mst_PartColor & Mst_MapPartColor Skycic)
+app.MapGet("/api/part-colors", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.PartColorsReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/part-colors/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetPartColorAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy màu sắc." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-colors/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetPartColorByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy màu sắc." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-colors/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetPartColorDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy màu sắc." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/part-colors", async (CreatePartColorDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên màu sắc." });
+    try
+    {
+        var item = new PartColor
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            NameVN = dto.NameVN?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreatePartColorAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/part-colors/{id:int}", async (int id, UpdatePartColorDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên màu sắc." });
+    var item = new PartColor
+    {
+        Name = dto.Name.Trim(),
+        NameVN = dto.NameVN?.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdatePartColorAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/part-colors/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.TogglePartColorStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/part-colors/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeletePartColorAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/part-colors/map", async (MapPartColorDto dto, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.MapPartColorAsync(dto.ProductId, dto.PartColorCode ?? "", dto.IsDefault ?? false);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/part-colors/map/{mapId:int}/set-default", async (int mapId, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.SetDefaultPartColorAsync(mapId);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/part-colors/map/{mapId:int}", async (int mapId, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.UnmapPartColorAsync(mapId);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Quản lý Đơn vị tính hàng hóa / vật tư kho (port từ Mst_PartUnit Skycic)
 app.MapGet("/api/part-units", async (string? q, bool? activeOnly, bool? standardOnly, IWmsService svc) =>
 {
@@ -3703,6 +3797,9 @@ record CreatePartTypeDto(string? Code, string Name, string? Remark, bool? IsActi
 record UpdatePartTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark, bool? IsActive);
 record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActive);
+record CreatePartColorDto(string? Code, string Name, string? NameVN, string? Remark, bool? IsActive);
+record UpdatePartColorDto(string Name, string? NameVN, string? Remark, bool? IsActive);
+record MapPartColorDto(int ProductId, string? PartColorCode, bool? IsDefault);
 record CreatePartUnitDto(string? Code, string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record UpdatePartUnitDto(string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record CreatePartMaterialTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
