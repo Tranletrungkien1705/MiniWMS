@@ -1890,6 +1890,80 @@ app.MapDelete("/api/brands/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Danh mục Quốc gia / Xuất xứ hàng hóa kho (Country Management - port từ Mst_Country Skycic)
+app.MapGet("/api/countries", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.CountriesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/countries/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetCountryAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy quốc gia." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/countries/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetCountryByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy quốc gia." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/countries/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetCountryDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy quốc gia." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/countries", async (CreateCountryDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên quốc gia." });
+    try
+    {
+        var item = new Country
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateCountryAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/countries/{id:int}", async (int id, UpdateCountryDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên quốc gia." });
+    var item = new Country
+    {
+        Name = dto.Name.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateCountryAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/countries/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleCountryStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/countries/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteCountryAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Quản lý Màu sắc hàng hóa kho & Gán màu cho mặt hàng (Part Color Management - port từ Mst_PartColor & Mst_MapPartColor Skycic)
 app.MapGet("/api/part-colors", async (string? q, bool? activeOnly, IWmsService svc) =>
 {
@@ -4503,6 +4577,8 @@ record CreatePartTypeDto(string? Code, string Name, string? Remark, bool? IsActi
 record UpdatePartTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark, bool? IsActive);
 record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActive);
+record CreateCountryDto(string? Code, string Name, string? Remark, bool? IsActive);
+record UpdateCountryDto(string Name, string? Remark, bool? IsActive);
 record CreatePartColorDto(string? Code, string Name, string? NameVN, string? Remark, bool? IsActive);
 record UpdatePartColorDto(string Name, string? NameVN, string? Remark, bool? IsActive);
 record MapPartColorDto(int ProductId, string? PartColorCode, bool? IsDefault);

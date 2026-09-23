@@ -147,6 +147,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item);
     Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteBrandAsync(int id);
+    Task<CountryReport> CountriesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<Country>> CountriesAsync(string? q = null, bool? activeOnly = null);
+    Task<Country?> GetCountryAsync(int id);
+    Task<Country?> GetCountryByCodeAsync(string code);
+    Task<CountryDetailDto?> GetCountryDetailAsync(int id);
+    Task<int> CreateCountryAsync(Country item);
+    Task<(bool ok, string msg)> UpdateCountryAsync(int id, Country item);
+    Task<(bool ok, string msg)> ToggleCountryStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteCountryAsync(int id);
     Task<PartColorReport> PartColorsReportAsync(string? q = null, bool? activeOnly = null);
     Task<List<PartColor>> PartColorsAsync(string? q = null, bool? activeOnly = null);
     Task<PartColor?> GetPartColorAsync(int id);
@@ -6833,6 +6842,155 @@ public class WmsService(AppDbContext db) : IWmsService
         map.IsDefault = true;
         await db.SaveChangesAsync();
         return (true, $"Da dat mau '{map.PartColorCode}' lam mau mac dinh cua mat hang.");
+    }
+
+    public async Task<CountryReport> CountriesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Countries.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) ||
+                                     c.Name.ToLower().Contains(kw) ||
+                                     (c.Remark != null && c.Remark.ToLower().Contains(kw)));
+        }
+
+        var countries = await query.OrderBy(c => c.Code).ToListAsync();
+        var allBrands = await db.Brands.ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var brandGroup = allBrands
+            .Where(b => !string.IsNullOrEmpty(b.Origin))
+            .GroupBy(b => b.Origin!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = countries.Select(c =>
+        {
+            var brands = brandGroup.TryGetValue(c.Name, out var bl) ? bl : new List<Brand>();
+            var brandCodes = brands.Select(b => b.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var prods = allProducts.Where(p => !string.IsNullOrEmpty(p.BrandCode) && brandCodes.Contains(p.BrandCode!)).ToList();
+            var pIds = prods.Select(p => p.Id).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new CountryRow(c.Id, c.Code, c.Name, c.Remark, c.IsActive, c.CreatedAt, brands.Count, prods.Count, totalStock);
+        }).ToList();
+
+        int totalCountries = await db.Countries.CountAsync();
+        int activeCount = await db.Countries.CountAsync(c => c.IsActive);
+        int inactiveCount = totalCountries - activeCount;
+        int mappedBrands = allBrands.Count(b => !string.IsNullOrEmpty(b.Origin));
+
+        return new CountryReport(q, activeOnly, totalCountries, activeCount, inactiveCount, mappedBrands, rows);
+    }
+
+    public Task<List<Country>> CountriesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Countries.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(c => c.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) || c.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(c => c.Code).ToListAsync();
+    }
+
+    public Task<Country?> GetCountryAsync(int id) =>
+        db.Countries.FirstOrDefaultAsync(c => c.Id == id);
+
+    public Task<Country?> GetCountryByCodeAsync(string code) =>
+        db.Countries.FirstOrDefaultAsync(c => c.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<CountryDetailDto?> GetCountryDetailAsync(int id)
+    {
+        var c = await db.Countries.FirstOrDefaultAsync(x => x.Id == id);
+        if (c == null) return null;
+
+        var brands = await db.Brands
+            .Where(b => b.Origin != null && b.Origin.ToLower() == c.Name.ToLower())
+            .OrderBy(b => b.Code)
+            .ToListAsync();
+
+        var brandCodes = brands.Select(b => b.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var products = await db.Products
+            .Where(p => p.BrandCode != null && brandCodes.Contains(p.BrandCode))
+            .OrderBy(p => p.Code)
+            .ToListAsync();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new CountryDetailDto(c, brands, products, brands.Count, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateCountryAsync(Country item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Ten quoc gia khong duoc de trong.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"QG{await db.Countries.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.Countries.AnyAsync(c => c.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Ma quoc gia '{item.Code}' da ton tai trong he thong.");
+
+        item.CreatedAt = DateTime.Now;
+        db.Countries.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCountryAsync(int id, Country item)
+    {
+        var existing = await db.Countries.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay quoc gia.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Ten quoc gia khong duoc de trong.");
+
+        existing.Name = item.Name.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Da cap nhat thong tin quoc gia '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleCountryStatusAsync(int id)
+    {
+        var existing = await db.Countries.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay quoc gia.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Da kich hoat ap dung quoc gia '{existing.Code}'." : $"Da chuyen quoc gia '{existing.Code}' sang trang thai Ngung ap dung.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCountryAsync(int id)
+    {
+        var existing = await db.Countries.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Khong tim thay quoc gia.");
+
+        bool isUsed = await db.Brands.AnyAsync(b => b.Origin != null && b.Origin.ToLower() == existing.Name.ToLower());
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Quoc gia '{existing.Code}' dang duoc gan xuat xu cho thuong hieu nen da chuyen sang trang thai Ngung ap dung thay vi xoa han.");
+        }
+
+        db.Countries.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Da xoa quoc gia '{existing.Code}'.");
     }
 
     public async Task<PartUnitReport> PartUnitsReportAsync(string? q = null, bool? activeOnly = null, bool? standardOnly = null)

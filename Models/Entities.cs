@@ -1836,6 +1836,52 @@ public record BrandDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Danh mục Quốc gia / Xuất xứ hàng hóa kho (port từ Mst_Country Skycic: CountryCode, CountryName, FlagActive).</summary>
+public class Country : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã quốc gia (CountryCode, vd: VN, US, JP, KR, CN, DE)
+    public string Name { get; set; } = "";          // Tên quốc gia (CountryName, vd: Việt Nam, Hoa Kỳ, Nhật Bản)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mô tả đặc trưng thị trường xuất xứ (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị quốc gia kèm số lượng thương hiệu và mặt hàng liên kết.</summary>
+public record CountryRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int BrandCount,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách quốc gia tổng hợp kèm 4 thẻ KPI.</summary>
+public record CountryReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalCountries,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalBrandsMapped,
+    List<CountryRow> Rows
+);
+
+/// <summary>Chi tiết Quốc gia kèm danh sách thương hiệu và mặt hàng có xuất xứ tương ứng.</summary>
+public record CountryDetailDto(
+    Country Item,
+    List<Brand> Brands,
+    List<Product> Products,
+    int TotalBrands,
+    int TotalProducts,
+    int TotalStockQty
+);
+
 /// <summary>Danh mục Màu sắc hàng hóa kho (Part Color - port từ Mst_PartColor Skycic: PartColorCode, PartColorName, PartColorNameVN, FlagActive).</summary>
 public class PartColor : IOrgOwned
 {

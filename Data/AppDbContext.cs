@@ -39,6 +39,7 @@ public class AppDbContext : DbContext
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<PartType> PartTypes => Set<PartType>();
     public DbSet<Brand> Brands => Set<Brand>();
+    public DbSet<Country> Countries => Set<Country>();
     public DbSet<PartColor> PartColors => Set<PartColor>();
     public DbSet<PartColorMap> PartColorMaps => Set<PartColorMap>();
     public DbSet<PartUnit> PartUnits => Set<PartUnit>();
@@ -146,6 +147,7 @@ public class AppDbContext : DbContext
         b.Entity<ProductModel>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasIndex(x => new { x.OrgId, x.BrandCode }); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartUnit>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Brand>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<Country>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartColor>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartColorMap>(e =>
         {

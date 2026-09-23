@@ -465,6 +465,19 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.Countries.AnyAsync())
+        {
+            db.Countries.AddRange(
+                new Country { Code = "VN", Name = "Việt Nam", IsActive = true, Remark = "Quốc gia sản xuất chính, thị trường nội địa và xuất khẩu hàng dệt may" },
+                new Country { Code = "US", Name = "Mỹ", IsActive = true, Remark = "Thị trường xuất khẩu lớn, nguồn nguyên liệu denim và phụ liệu cao cấp" },
+                new Country { Code = "JP", Name = "Nhật Bản", IsActive = true, Remark = "Nguồn vải kỹ thuật và phụ liệu chất lượng cao, thị trường khó tính" },
+                new Country { Code = "KR", Name = "Hàn Quốc", IsActive = true, Remark = "Nguồn nguyên phụ liệu thời trang và xu hướng thiết kế" },
+                new Country { Code = "CN", Name = "Trung Quốc", IsActive = true, Remark = "Nguồn nguyên phụ liệu giá cạnh tranh, chuỗi cung ứng linh kiện" },
+                new Country { Code = "FR", Name = "Pháp", IsActive = true, Remark = "Thương hiệu thời trang cao cấp và phụ kiện da thủ công" },
+                new Country { Code = "IT", Name = "Ý", IsActive = false, Remark = "Nguồn da thuộc và phụ kiện xa xỉ, tạm ngừng khai thác" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.PartColors.AnyAsync())
         {
             db.PartColors.AddRange(
