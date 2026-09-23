@@ -2511,6 +2511,45 @@ public class InventoryInDtlController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryInFGSumController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.FromDate = (fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).ToString("yyyy-MM-dd");
+        ViewBag.ToDate = (toDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryInFGSumReportAsync(warehouseId, fromDate, toDate, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.InventoryInFGSumReportAsync(warehouseId, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        // Thêm UTF-8 BOM để Excel hiển thị tiếng Việt không bị lỗi font
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỔNG HỢP NHẬP KHO THÀNH PHẨM SẢN XUẤT THEO MẶT HÀNG & KHO");
+        sb.AppendLine($"Kỳ báo cáo:;{report.FromDate:dd/MM/yyyy} - {report.ToDate:dd/MM/yyyy};Kho:;{report.WarehouseName}");
+        sb.AppendLine($"Tổng phiếu nhập:;{report.TotalReceipts};Tổng lượng nhập:;{report.TotalQtyIn};Tổng giá trị nhập:;{report.TotalAmount:F0}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Kho nhập;Mã thành phẩm;Tên thành phẩm;ĐVT;Số phiếu nhập;Tổng lượng nhập;Tổng giá trị nhập (đ);Tỷ trọng (%)");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.WarehouseName}\";\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";{r.ReceiptCount};{r.TotalQtyIn};{r.TotalAmount:F0};{r.SharePercent:F1}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TongHopNhapThanhPham_{report.FromDate:yyyyMMdd}_{report.ToDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 public class SummaryMonthlyController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? year, int? warehouseId, string? viewMode, string? q)

@@ -3783,4 +3783,33 @@ public record LeafWarehouseBalanceReport(
     decimal TopWarehouseValInv, // Giá trị tồn của kho lớn nhất
     double TopWarehousePercent, // Tỷ trọng % của kho lớn nhất
     List<LeafWarehouseBalanceRow> Rows
+);/// <summary>Dòng báo cáo Tổng hợp Nhập kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryInFGSum Skycic).
+/// Tổng hợp số lượng thành phẩm nhập kho (đã duyệt KCS) theo từng kho + mặt hàng trong kỳ.</summary>
+public record FGInSumRow(
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int TotalQtyIn,             // Tổng số lượng thực nhập đạt chuẩn KCS (TotalQtyIn)
+    int ReceiptCount,           // Số phiếu nhập thành phẩm đóng góp vào dòng này
+    decimal TotalAmount,        // Tổng giá trị nhập kho (Σ ActualQty * UnitCost)
+    double SharePercent         // Tỷ trọng % số lượng nhập của dòng trên tổng lượng nhập toàn kỳ
+);
+
+/// <summary>Báo cáo Tổng hợp Nhập kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryInFGSum Skycic).
+/// Đối soát lượng thành phẩm nhập kho từ xưởng sản xuất / gia công theo kho, mặt hàng và kỳ phê duyệt.</summary>
+public record FGInSumReport(
+    DateTime FromDate,
+    DateTime ToDate,
+    int? WarehouseId,
+    string WarehouseName,
+    string? Keyword,
+    int TotalReceipts,          // Số phiếu nhập thành phẩm đã duyệt trong kỳ
+    int TotalQtyIn,             // Tổng số lượng thành phẩm nhập kho trong kỳ
+    decimal TotalAmount,        // Tổng giá trị thành phẩm nhập kho trong kỳ
+    int DistinctProductsCount,  // Số mặt hàng thành phẩm phân biệt
+    int DistinctWarehousesCount,// Số kho có phát sinh nhập thành phẩm
+    List<FGInSumRow> Rows
 );

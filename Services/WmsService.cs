@@ -99,6 +99,7 @@ public interface IWmsService
     Task<int> CreateInventoryInFGAsync(InventoryInFG doc, List<(int productId, int planQty, int actualQty, int defectQty, decimal unitCost, DateTime? prodDate, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
     Task<(bool ok, string msg)> ApproveInventoryInFGAsync(int id);
     Task<(bool ok, string msg)> CancelInventoryInFGAsync(int id);
+    Task<FGInSumReport> InventoryInFGSumReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<InventoryOutFGReport> InventoryOutFGsAsync(int? warehouseId, InvOutFGStatus? status, InvOutFGType? outType, InvOutFGFormType? formType, DateTime? fromDate, DateTime? toDate, string? q);
     Task<InventoryOutFG?> GetInventoryOutFGAsync(int id);
     Task<int> CreateInventoryOutFGAsync(InventoryOutFG doc, List<(int productId, int qty, decimal unitPrice, decimal unitCost, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
@@ -3322,6 +3323,96 @@ public class WmsService(AppDbContext db) : IWmsService
             totalActualQty,
             totalDefectQty,
             totalAmount,
+            rows
+        );
+    }
+
+    /// <summary>Báo cáo Tổng hợp Nhập kho Thành phẩm Sản xuất theo Mặt hàng & Kho (port từ Rpt_InvFInventoryInFGSum Skycic).
+    /// Tổng hợp số lượng thành phẩm nhập kho (đã duyệt KCS) theo từng kho + mặt hàng trong kỳ phê duyệt.</summary>
+    public async Task<FGInSumReport> InventoryInFGSumReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword)
+    {
+        var defFrom = fromDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var defTo = toDate ?? DateTime.Today;
+        var from = defFrom.Date;
+        var to = defTo.Date.AddDays(1).AddTicks(-1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        // Chỉ tổng hợp các phiếu nhập thành phẩm đã duyệt (tương đương IF_InvInFGStatus = APPROVE).
+        var query = db.InventoryInFGs
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Where(f => f.Status == InvInFGStatus.Approved && f.Date >= from && f.Date <= to);
+
+        if (warehouseId.HasValue) query = query.Where(f => f.WarehouseId == warehouseId.Value);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            query = query.Where(f => f.Code.ToLower().Contains(kw) ||
+                                     f.WorkshopName.ToLower().Contains(kw) ||
+                                     (f.WorkOrderNo != null && f.WorkOrderNo.ToLower().Contains(kw)) ||
+                                     f.Lines.Any(l => l.Product.Code.ToLower().Contains(kw) || l.Product.Name.ToLower().Contains(kw)));
+        }
+
+        var docs = await query.ToListAsync();
+
+        // Gom nhóm theo (kho, mặt hàng) — tương đương group by InvCode, MST, PartCode trong SQL Skycic.
+        var agg = new Dictionary<(int whId, int productId), (string whName, string pCode, string pName, string uom, int qty, int receipts, decimal amount)>();
+        foreach (var doc in docs)
+        {
+            foreach (var line in doc.Lines)
+            {
+                if (line.ActualQty <= 0) continue;
+                var key = (doc.WarehouseId, line.ProductId);
+                if (agg.TryGetValue(key, out var cur))
+                {
+                    agg[key] = (cur.whName, cur.pCode, cur.pName, cur.uom,
+                        cur.qty + line.ActualQty, cur.receipts + 1, cur.amount + line.Amount);
+                }
+                else
+                {
+                    agg[key] = (doc.Warehouse.Name, line.Product.Code, line.Product.Name, line.Product.Uom,
+                        line.ActualQty, 1, line.Amount);
+                }
+            }
+        }
+
+        int grandQty = agg.Values.Sum(v => v.qty);
+        var rows = agg
+            .OrderByDescending(kv => kv.Value.qty)
+            .ThenBy(kv => kv.Value.whName)
+            .ThenBy(kv => kv.Value.pCode)
+            .Select(kv => new FGInSumRow(
+                kv.Key.whId,
+                kv.Value.whName,
+                kv.Key.productId,
+                kv.Value.pCode,
+                kv.Value.pName,
+                kv.Value.uom,
+                kv.Value.qty,
+                kv.Value.receipts,
+                kv.Value.amount,
+                grandQty > 0 ? Math.Round((double)kv.Value.qty / grandQty * 100, 1) : 0.0
+            ))
+            .ToList();
+
+        return new FGInSumReport(
+            defFrom.Date,
+            defTo.Date,
+            warehouseId,
+            whName,
+            keyword,
+            docs.Count,
+            grandQty,
+            agg.Values.Sum(v => v.amount),
+            agg.Keys.Select(k => k.productId).Distinct().Count(),
+            agg.Keys.Select(k => k.whId).Distinct().Count(),
             rows
         );
     }
