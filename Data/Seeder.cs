@@ -36,18 +36,30 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.Brands.AnyAsync())
+        {
+            db.Brands.AddRange(
+                new Brand { Code = "MAY10", Name = "May 10", Origin = "Việt Nam", IsActive = true, Remark = "Tổng công ty May 10 - Thương hiệu thời trang công sở và sơ mi hàng đầu Việt Nam" },
+                new Brand { Code = "VIETTIEN", Name = "Việt Tiến", Origin = "Việt Nam", IsActive = true, Remark = "Tổng công ty CP May Việt Tiến - Thương hiệu trang phục nam công sở lịch lãm" },
+                new Brand { Code = "ANPHUOC", Name = "An Phước - Pierre Cardin", Origin = "Việt Nam / Pháp", IsActive = true, Remark = "Thương hiệu thời trang & phụ kiện da thủ công cao cấp" },
+                new Brand { Code = "LEVI", Name = "Levi's", Origin = "Mỹ", IsActive = true, Remark = "Thương hiệu thời trang jeans denim và phong cách hiện đại quốc tế" },
+                new Brand { Code = "CANIFA", Name = "CANIFA", Origin = "Việt Nam", IsActive = true, Remark = "Thời trang ứng dụng thường ngày và trang phục gia đình chất liệu len sợi" },
+                new Brand { Code = "NEM", Name = "NEM Fashion", Origin = "Việt Nam", IsActive = true, Remark = "Thương hiệu thời trang thiết kế váy đầm nữ công sở thanh lịch" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
-                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
         }
         else
         {
-            // Cập nhật giá vốn và loại mặt hàng cho dữ liệu cũ nếu chưa có
+            // Cập nhật giá vốn, loại mặt hàng và thương hiệu cho dữ liệu cũ nếu chưa có
             var existingProds = await db.Products.ToListAsync();
             bool hasChanged = false;
             foreach (var p in existingProds)
@@ -73,6 +85,18 @@ public static class Seeder
                         "PK-001" => "PTLK",
                         "VAY-001" => "TP",
                         _ => "TP"
+                    };
+                    hasChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(p.BrandCode))
+                {
+                    p.BrandCode = p.Code switch
+                    {
+                        "AO-001" => "MAY10",
+                        "QUAN-001" => "LEVI",
+                        "PK-001" => "ANPHUOC",
+                        "VAY-001" => "NEM",
+                        _ => null
                     };
                     hasChanged = true;
                 }
@@ -2026,7 +2050,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2037,11 +2061,14 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Customers_OrgId_Code\" ON miniwms.\"Customers\" (\"OrgId\", \"Code\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"PartTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartTypes_OrgId_Code\" ON miniwms.\"PartTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Brands\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Origin\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Brands_OrgId_Code\" ON miniwms.\"Brands\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PartTypeCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"BrandCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierName\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"CustomerCode\" text NULL");
@@ -2469,7 +2496,19 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PartTypes_OrgId_Code"" ON ""PartTypes"" (""OrgId"", ""Code"");",
-            @"ALTER TABLE ""Products"" ADD COLUMN ""PartTypeCode"" TEXT NULL;"
+            @"CREATE TABLE IF NOT EXISTS ""Brands"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""Origin"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Brands_OrgId_Code"" ON ""Brands"" (""OrgId"", ""Code"");",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""PartTypeCode"" TEXT NULL;",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""BrandCode"" TEXT NULL;"
         };
         foreach (var s in sql)
         {

@@ -1602,6 +1602,82 @@ app.MapDelete("/api/part-types/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Thương hiệu / Nhãn hiệu hàng hóa kho (port từ Mst_Brand Skycic)
+app.MapGet("/api/brands", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.BrandsReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/brands/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetBrandAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy thương hiệu." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/brands/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetBrandByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy thương hiệu." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/brands/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetBrandDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy thương hiệu." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/brands", async (CreateBrandDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên thương hiệu." });
+    try
+    {
+        var item = new Brand
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Origin = dto.Origin?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateBrandAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/brands/{id:int}", async (int id, UpdateBrandDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên thương hiệu." });
+    var item = new Brand
+    {
+        Name = dto.Name.Trim(),
+        Origin = dto.Origin?.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateBrandAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/brands/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleBrandStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/brands/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteBrandAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
@@ -1649,3 +1725,5 @@ record CreateCustomerDto(string? Code, string Name, string? CustomerType, string
 record UpdateCustomerDto(string Name, string? CustomerType, string? ContactName, string? ContactPhone, string? Phone, string? Email, string? Address, string? Province, string? TaxCode, string? Note, bool? IsActive);
 record CreatePartTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
 record UpdatePartTypeDto(string Name, string? Remark, bool? IsActive);
+record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark, bool? IsActive);
+record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActive);

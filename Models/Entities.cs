@@ -32,6 +32,7 @@ public class Product : IOrgOwned
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
     public string? PartTypeCode { get; set; } // Phân loại loại mặt hàng (port từ Mst_PartType: TP, BTP, NVL, PTLK, BBDG, CCDC, HHTM)
+    public string? BrandCode { get; set; }    // Thương hiệu / Nhãn hiệu hàng hóa (port từ Mst_Brand: MAY10, VIETTIEN, ANPHUOC, LEVI...)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
@@ -1729,6 +1730,51 @@ public record PartTypeReport(
 /// <summary>Chi tiết Loại mặt hàng kèm danh sách sản phẩm thuộc loại.</summary>
 public record PartTypeDetailDto(
     PartType Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
+/// <summary>Danh mục Thương hiệu / Nhãn hiệu hàng hóa kho (port từ Mst_Brand Skycic: BrandCode, BrandName, FlagActive, Remark).</summary>
+public class Brand : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã thương hiệu / nhãn hiệu (BrandCode, vd: MAY10, VIETTIEN, ANPHUOC, LEVI, CANIFA, NEM...)
+    public string Name { get; set; } = "";          // Tên thương hiệu / nhãn hiệu (BrandName)
+    public string? Origin { get; set; }             // Xuất xứ / Quốc gia (vd: Việt Nam, Mỹ, Pháp, Ý, Nhật Bản...)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mô tả đặc trưng phân khúc thương hiệu (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị thương hiệu kèm số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record BrandRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Origin,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách thương hiệu tổng hợp kèm 4 thẻ KPI.</summary>
+public record BrandReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalBrands,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<BrandRow> Rows
+);
+
+/// <summary>Chi tiết Thương hiệu kèm danh sách sản phẩm mang thương hiệu.</summary>
+public record BrandDetailDto(
+    Brand Item,
     List<Product> Products,
     int TotalProducts,
     int TotalStockQty

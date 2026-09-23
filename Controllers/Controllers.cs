@@ -29,11 +29,12 @@ public class ProductController(IWmsService svc) : Controller
     public async Task<IActionResult> Index()
     {
         ViewBag.PartTypes = await svc.PartTypesAsync(activeOnly: true);
+        ViewBag.Brands = await svc.BrandsAsync(activeOnly: true);
         return View(await svc.ProductsAsync());
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string uom, int minStock, int maxStock = 0)
+    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string? brandCode, string uom, int minStock, int maxStock = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên hàng."; return RedirectToAction(nameof(Index)); }
         await svc.CreateProductAsync(new Product
@@ -41,6 +42,7 @@ public class ProductController(IWmsService svc) : Controller
             Name = name.Trim(),
             Code = code ?? "",
             PartTypeCode = string.IsNullOrWhiteSpace(partTypeCode) ? null : partTypeCode.Trim().ToUpperInvariant(),
+            BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
             Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom,
             MinStock = minStock,
             MaxStock = maxStock
@@ -2617,6 +2619,140 @@ public class PartTypeController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"LoaiMatHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class BrandController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.BrandsReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetBrandDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy thương hiệu." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            origin = detail.Item.Origin,
+            remark = detail.Item.Remark,
+            isActive = detail.Item.IsActive,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                p.PartTypeCode,
+                p.MinStock,
+                p.MaxStock,
+                p.CostPrice
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? origin, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên thương hiệu.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new Brand
+            {
+                Code = code?.Trim().ToUpperInvariant() ?? "",
+                Name = name.Trim(),
+                Origin = origin?.Trim(),
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreateBrandAsync(item);
+            TempData["Success"] = $"Đã tạo mới thương hiệu '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? origin, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên thương hiệu.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new Brand
+        {
+            Name = name.Trim(),
+            Origin = origin?.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateBrandAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleBrandStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteBrandAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.BrandsReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC THƯƠNG HIỆU / NHÃN HIỆU HÀNG HÓA KHO (MST_BRAND)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã thương hiệu;Tên thương hiệu;Xuất xứ / Quốc gia;Trạng thái;Số lượng SP;Tổng tồn kho;Ghi chú / Phân khúc;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.Origin?.Replace("\"", "\"\"") ?? "—"}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ THƯƠNG HIỆU:;{report.TotalBrands};;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG ĐÃ GÁN THƯƠNG HIỆU:;{report.TotalProductsMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"ThuongHieu_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

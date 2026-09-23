@@ -1,0 +1,406 @@
+@model BrandReport
+@{
+    ViewData["Title"] = "Thương hiệu";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-award text-primary me-2"></i>Danh mục Thương hiệu / Nhãn hiệu hàng hóa kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_Brand</code> (Skycic) — Chuẩn hóa danh mục thương hiệu, phân khúc xuất xứ hàng hóa, theo dõi cơ cấu danh mục và phân bổ tồn kho theo thương hiệu</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Brand/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/Product" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-seam me-1"></i> Danh sách mặt hàng
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createBrandModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Thương hiệu
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG THƯƠNG HIỆU</span>
+                    <i class="bi bi-award text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalBrands</div>
+                <div class="small text-muted">Nhãn hiệu đối tác & sản xuất trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng gán cho mặt hàng và phiếu xuất nhập</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NGỪNG ÁP DỤNG</span>
+                    <i class="bi bi-pause-circle text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@Model.InactiveCount</div>
+                <div class="small text-muted">Tạm khóa / Hạn chế kinh doanh mặt hàng mới</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẶT HÀNG ĐÃ GÁN THƯƠNG HIỆU</span>
+                    <i class="bi bi-boxes text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.TotalProductsMapped</div>
+                <div class="small text-muted">Sản phẩm trong kho đã gắn mã nhãn hiệu</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm kiếm theo mã, tên thương hiệu, xuất xứ hoặc mô tả..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Ngừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/Brand" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Thương hiệu -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">STT</th>
+                        <th style="width: 140px;">Mã thương hiệu</th>
+                        <th>Tên thương hiệu</th>
+                        <th style="width: 150px;">Xuất xứ</th>
+                        <th>Mô tả / Phân khúc</th>
+                        <th class="text-center" style="width: 130px;">Số mặt hàng</th>
+                        <th class="text-end" style="width: 130px;">Tổng tồn kho</th>
+                        <th class="text-center" style="width: 130px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 180px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy thương hiệu nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">@row.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@row.Name</div>
+                                    <div class="small text-muted">Ngày tạo: @row.CreatedAt.ToString("dd/MM/yyyy")</div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(row.Origin))
+                                    {
+                                        <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt me-1 text-danger"></i>@row.Origin</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="text-secondary small">@(string.IsNullOrWhiteSpace(row.Remark) ? "—" : row.Remark)</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.ProductCount > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-0" onclick="viewBrandProducts(@row.Id, '@row.Code', '@row.Name')">
+                                            <i class="bi bi-box me-1"></i>@row.ProductCount sp
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">0 sp</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <span class="fw-bold @(row.TotalStockQty > 0 ? "text-dark" : "text-muted")">@row.TotalStockQty.ToString("N0")</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (row.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                            <i class="bi bi-dash-circle me-1"></i>Ngừng áp dụng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin" onclick="editBrand(@row.Id, '@row.Code', '@row.Name', '@(row.Origin?.Replace("'", "\\'") ?? "")', '@(row.Remark?.Replace("'", "\\'") ?? "")', @(row.IsActive.ToString().ToLower()))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" asp-action="Toggle" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái thương hiệu @row.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-@(row.IsActive ? "warning" : "success")" title="@(row.IsActive ? "Ngừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(row.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-action="Delete" asp-route-id="@row.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa thương hiệu @row.Code? (Nếu đã có sản phẩm sẽ chuyển sang Ngừng áp dụng)');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa thương hiệu">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Thương hiệu -->
+<div class="modal fade" id="createBrandModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Thương hiệu mới</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã thương hiệu (BrandCode) <span class="text-danger">*</span></label>
+                        <input type="text" name="code" class="form-control text-uppercase" placeholder="Ví dụ: MAY10, VIETTIEN, ANPHUOC, LEVI, CANIFA..." required maxlength="20" />
+                        <div class="form-text small">Viết tắt in hoa không dấu, không trùng lặp trong hệ thống.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên thương hiệu (BrandName) <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="Ví dụ: May 10, Việt Tiến, Levi's..." required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Xuất xứ / Quốc gia (Origin)</label>
+                        <input type="text" name="origin" class="form-control" placeholder="Ví dụ: Việt Nam, Mỹ, Nhật Bản, Hàn Quốc, Pháp, Ý..." maxlength="50" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Đặc trưng phân khúc (Remark)</label>
+                        <textarea name="remark" class="form-control" rows="3" placeholder="Mô tả sản phẩm chủ đạo, định vị phân khúc thời trang / thiết bị..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu thương hiệu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sửa Thương hiệu -->
+<div class="modal fade" id="editBrandModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" asp-action="Update" id="editBrandForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Cập nhật Thương hiệu</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã thương hiệu (BrandCode)</label>
+                        <input type="text" id="editCode" class="form-control text-uppercase bg-light" readonly />
+                        <div class="form-text small">Mã định danh không thể thay đổi sau khi tạo.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên thương hiệu <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control" required maxlength="100" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Xuất xứ / Quốc gia (Origin)</label>
+                        <input type="text" name="origin" id="editOrigin" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả / Đặc trưng phân khúc (Remark)</label>
+                        <textarea name="remark" id="editRemark" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                        <label class="form-check-label small fw-semibold" for="editIsActive">Đang áp dụng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách sản phẩm mang thương hiệu -->
+<div class="modal fade" id="viewBrandProductsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-boxes text-info me-2"></i>Danh sách mặt hàng thuộc thương hiệu: <span id="viewBrandTitle" class="badge bg-primary ms-1"></span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small">Tổng số mặt hàng: </span><span id="viewBrandTotalProds" class="fw-bold">0</span> | 
+                        <span class="text-muted small">Tổng tồn kho vật lý: </span><span id="viewBrandTotalStock" class="fw-bold text-primary">0</span>
+                    </div>
+                    <a href="/Product" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>Quản lý mặt hàng</a>
+                </div>
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="ps-3">Mã hàng</th>
+                                <th>Tên hàng hoá</th>
+                                <th>Loại hàng</th>
+                                <th>ĐVT</th>
+                                <th class="text-end">Tồn Min</th>
+                                <th class="text-end">Tồn Max</th>
+                                <th class="text-end pe-3">Giá vốn (đ)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="viewBrandProductsTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải danh sách mặt hàng...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function editBrand(id, code, name, origin, remark, isActive) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editCode').value = code;
+        document.getElementById('editName').value = name;
+        document.getElementById('editOrigin').value = origin;
+        document.getElementById('editRemark').value = remark;
+        document.getElementById('editIsActive').checked = isActive;
+        var modal = new bootstrap.Modal(document.getElementById('editBrandModal'));
+        modal.show();
+    }
+
+    function viewBrandProducts(id, code, name) {
+        document.getElementById('viewBrandTitle').innerText = code + ' — ' + name;
+        document.getElementById('viewBrandTotalProds').innerText = '...';
+        document.getElementById('viewBrandTotalStock').innerText = '...';
+        var tbody = document.getElementById('viewBrandProductsTableBody');
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải danh sách mặt hàng...</td></tr>';
+
+        var modal = new bootstrap.Modal(document.getElementById('viewBrandProductsModal'));
+        modal.show();
+
+        fetch('/Brand/Detail?id=' + id)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('viewBrandTotalProds').innerText = data.totalProducts;
+                document.getElementById('viewBrandTotalStock').innerText = Number(data.totalStockQty).toLocaleString('vi-VN');
+
+                if (!data.products || data.products.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Chưa có mặt hàng nào thuộc thương hiệu này.</td></tr>';
+                    return;
+                }
+
+                var html = '';
+                data.products.forEach(p => {
+                    var ptBadge = p.partTypeCode ? ('<span class="badge bg-light text-dark border">' + p.partTypeCode + '</span>') : '—';
+                    html += '<tr>' +
+                        '<td class="ps-3 fw-semibold font-monospace">' + p.code + '</td>' +
+                        '<td>' + p.name + '</td>' +
+                        '<td>' + ptBadge + '</td>' +
+                        '<td>' + p.uom + '</td>' +
+                        '<td class="text-end text-muted">' + (p.minStock > 0 ? p.minStock : '—') + '</td>' +
+                        '<td class="text-end text-muted">' + (p.maxStock > 0 ? p.maxStock : '—') + '</td>' +
+                        '<td class="text-end pe-3 fw-bold">' + Number(p.costPrice).toLocaleString('vi-VN') + ' đ</td>' +
+                        '</tr>';
+                });
+                tbody.innerHTML = html;
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">Lỗi tải dữ liệu mặt hàng.</td></tr>';
+            });
+    }
+</script>
+}

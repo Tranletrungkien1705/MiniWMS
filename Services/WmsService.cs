@@ -130,6 +130,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdatePartTypeAsync(int id, PartType item);
     Task<(bool ok, string msg)> TogglePartTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeletePartTypeAsync(int id);
+    Task<BrandReport> BrandsReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<Brand>> BrandsAsync(string? q = null, bool? activeOnly = null);
+    Task<Brand?> GetBrandAsync(int id);
+    Task<Brand?> GetBrandByCodeAsync(string code);
+    Task<BrandDetailDto?> GetBrandDetailAsync(int id);
+    Task<int> CreateBrandAsync(Brand item);
+    Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item);
+    Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteBrandAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -5603,6 +5612,149 @@ public class WmsService(AppDbContext db) : IWmsService
         db.PartTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại mặt hàng '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Thương hiệu hàng hóa tổng hợp kèm KPI (port từ Mst_Brand Skycic).</summary>
+    public async Task<BrandReport> BrandsReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Brands.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(b => b.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(b => b.Code.ToLower().Contains(kw) ||
+                                     b.Name.ToLower().Contains(kw) ||
+                                     (b.Origin != null && b.Origin.ToLower().Contains(kw)) ||
+                                     (b.Remark != null && b.Remark.ToLower().Contains(kw)));
+        }
+
+        var brands = await query.OrderBy(b => b.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var prodGroup = allProducts
+            .Where(p => !string.IsNullOrEmpty(p.BrandCode))
+            .GroupBy(p => p.BrandCode!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = brands.Select(b =>
+        {
+            int pCount = prodGroup.TryGetValue(b.Code, out var pList) ? pList.Count : 0;
+            var pIds = pList?.Select(p => p.Id).ToHashSet() ?? [];
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new BrandRow(b.Id, b.Code, b.Name, b.Origin, b.Remark, b.IsActive, b.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalBrands = await db.Brands.CountAsync();
+        int activeCount = await db.Brands.CountAsync(b => b.IsActive);
+        int inactiveCount = totalBrands - activeCount;
+        int mappedProds = allProducts.Count(p => !string.IsNullOrEmpty(p.BrandCode));
+
+        return new BrandReport(q, activeOnly, totalBrands, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<Brand>> BrandsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Brands.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(b => b.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(b => b.Code.ToLower().Contains(kw) || b.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(b => b.Code).ToListAsync();
+    }
+
+    public Task<Brand?> GetBrandAsync(int id) =>
+        db.Brands.FirstOrDefaultAsync(b => b.Id == id);
+
+    public Task<Brand?> GetBrandByCodeAsync(string code) =>
+        db.Brands.FirstOrDefaultAsync(b => b.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<BrandDetailDto?> GetBrandDetailAsync(int id)
+    {
+        var b = await db.Brands.FirstOrDefaultAsync(x => x.Id == id);
+        if (b == null) return null;
+
+        var products = await db.Products
+            .Where(p => p.BrandCode != null && p.BrandCode.ToLower() == b.Code.ToLower())
+            .OrderBy(p => p.Code)
+            .ToListAsync();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new BrandDetailDto(b, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateBrandAsync(Brand item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên thương hiệu không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"BR{await db.Brands.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.Brands.AnyAsync(b => b.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã thương hiệu '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.Brands.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateBrandAsync(int id, Brand item)
+    {
+        var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
+        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên thương hiệu không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.Origin = item.Origin?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin thương hiệu '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleBrandStatusAsync(int id)
+    {
+        var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
+        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng thương hiệu '{existing.Code}'." : $"Đã chuyển thương hiệu '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteBrandAsync(int id)
+    {
+        var existing = await db.Brands.FirstOrDefaultAsync(b => b.Id == id);
+        if (existing == null) return (false, "Không tìm thấy thương hiệu.");
+
+        bool isUsed = await db.Products.AnyAsync(p => p.BrandCode != null && p.BrandCode.ToLower() == existing.Code.ToLower());
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Thương hiệu '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.Brands.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa thương hiệu '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
