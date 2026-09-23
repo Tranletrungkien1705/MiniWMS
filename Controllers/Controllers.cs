@@ -3463,6 +3463,141 @@ public class PartMaterialTypeController(IWmsService svc) : Controller
     }
 }
 
+public class ProductAttributeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.ProductAttributesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetProductAttributeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy thuộc tính." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            networkId = detail.Item.NetworkId,
+            isActive = detail.Item.IsActive,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                p.PartTypeCode,
+                p.BrandCode,
+                p.SpecCode,
+                p.MinStock,
+                p.MaxStock,
+                p.CostPrice
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? networkId = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên thuộc tính.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new ProductAttribute
+            {
+                Code = code?.Trim().ToUpperInvariant() ?? "",
+                Name = name.Trim(),
+                NetworkId = string.IsNullOrWhiteSpace(networkId) ? null : networkId.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreateProductAttributeAsync(item);
+            TempData["Success"] = $"Đã tạo mới thuộc tính '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? networkId = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên thuộc tính.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new ProductAttribute
+        {
+            Name = name.Trim(),
+            NetworkId = string.IsNullOrWhiteSpace(networkId) ? null : networkId.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateProductAttributeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleProductAttributeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteProductAttributeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.ProductAttributesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC THUỘC TÍNH / ĐẶC TÍNH KỸ THUẬT HÀNG HÓA KHO (MST_ATTRIBUTE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã thuộc tính;Tên thuộc tính / đặc tính kỹ thuật;Mạng sở hữu;Trạng thái;Số lượng SP;Tổng tồn kho;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.NetworkId?.Replace("\"", "\"\"")}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ THUỘC TÍNH:;{report.TotalAttributes};;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;");
+        sb.AppendLine($";;NGỪNG ÁP DỤNG:;{report.InactiveCount};;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG ĐÃ GẮN:;{report.TotalProductsMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"ThuocTinhHangHoa_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class ProductModelController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(string? q, string? brandCode, bool? activeOnly)

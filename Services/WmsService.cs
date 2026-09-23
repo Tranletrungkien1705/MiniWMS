@@ -174,6 +174,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdatePartMaterialTypeAsync(int id, PartMaterialType item);
     Task<(bool ok, string msg)> TogglePartMaterialTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeletePartMaterialTypeAsync(int id);
+    Task<ProductAttributeReport> ProductAttributesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<ProductAttribute>> ProductAttributesAsync(string? q = null, bool? activeOnly = null);
+    Task<ProductAttribute?> GetProductAttributeAsync(int id);
+    Task<ProductAttribute?> GetProductAttributeByCodeAsync(string code);
+    Task<ProductAttributeDetailDto?> GetProductAttributeDetailAsync(int id);
+    Task<int> CreateProductAttributeAsync(ProductAttribute item);
+    Task<(bool ok, string msg)> UpdateProductAttributeAsync(int id, ProductAttribute item);
+    Task<(bool ok, string msg)> ToggleProductAttributeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteProductAttributeAsync(int id);
     Task<ProductModelReport> ProductModelsReportAsync(string? q = null, string? brandCode = null, bool? activeOnly = null);
     Task<List<ProductModel>> ProductModelsAsync(string? q = null, string? brandCode = null, bool? activeOnly = null);
     Task<ProductModel?> GetProductModelAsync(int id);
@@ -6696,6 +6705,157 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     /// <summary>BÃ¡o cÃ¡o danh má»¥c DÃ²ng sáº£n pháº©m / Model hÃ ng hÃ³a kho tá»•ng há»£p kÃ¨m 4 tháº» KPI (port tá»« Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
+    public async Task<ProductAttributeReport> ProductAttributesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.ProductAttributes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(a => a.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) ||
+                                     a.Name.ToLower().Contains(kw) ||
+                                     (a.NetworkId != null && a.NetworkId.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(a => a.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var rows = list.Select(a =>
+        {
+            var pList = allProducts.Where(p =>
+                string.Equals(p.SpecCode, a.Code, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.SpecCode, a.Name, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.PartTypeCode, a.Code, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.BrandCode, a.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+            int pCount = pList.Count;
+            var pIds = pList.Select(p => p.Id).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new ProductAttributeRow(a.Id, a.Code, a.Name, a.NetworkId, a.IsActive, a.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalAttrs = await db.ProductAttributes.CountAsync();
+        int activeCount = await db.ProductAttributes.CountAsync(a => a.IsActive);
+        int inactiveCount = totalAttrs - activeCount;
+
+        var attrCodes = (await db.ProductAttributes.Select(a => a.Code).ToListAsync())
+            .Select(c => c.ToLowerInvariant()).ToHashSet();
+        int mappedProds = allProducts.Count(p =>
+            (!string.IsNullOrEmpty(p.SpecCode) && attrCodes.Contains(p.SpecCode.Trim().ToLowerInvariant())) ||
+            (!string.IsNullOrEmpty(p.PartTypeCode) && attrCodes.Contains(p.PartTypeCode.Trim().ToLowerInvariant())) ||
+            (!string.IsNullOrEmpty(p.BrandCode) && attrCodes.Contains(p.BrandCode.Trim().ToLowerInvariant())));
+
+        return new ProductAttributeReport(q, activeOnly, totalAttrs, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<ProductAttribute>> ProductAttributesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.ProductAttributes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(a => a.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) || a.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(a => a.Code).ToListAsync();
+    }
+
+    public Task<ProductAttribute?> GetProductAttributeAsync(int id) =>
+        db.ProductAttributes.FirstOrDefaultAsync(a => a.Id == id);
+
+    public Task<ProductAttribute?> GetProductAttributeByCodeAsync(string code) =>
+        db.ProductAttributes.FirstOrDefaultAsync(a => a.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<ProductAttributeDetailDto?> GetProductAttributeDetailAsync(int id)
+    {
+        var a = await db.ProductAttributes.FirstOrDefaultAsync(x => x.Id == id);
+        if (a == null) return null;
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+        var products = allProducts.Where(p =>
+            string.Equals(p.SpecCode, a.Code, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.SpecCode, a.Name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.PartTypeCode, a.Code, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.BrandCode, a.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new ProductAttributeDetailDto(a, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateProductAttributeAsync(ProductAttribute item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Ten thuoc tinh khong duoc de trong.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"ATTR{await db.ProductAttributes.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.ProductAttributes.AnyAsync(a => a.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Ma thuoc tinh '{item.Code}' da ton tai trong he thong.");
+
+        item.CreatedAt = DateTime.Now;
+        db.ProductAttributes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateProductAttributeAsync(int id, ProductAttribute item)
+    {
+        var existing = await db.ProductAttributes.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Khong tim thay thuoc tinh.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Ten thuoc tinh khong duoc de trong.");
+
+        existing.Name = item.Name.Trim();
+        existing.NetworkId = item.NetworkId?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Da cap nhat thong tin thuoc tinh '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleProductAttributeStatusAsync(int id)
+    {
+        var existing = await db.ProductAttributes.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Khong tim thay thuoc tinh.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Da kich hoat ap dung thuoc tinh '{existing.Code}'." : $"Da chuyen thuoc tinh '{existing.Code}' sang trang thai Ngung ap dung.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteProductAttributeAsync(int id)
+    {
+        var existing = await db.ProductAttributes.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Khong tim thay thuoc tinh.");
+
+        bool isUsed = await db.Products.AnyAsync(p =>
+            (p.SpecCode != null && (p.SpecCode.ToLower() == existing.Code.ToLower() || p.SpecCode.ToLower() == existing.Name.ToLower())) ||
+            (p.PartTypeCode != null && p.PartTypeCode.ToLower() == existing.Code.ToLower()) ||
+            (p.BrandCode != null && p.BrandCode.ToLower() == existing.Code.ToLower()));
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Thuoc tinh '{existing.Code}' dang duoc gan cho san pham trong kho nen da chuyen sang trang thai Ngung ap dung thay vi xoa han.");
+        }
+
+        db.ProductAttributes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Da xoa thuoc tinh '{existing.Code}'.");
+    }
+
     public async Task<ProductModelReport> ProductModelsReportAsync(string? q = null, string? brandCode = null, bool? activeOnly = null)
     {
         var query = db.ProductModels.AsQueryable();

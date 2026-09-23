@@ -1997,6 +1997,49 @@ public record PartMaterialTypeDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Danh mục Thuộc tính / Đặc tính kỹ thuật hàng hóa kho (Product Attribute - port từ Mst_Attribute Skycic: AttributeCode, NetworkID, AttributeName, FlagActive).</summary>
+public class ProductAttribute : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã thuộc tính (AttributeCode, vd: COLOR, SIZE, MATERIAL, WEIGHT, ORIGIN...)
+    public string Name { get; set; } = "";          // Tên thuộc tính / đặc tính kỹ thuật (AttributeName, vd: Màu sắc, Kích cỡ, Chất liệu, Khối lượng...)
+    public string? NetworkId { get; set; }          // Mã mạng / đơn vị sở hữu thuộc tính (NetworkID)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị thuộc tính kèm số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record ProductAttributeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? NetworkId,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách thuộc tính hàng hóa tổng hợp kèm 4 thẻ KPI.</summary>
+public record ProductAttributeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalAttributes,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<ProductAttributeRow> Rows
+);
+
+/// <summary>Chi tiết Thuộc tính kèm danh sách sản phẩm gắn thuộc tính này.</summary>
+public record ProductAttributeDetailDto(
+    ProductAttribute Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
 /// <summary>Danh mục Dòng sản phẩm / Model hàng hóa kho (port từ Mst_Model / OS_PrdCenter_Mst_Model Skycic: ModelCode, ModelName, BrandCode, OrgModelCode, FlagActive, Remark).</summary>
 public class ProductModel : IOrgOwned
 {

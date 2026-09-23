@@ -43,6 +43,7 @@ public class AppDbContext : DbContext
     public DbSet<PartColorMap> PartColorMaps => Set<PartColorMap>();
     public DbSet<PartUnit> PartUnits => Set<PartUnit>();
     public DbSet<PartMaterialType> PartMaterialTypes => Set<PartMaterialType>();
+    public DbSet<ProductAttribute> ProductAttributes => Set<ProductAttribute>();
     public DbSet<ProductModel> ProductModels => Set<ProductModel>();
     public DbSet<InventoryType> InventoryTypes => Set<InventoryType>();
     public DbSet<InventoryLevelType> InventoryLevelTypes => Set<InventoryLevelType>();
@@ -128,6 +129,7 @@ public class AppDbContext : DbContext
         b.Entity<InventoryLevelType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartMaterialType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
+        b.Entity<ProductAttribute>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<ProductModel>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasIndex(x => new { x.OrgId, x.BrandCode }); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartUnit>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Brand>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

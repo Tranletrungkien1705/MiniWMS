@@ -508,6 +508,20 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.ProductAttributes.AnyAsync())
+        {
+            db.ProductAttributes.AddRange(
+                new ProductAttribute { Code = "COLOR", Name = "Màu sắc", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "SIZE", Name = "Kích cỡ / Size", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "MATERIAL", Name = "Chất liệu cấu thành", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "WEIGHT", Name = "Khối lượng (gram)", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "ORIGIN", Name = "Xuất xứ / Nguồn gốc", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "WARRANTY", Name = "Thời hạn bảo hành (tháng)", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "PACKING", Name = "Quy cách đóng gói", NetworkId = "WH01", IsActive = true },
+                new ProductAttribute { Code = "BRAND", Name = "Thương hiệu sản phẩm", NetworkId = "WH01", IsActive = false }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.ProductModels.AnyAsync())
         {
             db.ProductModels.AddRange(
