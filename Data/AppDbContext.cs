@@ -40,11 +40,13 @@ public class AppDbContext : DbContext
     public DbSet<PartType> PartTypes => Set<PartType>();
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<PartUnit> PartUnits => Set<PartUnit>();
+    public DbSet<PartMaterialType> PartMaterialTypes => Set<PartMaterialType>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<PartMaterialType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartUnit>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Brand>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

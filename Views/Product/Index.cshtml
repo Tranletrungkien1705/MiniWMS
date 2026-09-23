@@ -4,6 +4,7 @@
     var partTypes = ViewBag.PartTypes as List<PartType> ?? [];
     var brands = ViewBag.Brands as List<Brand> ?? [];
     var partUnits = ViewBag.PartUnits as List<PartUnit> ?? [];
+    var materialTypes = ViewBag.MaterialTypes as List<PartMaterialType> ?? [];
 }
 <div class="row g-3">
     <div class="col-lg-4"><div class="card"><div class="card-body">
@@ -29,6 +30,15 @@
                     }
                 </select>
             </div>
+            <div class="mb-2">
+                <select name="pmType" class="form-select">
+                    <option value="">-- Chọn nhóm chất liệu / vật liệu (Mst_PartMaterialType) --</option>
+                    @foreach (var m in materialTypes)
+                    {
+                        <option value="@m.Code">@m.Code — @m.Name</option>
+                    }
+                </select>
+            </div>
             <div class="row g-2 mb-2">
                 <div class="col-12">
                     <input list="partUnitList" name="uom" class="form-control" placeholder="Đơn vị tính (Mst_PartUnit)" value="cái" required />
@@ -48,7 +58,7 @@
         </form>
     </div></div></div>
     <div class="col-lg-8"><div class="card"><div class="card-body">
-        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên</th><th>Loại hàng</th><th>Thương hiệu</th><th>ĐVT</th><th class="text-end">Tồn Min</th><th class="text-end">Tồn Max</th></tr></thead><tbody>
+        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên</th><th>Loại hàng</th><th>Thương hiệu</th><th>Chất liệu</th><th>ĐVT</th><th class="text-end">Tồn Min</th><th class="text-end">Tồn Max</th></tr></thead><tbody>
         @foreach (var p in Model) {
             <tr>
                 <td class="fw-semibold">@p.Code</td>
@@ -68,13 +78,20 @@
                     }
                 </td>
                 <td>
+                    @if (!string.IsNullOrEmpty(p.PMType)) {
+                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle">@p.PMType</span>
+                    } else {
+                        <span class="text-muted small">—</span>
+                    }
+                </td>
+                <td>
                     <span class="badge bg-light text-dark border font-monospace">@p.Uom</span>
                 </td>
                 <td class="text-end text-muted">@(p.MinStock > 0 ? p.MinStock.ToString() : "—")</td>
                 <td class="text-end text-muted">@(p.MaxStock > 0 ? p.MaxStock.ToString() : "—")</td>
             </tr>
         }
-        @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Chưa có mặt hàng.</td></tr> }
+        @if (Model.Count == 0) { <tr><td colspan="8" class="text-center text-muted py-4">Chưa có mặt hàng.</td></tr> }
         </tbody></table>
     </div></div></div>
 </div>

@@ -64,13 +64,27 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.PartMaterialTypes.AnyAsync())
+        {
+            db.PartMaterialTypes.AddRange(
+                new PartMaterialType { Code = "COTTON", Name = "Vải sợi Cotton 100%", IsActive = true, Remark = "Sợi bông tự nhiên, thoáng mát, thấm hút mồ hôi, bảo quản nơi khô ráo thoáng khí" },
+                new PartMaterialType { Code = "KAKI", Name = "Vải Kaki dệt thoi", IsActive = true, Remark = "Sợi dệt thoi mật độ cao, độ bền cơ học tốt, chống nhăn xước, dùng cho âu phục và đồng phục" },
+                new PartMaterialType { Code = "LEATHER", Name = "Da bò thuộc cao cấp", IsActive = true, Remark = "Da tự nhiên xử lý thủ công, độ đàn hồi cao, tránh ẩm mốc và nhiệt độ quá cao" },
+                new PartMaterialType { Code = "DENIM", Name = "Vải Denim sợi chéo", IsActive = true, Remark = "Vải jean cotton dệt chéo chàm bền chắc, phong cách thời trang trẻ trung năng động" },
+                new PartMaterialType { Code = "SILK", Name = "Lụa tơ tằm tự nhiên", IsActive = true, Remark = "Chất liệu cao cấp mềm mịn, chống tích điện, bảo quản trong túi vải chuyên dụng" },
+                new PartMaterialType { Code = "POLYESTER", Name = "Sợi tổng hợp Polyester", IsActive = true, Remark = "Chống nước nhẹ, định hình form dáng tốt, chống co rút khi giặt" },
+                new PartMaterialType { Code = "STEEL", Name = "Hợp kim thép không gỉ Inox", IsActive = true, Remark = "Vật liệu kim khí chế tạo phụ kiện khóa, móc, chốt chống ăn mòn oxi hóa" },
+                new PartMaterialType { Code = "PLASTIC", Name = "Nhựa kỹ thuật ABS/PP", IsActive = true, Remark = "Vật liệu polymer chịu va đập, chế tạo khuy cúc áo, thẻ bài, móc treo" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
-                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", PMType = "COTTON", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", PMType = "DENIM", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", PMType = "LEATHER", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", PMType = "SILK", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
         }
         else
@@ -113,6 +127,18 @@ public static class Seeder
                         "PK-001" => "ANPHUOC",
                         "VAY-001" => "NEM",
                         _ => null
+                    };
+                    hasChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(p.PMType))
+                {
+                    p.PMType = p.Code switch
+                    {
+                        "AO-001" => "COTTON",
+                        "QUAN-001" => "DENIM",
+                        "PK-001" => "LEATHER",
+                        "VAY-001" => "SILK",
+                        _ => "COTTON"
                     };
                     hasChanged = true;
                 }

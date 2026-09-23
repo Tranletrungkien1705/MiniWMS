@@ -1754,6 +1754,79 @@ app.MapDelete("/api/part-units/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Nhóm chất liệu / Loại vật liệu hàng hóa kho (port từ Mst_PartMaterialType Skycic)
+app.MapGet("/api/part-material-types", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.PartMaterialTypesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/part-material-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetPartMaterialTypeAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy nhóm chất liệu." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-material-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetPartMaterialTypeByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy nhóm chất liệu." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/part-material-types/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetPartMaterialTypeDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy nhóm chất liệu." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/part-material-types", async (CreatePartMaterialTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhóm chất liệu." });
+    try
+    {
+        var item = new PartMaterialType
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreatePartMaterialTypeAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/part-material-types/{id:int}", async (int id, UpdatePartMaterialTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhóm chất liệu." });
+    var item = new PartMaterialType
+    {
+        Name = dto.Name.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdatePartMaterialTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/part-material-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.TogglePartMaterialTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/part-material-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeletePartMaterialTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
 
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
@@ -1805,3 +1878,5 @@ record CreateBrandDto(string? Code, string Name, string? Origin, string? Remark,
 record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActive);
 record CreatePartUnitDto(string? Code, string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record UpdatePartUnitDto(string Name, bool? IsStandard, string? Remark, bool? IsActive);
+record CreatePartMaterialTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
+record UpdatePartMaterialTypeDto(string Name, string? Remark, bool? IsActive);

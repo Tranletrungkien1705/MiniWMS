@@ -148,6 +148,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdatePartUnitAsync(int id, PartUnit item);
     Task<(bool ok, string msg)> TogglePartUnitStatusAsync(int id);
     Task<(bool ok, string msg)> DeletePartUnitAsync(int id);
+    Task<PartMaterialTypeReport> PartMaterialTypesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<PartMaterialType>> PartMaterialTypesAsync(string? q = null, bool? activeOnly = null);
+    Task<PartMaterialType?> GetPartMaterialTypeAsync(int id);
+    Task<PartMaterialType?> GetPartMaterialTypeByCodeAsync(string code);
+    Task<PartMaterialTypeDetailDto?> GetPartMaterialTypeDetailAsync(int id);
+    Task<int> CreatePartMaterialTypeAsync(PartMaterialType item);
+    Task<(bool ok, string msg)> UpdatePartMaterialTypeAsync(int id, PartMaterialType item);
+    Task<(bool ok, string msg)> TogglePartMaterialTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeletePartMaterialTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -166,6 +175,8 @@ public class WmsService(AppDbContext db) : IWmsService
         if (string.IsNullOrWhiteSpace(p.Code)) p.Code = $"SP{await db.Products.CountAsync() + 1:D4}";
         p.Code = p.Code.Trim().ToUpperInvariant();
         if (!string.IsNullOrWhiteSpace(p.PartTypeCode)) p.PartTypeCode = p.PartTypeCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(p.BrandCode)) p.BrandCode = p.BrandCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(p.PMType)) p.PMType = p.PMType.Trim().ToUpperInvariant();
         db.Products.Add(p); await db.SaveChangesAsync(); return p.Id;
     }
 
@@ -5920,6 +5931,160 @@ public class WmsService(AppDbContext db) : IWmsService
         db.PartUnits.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa đơn vị tính '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Nhóm chất liệu / Vật liệu hàng hóa tổng hợp kèm 4 thẻ KPI (port từ Mst_PartMaterialType Skycic: PMType, PMTypeName, FlagActive, Remark).</summary>
+    public async Task<PartMaterialTypeReport> PartMaterialTypesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartMaterialTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(m => m.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Code.ToLower().Contains(kw) ||
+                                     m.Name.ToLower().Contains(kw) ||
+                                     (m.Remark != null && m.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(m => m.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var prodGroup = allProducts
+            .Where(p => !string.IsNullOrEmpty(p.PMType))
+            .GroupBy(p => p.PMType!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = list.Select(m =>
+        {
+            var pList = new List<Product>();
+            if (prodGroup.TryGetValue(m.Code, out var listByCode)) pList.AddRange(listByCode);
+            if (prodGroup.TryGetValue(m.Name, out var listByName))
+            {
+                foreach (var p in listByName)
+                {
+                    if (!pList.Any(x => x.Id == p.Id)) pList.Add(p);
+                }
+            }
+            int pCount = pList.Count;
+            var pIds = pList.Select(p => p.Id).ToHashSet();
+            int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+            return new PartMaterialTypeRow(m.Id, m.Code, m.Name, m.Remark, m.IsActive, m.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalTypes = await db.PartMaterialTypes.CountAsync();
+        int activeCount = await db.PartMaterialTypes.CountAsync(m => m.IsActive);
+        int inactiveCount = totalTypes - activeCount;
+
+        var materialCodes = (await db.PartMaterialTypes.Select(m => m.Code).ToListAsync())
+            .Select(c => c.ToLowerInvariant()).ToHashSet();
+        int mappedProds = allProducts.Count(p => !string.IsNullOrEmpty(p.PMType) && materialCodes.Contains(p.PMType.Trim().ToLowerInvariant()));
+
+        return new PartMaterialTypeReport(q, activeOnly, totalTypes, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<PartMaterialType>> PartMaterialTypesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartMaterialTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(m => m.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Code.ToLower().Contains(kw) || m.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(m => m.Code).ToListAsync();
+    }
+
+    public Task<PartMaterialType?> GetPartMaterialTypeAsync(int id) =>
+        db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
+
+    public Task<PartMaterialType?> GetPartMaterialTypeByCodeAsync(string code) =>
+        db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<PartMaterialTypeDetailDto?> GetPartMaterialTypeDetailAsync(int id)
+    {
+        var m = await db.PartMaterialTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (m == null) return null;
+
+        var allProducts = await db.Products.OrderBy(p => p.Code).ToListAsync();
+        var products = allProducts
+            .Where(p => string.Equals(p.PMType, m.Code, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(p.PMType, m.Name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new PartMaterialTypeDetailDto(m, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreatePartMaterialTypeAsync(PartMaterialType item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên nhóm chất liệu không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"MAT{await db.PartMaterialTypes.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.PartMaterialTypes.AnyAsync(m => m.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã nhóm chất liệu '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.PartMaterialTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdatePartMaterialTypeAsync(int id, PartMaterialType item)
+    {
+        var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên nhóm chất liệu không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin nhóm chất liệu '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> TogglePartMaterialTypeStatusAsync(int id)
+    {
+        var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm chất liệu '{existing.Code}'." : $"Đã chuyển nhóm chất liệu '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeletePartMaterialTypeAsync(int id)
+    {
+        var existing = await db.PartMaterialTypes.FirstOrDefaultAsync(m => m.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm chất liệu.");
+
+        bool isUsed = await db.Products.AnyAsync(p => p.PMType != null && (p.PMType.ToLower() == existing.Code.ToLower() || p.PMType.ToLower() == existing.Name.ToLower()));
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Nhóm chất liệu '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.PartMaterialTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa nhóm chất liệu '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

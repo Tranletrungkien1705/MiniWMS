@@ -33,6 +33,7 @@ public class Product : IOrgOwned
     public string Name { get; set; } = "";
     public string? PartTypeCode { get; set; } // Phân loại loại mặt hàng (port từ Mst_PartType: TP, BTP, NVL, PTLK, BBDG, CCDC, HHTM)
     public string? BrandCode { get; set; }    // Thương hiệu / Nhãn hiệu hàng hóa (port từ Mst_Brand: MAY10, VIETTIEN, ANPHUOC, LEVI...)
+    public string? PMType { get; set; }       // Nhóm chất liệu / Loại vật liệu hàng hóa (port từ Mst_PartMaterialType Skycic: COTTON, KAKI, LEATHER...)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
@@ -1822,6 +1823,49 @@ public record PartUnitReport(
 /// <summary>Chi tiết Đơn vị tính kèm danh sách sản phẩm sử dụng đơn vị.</summary>
 public record PartUnitDetailDto(
     PartUnit Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
+/// <summary>Danh mục Nhóm chất liệu / Loại vật liệu hàng hóa kho (Material Type - port từ Mst_PartMaterialType Skycic: PMType, PMTypeName, FlagActive, Remark).</summary>
+public class PartMaterialType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã nhóm chất liệu / vật liệu (PMType, vd: COTTON, KAKI, LEATHER, SILK, DENIM, INOX, PLASTIC, STEEL, WOOD...)
+    public string Name { get; set; } = "";          // Tên nhóm chất liệu / vật liệu (PMTypeName, vd: Vải sợi Cotton 100%, Vải Kaki dệt thoi, Da bò thuộc tự nhiên...)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Tiêu chuẩn kỹ thuật & đặc tính bảo quản chất liệu (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị nhóm chất liệu kèm số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record PartMaterialTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách nhóm chất liệu tổng hợp kèm 4 thẻ KPI.</summary>
+public record PartMaterialTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalMaterialTypes,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<PartMaterialTypeRow> Rows
+);
+
+/// <summary>Chi tiết Nhóm chất liệu kèm danh sách sản phẩm thuộc nhóm chất liệu này.</summary>
+public record PartMaterialTypeDetailDto(
+    PartMaterialType Item,
     List<Product> Products,
     int TotalProducts,
     int TotalStockQty
