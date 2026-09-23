@@ -3238,3 +3238,115 @@ public record PointInTimeBalanceReport(
     List<PointInTimeBalanceRow> Rows
 );
 
+
+// ==================== SỔ GIAO DỊCH KHO / NHẬT KÝ BIẾN ĐỘNG TỒN KHO (Inv_InventoryTransaction Skycic) ====================
+
+/// <summary>Loại nghiệp vụ phát sinh giao dịch kho (port từ FunctionName / RefType của Inv_InventoryTransaction Skycic).</summary>
+public enum InventoryTxnType
+{
+    In = 0,          // Nhập kho mua hàng / thương mại (InvF_InventoryIn)
+    Out = 1,         // Xuất kho bán hàng / thương mại (InvF_InventoryOut)
+    Move = 2,        // Điều chuyển kho (InvF_MoveOrd)
+    Audit = 3,       // Cân bằng kiểm kê (InvF_InvAudit)
+    ReturnSup = 4,   // Xuất trả hàng nhà cung cấp (InvF_InventoryReturnSup)
+    CusReturn = 5,   // Nhập hàng khách trả lại (InvF_InventoryCusReturn)
+    InFG = 6,        // Nhập kho thành phẩm sản xuất (InvF_InventoryInFG)
+    OutFG = 7,       // Xuất kho thành phẩm (InvF_InventoryOutFG)
+    Adjust = 8       // Điều chỉnh tồn thủ công / khác (Manual Adjust)
+}
+
+/// <summary>Phân loại chất lượng hàng hóa trong giao dịch (OK = hàng tốt, NG = hàng lỗi/hỏng).</summary>
+public enum InventoryTxnQuality
+{
+    OK = 0,   // Hàng đạt chuẩn (QtyChTotalOK / QtyChBlockOK)
+    NG = 1    // Hàng lỗi / hỏng / chờ xử lý (QtyChTotalNG / QtyChBlockNG)
+}
+
+/// <summary>Sổ giao dịch kho / Nhật ký biến động tồn kho (port từ Inv_InventoryTransaction Skycic).
+/// Mỗi bút toán ghi nhận phần thay đổi (delta) số lượng tồn kho theo kho + mặt hàng, kèm nghiệp vụ phát sinh
+/// và chứng từ tham chiếu. Đây là sổ cái bất biến (immutable ledger) của mọi biến động tồn kho.</summary>
+public class InventoryTransaction : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int WarehouseId { get; set; }                     // Kho phát sinh giao dịch (InvCode)
+    public int ProductId { get; set; }                       // Mặt hàng (ProductCode)
+    public InventoryTxnType TxnType { get; set; }            // Loại nghiệp vụ phát sinh (FunctionName)
+    public string FunctionName { get; set; } = "";           // Tên hàm nghiệp vụ gốc (vd: InvF_InventoryCusReturn_APPRX)
+    public InventoryTxnQuality Quality { get; set; } = InventoryTxnQuality.OK; // Chất lượng hàng (OK / NG)
+
+    public int QtyChTotalOK { get; set; }                    // Thay đổi tổng tồn OK (QtyChTotalOK)
+    public int QtyChBlockOK { get; set; }                    // Thay đổi tồn bị khóa OK (QtyChBlockOK)
+    public int QtyChTotalNG { get; set; }                    // Thay đổi tổng tồn NG (QtyChTotalNG)
+    public int QtyChBlockNG { get; set; }                    // Thay đổi tồn bị khóa NG (QtyChBlockNG)
+
+    public string? RefType { get; set; }                     // Loại chứng từ tham chiếu (RefType)
+    public string? RefCode00 { get; set; }                   // Mã chứng từ gốc (RefCode00 - vd: số phiếu kho)
+    public string? RefCode01 { get; set; }                   // Mã tham chiếu phụ 1 (RefCode01)
+    public string? RefCode02 { get; set; }                   // Mã tham chiếu phụ 2 (RefCode02)
+    public string? RefCode03 { get; set; }                   // Mã tham chiếu phụ 3 (RefCode03)
+    public string? RefCode04 { get; set; }                   // Mã tham chiếu phụ 4 (RefCode04)
+    public string? RefCode05 { get; set; }                   // Mã tham chiếu phụ 5 (RefCode05)
+
+    public string? Remark { get; set; }                      // Diễn giải giao dịch
+    public string CreatedBy { get; set; } = "";              // Người tạo bút toán (CreateBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;  // Thời điểm ghi sổ (CreateDTimeUTC)
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+
+    /// <summary>Tổng thay đổi tồn vật lý (OK + NG) = QtyChTotalOK + QtyChTotalNG.</summary>
+    public int QtyChangeTotal => QtyChTotalOK + QtyChTotalNG;
+
+    /// <summary>Thay đổi tồn khả dụng = (QtyChTotalOK - QtyChBlockOK) + (QtyChTotalNG - QtyChBlockNG).</summary>
+    public int QtyChangeAvail => (QtyChTotalOK - QtyChBlockOK) + (QtyChTotalNG - QtyChBlockNG);
+}
+
+/// <summary>Dòng hiển thị Sổ giao dịch kho (port từ Inv_InventoryTransaction Skycic).</summary>
+public record InventoryTransactionRow(
+    int Id,
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    InventoryTxnType TxnType,
+    string TxnTypeLabel,
+    string BadgeClass,
+    string FunctionName,
+    InventoryTxnQuality Quality,
+    string QualityLabel,
+    int QtyChTotalOK,
+    int QtyChBlockOK,
+    int QtyChTotalNG,
+    int QtyChBlockNG,
+    int QtyChangeTotal,
+    int QtyChangeAvail,
+    string? RefType,
+    string? RefCode00,
+    string? RefCode01,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo Sổ giao dịch kho / Nhật ký biến động tồn kho tổng hợp (port từ Inv_InventoryTransaction Skycic).</summary>
+public record InventoryTransactionReport(
+    int? WarehouseId,
+    string WarehouseName,
+    int? ProductId,
+    string ProductName,
+    InventoryTxnType? TxnTypeFilter,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    string? Keyword,
+    int TotalTransactions,
+    int TotalQtyIn,          // Tổng nhập (delta dương)
+    int TotalQtyOut,         // Tổng xuất (delta âm, giá trị tuyệt đối)
+    int NetQtyChange,        // Biến động ròng = TotalQtyIn - TotalQtyOut
+    int InCount,             // Số bút toán nhập
+    int OutCount,            // Số bút toán xuất
+    int NgCount,             // Số bút toán liên quan hàng NG
+    List<InventoryTransactionRow> Rows
+);

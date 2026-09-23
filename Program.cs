@@ -3615,6 +3615,46 @@ app.MapDelete("/api/vat-rates/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Sổ giao dịch kho / Nhật ký biến động tồn kho (port từ Inv_InventoryTransaction Skycic)
+app.MapGet("/api/inventory-transactions", async (int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryTransactionReportAsync(warehouseId, productId, txnType, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapPost("/api/inventory-transactions", async (CreateInventoryTransactionDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (dto.ProductId <= 0) return Results.BadRequest(new { error = "Cần ProductId." });
+
+    try
+    {
+        var txn = new InventoryTransaction
+        {
+            WarehouseId = dto.WarehouseId,
+            ProductId = dto.ProductId,
+            TxnType = dto.TxnType,
+            Quality = dto.Quality,
+            FunctionName = string.IsNullOrWhiteSpace(dto.FunctionName) ? "Manual_Adjust" : dto.FunctionName.Trim(),
+            QtyChTotalOK = dto.QtyChTotalOK,
+            QtyChBlockOK = dto.QtyChBlockOK,
+            QtyChTotalNG = dto.QtyChTotalNG,
+            QtyChBlockNG = dto.QtyChBlockNG,
+            RefType = dto.RefType?.Trim(),
+            RefCode00 = dto.RefCode00?.Trim(),
+            RefCode01 = dto.RefCode01?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+        var id = await svc.CreateInventoryTransactionAsync(txn);
+        return Results.Ok(new { id, txnType = txn.TxnType.ToString(), qtyChangeTotal = txn.QtyChangeTotal });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3707,4 +3747,5 @@ record UpdateSpecPriceDto(decimal BuyPrice, decimal SellPrice, decimal? Discount
 record CreateVATRateDto(string VATRateCode, decimal Rate, string VATDesc, string? Remark, bool? IsActive);
 record UpdateVATRateDto(decimal Rate, string VATDesc, string? Remark, bool? IsActive);
 record CalcVatDto(decimal NetAmount, string? VATRateCode);
+record CreateInventoryTransactionDto(int WarehouseId, int ProductId, InventoryTxnType TxnType, InventoryTxnQuality Quality, string? FunctionName, int QtyChTotalOK, int QtyChBlockOK, int QtyChTotalNG, int QtyChBlockNG, string? RefType, string? RefCode00, string? RefCode01, string? Remark);
 

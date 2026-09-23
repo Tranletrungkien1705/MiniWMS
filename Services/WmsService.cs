@@ -111,6 +111,8 @@ public interface IWmsService
     Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
     Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
     Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null);
+    Task<InventoryTransactionReport> InventoryTransactionReportAsync(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<int> CreateInventoryTransactionAsync(InventoryTransaction txn);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
     Task<Supplier?> GetSupplierAsync(int id);
     Task<int> CreateSupplierAsync(Supplier supplier);
@@ -11421,6 +11423,139 @@ public class WmsService(AppDbContext db) : IWmsService
         StorageMonthBracket.From6To12Months => ("6 thÃ¡ng - 1 nÄƒm (Cáº§n lÆ°u Ã½)", "bg-warning text-dark"),
         StorageMonthBracket.From12To24Months => ("1 - 2 nÄƒm (Tá»“n lÃ¢u)", "bg-danger"),
         _ => ("> 2 nÄƒm (Tá»“n Ä‘á»ng vá»‘n)", "bg-dark")
+    };
+
+    /// <summary>BÃ¡o cÃ¡o Sá»• giao dá»‹ch kho / Nháº­t kÃ½ biáº¿n Ä‘á»™ng tá»“n kho (port tá»« Inv_InventoryTransaction Skycic).</summary>
+    public async Task<InventoryTransactionReport> InventoryTransactionReportAsync(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? keyword)
+    {
+        string whName = "Táº¥t cáº£ kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        string prodName = "Táº¥t cáº£ máº·t hÃ ng";
+        if (productId.HasValue)
+        {
+            var p = await db.Products.FirstOrDefaultAsync(x => x.Id == productId.Value);
+            if (p != null) prodName = $"{p.Code} - {p.Name}";
+        }
+
+        var q = db.InventoryTransactions.Include(t => t.Warehouse).Include(t => t.Product).AsQueryable();
+        if (warehouseId.HasValue) q = q.Where(t => t.WarehouseId == warehouseId.Value);
+        if (productId.HasValue) q = q.Where(t => t.ProductId == productId.Value);
+        if (txnType.HasValue) q = q.Where(t => t.TxnType == txnType.Value);
+        if (fromDate.HasValue) q = q.Where(t => t.CreatedAt >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(t => t.CreatedAt < toDate.Value.Date.AddDays(1));
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            q = q.Where(t => t.Product.Code.ToLower().Contains(kw) ||
+                             t.Product.Name.ToLower().Contains(kw) ||
+                             t.FunctionName.ToLower().Contains(kw) ||
+                             (t.RefCode00 != null && t.RefCode00.ToLower().Contains(kw)) ||
+                             (t.RefType != null && t.RefType.ToLower().Contains(kw)) ||
+                             (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var all = await q.ToListAsync();
+
+        int totalIn = all.Where(t => t.QtyChangeTotal > 0).Sum(t => t.QtyChangeTotal);
+        int totalOut = all.Where(t => t.QtyChangeTotal < 0).Sum(t => -t.QtyChangeTotal);
+        int inCount = all.Count(t => t.QtyChangeTotal > 0);
+        int outCount = all.Count(t => t.QtyChangeTotal < 0);
+        int ngCount = all.Count(t => t.Quality == InventoryTxnQuality.NG || t.QtyChTotalNG != 0 || t.QtyChBlockNG != 0);
+
+        var rows = all
+            .OrderByDescending(t => t.CreatedAt)
+            .ThenByDescending(t => t.Id)
+            .Select(t =>
+            {
+                var (label, badge) = TxnTypeMeta(t.TxnType);
+                var qualityLabel = t.Quality == InventoryTxnQuality.NG ? "HÃ ng lá»—i / NG" : "HÃ ng Ä‘áº¡t chuáº©n";
+                return new InventoryTransactionRow(
+                    t.Id,
+                    t.WarehouseId,
+                    t.Warehouse.Name,
+                    t.ProductId,
+                    t.Product.Code,
+                    t.Product.Name,
+                    t.Product.Uom,
+                    t.TxnType,
+                    label,
+                    badge,
+                    t.FunctionName,
+                    t.Quality,
+                    qualityLabel,
+                    t.QtyChTotalOK,
+                    t.QtyChBlockOK,
+                    t.QtyChTotalNG,
+                    t.QtyChBlockNG,
+                    t.QtyChangeTotal,
+                    t.QtyChangeAvail,
+                    t.RefType,
+                    t.RefCode00,
+                    t.RefCode01,
+                    t.Remark,
+                    t.CreatedBy,
+                    t.CreatedAt
+                );
+            })
+            .ToList();
+
+        return new InventoryTransactionReport(
+            warehouseId,
+            whName,
+            productId,
+            prodName,
+            txnType,
+            fromDate,
+            toDate,
+            keyword,
+            all.Count,
+            totalIn,
+            totalOut,
+            totalIn - totalOut,
+            inCount,
+            outCount,
+            ngCount,
+            rows
+        );
+    }
+
+    /// <summary>Ghi má»™t bÃºt toÃ¡n vÃ o Sá»• giao dá»‹ch kho (port tá»« Inv_InventoryTransaction_Perform Skycic).</summary>
+    public async Task<int> CreateInventoryTransactionAsync(InventoryTransaction txn)
+    {
+        if (txn.WarehouseId <= 0) throw new ArgumentException("Cáº§n chá»n Kho phÃ¡t sinh giao dá»‹ch.");
+        if (txn.ProductId <= 0) throw new ArgumentException("Cáº§n chá»n Máº·t hÃ ng.");
+        if (txn.QtyChTotalOK == 0 && txn.QtyChBlockOK == 0 && txn.QtyChTotalNG == 0 && txn.QtyChBlockNG == 0)
+            throw new ArgumentException("BÃºt toÃ¡n pháº£i cÃ³ Ã­t nháº¥t má»™t thay Ä‘á»•i sá»‘ lÆ°á»£ng khÃ¡c 0.");
+
+        txn.FunctionName = string.IsNullOrWhiteSpace(txn.FunctionName) ? "Manual_Adjust" : txn.FunctionName.Trim();
+        txn.RefType = txn.RefType?.Trim();
+        txn.RefCode00 = txn.RefCode00?.Trim();
+        txn.Remark = txn.Remark?.Trim();
+        if (string.IsNullOrWhiteSpace(txn.CreatedBy)) txn.CreatedBy = "api";
+        if (txn.CreatedAt == default) txn.CreatedAt = DateTime.Now;
+
+        db.InventoryTransactions.Add(txn);
+        await db.SaveChangesAsync();
+        return txn.Id;
+    }
+
+    private static (string label, string badge) TxnTypeMeta(InventoryTxnType t) => t switch
+    {
+        InventoryTxnType.In => ("Nháº­p kho", "bg-success"),
+        InventoryTxnType.Out => ("Xuáº¥t kho", "bg-danger"),
+        InventoryTxnType.Move => ("Äiá»u chuyá»ƒn kho", "bg-info text-dark"),
+        InventoryTxnType.Audit => ("CÃ¢n báº±ng kiá»ƒm kÃª", "bg-warning text-dark"),
+        InventoryTxnType.ReturnSup => ("Tráº£ hÃ ng NCC", "bg-secondary"),
+        InventoryTxnType.CusReturn => ("KhÃ¡ch tráº£ hÃ ng", "bg-primary"),
+        InventoryTxnType.InFG => ("Nháº­p thÃ nh pháº©m SX", "bg-success"),
+        InventoryTxnType.OutFG => ("Xuáº¥t thÃ nh pháº©m", "bg-danger"),
+        _ => ("Äiá»u chá»‰nh tá»“n", "bg-dark")
     };
 
 }

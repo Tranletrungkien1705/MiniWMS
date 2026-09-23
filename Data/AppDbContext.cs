@@ -60,6 +60,7 @@ public class AppDbContext : DbContext
     public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
     public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
     public DbSet<VATRate> VATRates => Set<VATRate>();
+    public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -386,6 +387,16 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.VATRateCode }).IsUnique();
             e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryTransaction>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.ProductId, x.CreatedAt });
+            e.HasIndex(x => new { x.OrgId, x.TxnType });
+            e.Ignore(x => x.QtyChangeTotal);
+            e.Ignore(x => x.QtyChangeAvail);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

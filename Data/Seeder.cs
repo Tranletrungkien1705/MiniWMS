@@ -1880,6 +1880,125 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.InventoryTransactions.AnyAsync())
+        {
+            var whs = await db.Warehouses.ToListAsync();
+            var prods = await db.Products.ToListAsync();
+            var hn = whs.FirstOrDefault(w => w.Code == "KHO-HN")?.Id;
+            var hcm = whs.FirstOrDefault(w => w.Code == "KHO-HCM")?.Id;
+            var ao = prods.FirstOrDefault(p => p.Code == "AO-001")?.Id;
+            var quan = prods.FirstOrDefault(p => p.Code == "QUAN-001")?.Id;
+            var pk = prods.FirstOrDefault(p => p.Code == "PK-001")?.Id;
+
+            var today = DateTime.Today;
+
+            if (hn.HasValue && hcm.HasValue && ao.HasValue && quan.HasValue && pk.HasValue)
+            {
+                var txns = new List<InventoryTransaction>
+                {
+                    // 1. Nhập kho mua hàng (InvF_InventoryIn) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = ao.Value,
+                        TxnType = InventoryTxnType.In, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InventoryIn_APPRX",
+                        QtyChTotalOK = 200, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "StockDoc", RefCode00 = "PNSEED-001",
+                        Remark = "Nhập mua áo sơ mi trắng từ NCC An Phát",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-55)
+                    },
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = quan.Value,
+                        TxnType = InventoryTxnType.In, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InventoryIn_APPRX",
+                        QtyChTotalOK = 150, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "StockDoc", RefCode00 = "PNSEED-001",
+                        Remark = "Nhập mua quần jeans slim từ NCC Việt Tiến",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-55)
+                    },
+                    // 2. Xuất kho bán hàng (InvF_InventoryOut) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = ao.Value,
+                        TxnType = InventoryTxnType.Out, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InventoryOut_APPRX",
+                        QtyChTotalOK = -60, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "StockDoc", RefCode00 = "PXSEED-001",
+                        Remark = "Xuất bán áo sơ mi cho đại lý An Phát",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-40)
+                    },
+                    // 3. Điều chuyển kho (InvF_MoveOrd) - HN -> HCM
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = quan.Value,
+                        TxnType = InventoryTxnType.Move, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_MoveOrd_Out",
+                        QtyChTotalOK = -30, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "MoveOrder", RefCode00 = "DCSEED-001",
+                        Remark = "Xuất điều chuyển quần jeans sang Kho TP.HCM",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-2)
+                    },
+                    new()
+                    {
+                        WarehouseId = hcm.Value, ProductId = quan.Value,
+                        TxnType = InventoryTxnType.Move, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_MoveOrd_In",
+                        QtyChTotalOK = 30, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "MoveOrder", RefCode00 = "DCSEED-001",
+                        Remark = "Nhận điều chuyển quần jeans từ Kho Hà Nội",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-2)
+                    },
+                    // 4. Cân bằng kiểm kê (InvF_InvAudit) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = pk.Value,
+                        TxnType = InventoryTxnType.Audit, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InvAudit_Finish",
+                        QtyChTotalOK = -5, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "StockAudit", RefCode00 = "KKSEED-001",
+                        Remark = "Cân bằng thiếu 5 phụ kiện sau kiểm kê định kỳ",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-10)
+                    },
+                    // 5. Khách trả hàng (InvF_InventoryCusReturn) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = ao.Value,
+                        TxnType = InventoryTxnType.CusReturn, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InventoryCusReturn_APPRX",
+                        QtyChTotalOK = 8, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "CustomerReturn", RefCode00 = "KTHSEED-001",
+                        Remark = "Nhận lại 8 áo sơ mi khách đổi size",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-5)
+                    },
+                    // 6. Trả hàng NCC (InvF_InventoryReturnSup) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = quan.Value,
+                        TxnType = InventoryTxnType.ReturnSup, Quality = InventoryTxnQuality.NG,
+                        FunctionName = "InvF_InventoryReturnSup_APPRX",
+                        QtyChTotalOK = -12, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "ReturnToSupplier", RefCode00 = "TNHSEED-001",
+                        Remark = "Xuất trả 12 quần jeans lỗi đường may cho NCC",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-3)
+                    },
+                    // 7. Nhập thành phẩm SX (InvF_InventoryInFG) - Kho HN
+                    new()
+                    {
+                        WarehouseId = hn.Value, ProductId = ao.Value,
+                        TxnType = InventoryTxnType.InFG, Quality = InventoryTxnQuality.OK,
+                        FunctionName = "InvF_InventoryInFG_APPRX",
+                        QtyChTotalOK = 100, QtyChBlockOK = 0, QtyChTotalNG = 0, QtyChBlockNG = 0,
+                        RefType = "InventoryInFG", RefCode00 = "IFFGSEED-001",
+                        Remark = "Nhập kho 100 áo sơ mi thành phẩm từ xưởng may",
+                        CreatedBy = "seed", CreatedAt = today.AddDays(-1)
+                    }
+                };
+
+                db.InventoryTransactions.AddRange(txns);
+                await db.SaveChangesAsync();
+            }
+        }
         if (!await db.InventoryBlocks.AnyAsync())
         {
             var whs = await db.Warehouses.ToListAsync();
@@ -3687,7 +3806,7 @@ public static class Seeder
                 new SpecPrice
                 {
                     SpecCode = "SPC-AO-KHOAC-GIO-XL",
-                    UnitCode = "cái",
+                    UnitCode = "cái (USD)",
                     BuyPrice = 18m,
                     SellPrice = 30m,
                     CurrencyCode = "USD",
@@ -3715,7 +3834,7 @@ public static class Seeder
                 new SpecPrice
                 {
                     SpecCode = "SPC-VAY-DA-HOI-DEN-S",
-                    UnitCode = "bộ",
+                    UnitCode = "bộ (USD)",
                     BuyPrice = 32m,
                     SellPrice = 55m,
                     CurrencyCode = "USD",
@@ -4634,7 +4753,32 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL,
                 ""UpdatedAt"" TEXT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_VATRates_OrgId_VATRateCode"" ON ""VATRates"" (""OrgId"", ""VATRateCode"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_VATRates_OrgId_VATRateCode"" ON ""VATRates"" (""OrgId"", ""VATRateCode"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryTransactions"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""WarehouseId"" INTEGER NOT NULL,
+                ""ProductId"" INTEGER NOT NULL,
+                ""TxnType"" INTEGER NOT NULL DEFAULT 0,
+                ""FunctionName"" TEXT NOT NULL DEFAULT '',
+                ""Quality"" INTEGER NOT NULL DEFAULT 0,
+                ""QtyChTotalOK"" INTEGER NOT NULL DEFAULT 0,
+                ""QtyChBlockOK"" INTEGER NOT NULL DEFAULT 0,
+                ""QtyChTotalNG"" INTEGER NOT NULL DEFAULT 0,
+                ""QtyChBlockNG"" INTEGER NOT NULL DEFAULT 0,
+                ""RefType"" TEXT NULL,
+                ""RefCode00"" TEXT NULL,
+                ""RefCode01"" TEXT NULL,
+                ""RefCode02"" TEXT NULL,
+                ""RefCode03"" TEXT NULL,
+                ""RefCode04"" TEXT NULL,
+                ""RefCode05"" TEXT NULL,
+                ""Remark"" TEXT NULL,
+                ""CreatedBy"" TEXT NOT NULL DEFAULT '',
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryTransactions_OrgId_WarehouseId_ProductId_CreatedAt"" ON ""InventoryTransactions"" (""OrgId"", ""WarehouseId"", ""ProductId"", ""CreatedAt"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_InventoryTransactions_OrgId_TxnType"" ON ""InventoryTransactions"" (""OrgId"", ""TxnType"");"
         };
         foreach (var s in sql)
         {

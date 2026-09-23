@@ -6046,3 +6046,83 @@ public class PointInTimeBalanceController(IWmsService svc) : Controller
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
 }
+
+// ==================== SỔ GIAO DỊCH KHO / NHẬT KÝ BIẾN ĐỘNG TỒN KHO (Inv_InventoryTransaction Skycic) ====================
+public class InventoryTransactionController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.Products = await svc.ProductsAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.ProductId = productId;
+        ViewBag.TxnType = txnType;
+        ViewBag.FromDate = (fromDate ?? DateTime.Today.AddMonths(-1)).ToString("yyyy-MM-dd");
+        ViewBag.ToDate = (toDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryTransactionReportAsync(warehouseId, productId, txnType, fromDate, toDate, q);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(int warehouseId, int productId, InventoryTxnType txnType, InventoryTxnQuality quality,
+        int qtyChTotalOK, int qtyChBlockOK, int qtyChTotalNG, int qtyChBlockNG, string? refType, string? refCode00, string? remark)
+    {
+        try
+        {
+            var txn = new InventoryTransaction
+            {
+                WarehouseId = warehouseId,
+                ProductId = productId,
+                TxnType = txnType,
+                Quality = quality,
+                FunctionName = "Manual_Adjust",
+                QtyChTotalOK = qtyChTotalOK,
+                QtyChBlockOK = qtyChBlockOK,
+                QtyChTotalNG = qtyChTotalNG,
+                QtyChBlockNG = qtyChBlockNG,
+                RefType = refType,
+                RefCode00 = refCode00,
+                Remark = remark,
+                CreatedBy = "web"
+            };
+            await svc.CreateInventoryTransactionAsync(txn);
+            TempData["Success"] = "Đã ghi bút toán vào Sổ giao dịch kho thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index), new { warehouseId, productId });
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var report = await svc.InventoryTransactionReportAsync(warehouseId, productId, txnType, fromDate, toDate, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("SỔ GIAO DỊCH KHO / NHẬT KÝ BIẾN ĐỘNG TỒN KHO (PORT TỪ INV_INVENTORYTRANSACTION)");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName};Mặt hàng:;{report.ProductName}");
+        sb.AppendLine($"Kỳ báo cáo:;{(report.FromDate?.ToString("dd/MM/yyyy") ?? "—")} - {(report.ToDate?.ToString("dd/MM/yyyy") ?? "—")};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng bút toán:;{report.TotalTransactions};Tổng nhập:;{report.TotalQtyIn};Tổng xuất:;{report.TotalQtyOut};Biến động ròng:;{report.NetQtyChange};Bút toán hàng NG:;{report.NgCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Thời điểm;Kho;Mã hàng;Tên hàng;ĐVT;Nghiệp vụ;Chất lượng;Δ Tồn OK;Δ Khóa OK;Δ Tồn NG;Δ Khóa NG;Δ Tổng;Δ Khả dụng;Loại CT;Số chứng từ;Diễn giải;Người tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};{r.CreatedAt:dd/MM/yyyy HH:mm};\"{r.WarehouseName}\";\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.TxnTypeLabel}\";\"{r.QualityLabel}\";{r.QtyChTotalOK};{r.QtyChBlockOK};{r.QtyChTotalNG};{r.QtyChBlockNG};{r.QtyChangeTotal};{r.QtyChangeAvail};\"{r.RefType ?? "—"}\";\"{r.RefCode00 ?? "—"}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";\"{r.CreatedBy}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalTransactions} bút toán;;;;;;;{report.TotalQtyIn};{report.TotalQtyOut};{report.NetQtyChange};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"SoGiaoDichKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
