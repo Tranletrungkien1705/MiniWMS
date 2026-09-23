@@ -7779,4 +7779,43 @@ public class LeafWarehouseBalanceController(IWmsService svc) : Controller
         var fileName = $"BangKe_XuatKhoTheoLichSu_{DateTime.Now:yyyyMMdd_HHmm}.csv";
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
+}public class LastUpdInvByProductController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, string? q = null)
+    {
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.LastUpdInvByProductReportAsync(warehouseId, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, string? q = null)
+    {
+        var report = await svc.LastUpdInvByProductReportAsync(warehouseId, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị tiếng Việt chuẩn
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO CẬP NHẬT CUỐI THEO MẶT HÀNG (PORT TỪ RPT_INV_INVBALANCE_LASTUPDINVBYPRODUCT)");
+        sb.AppendLine($"Kho áp dụng:;{report.WarehouseName};Ngày xuất file:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine($"Tổng số mặt hàng:;{report.TotalProducts};Tổng tồn:;{report.TotalQtyTotalOK};Cập nhật trong 7 ngày:;{report.FreshCount};Quá 30 ngày:;{report.StaleCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho giữ tồn;Mã kho;Tồn tại kho;Tổng tồn các kho;Số kho có tồn;Cập nhật cuối;Số ngày;Độ mới dữ liệu");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";\"{r.WarehouseCode}\";{r.QtyTotalOK};{r.TotalQtyAllWarehouses};{r.WarehouseCount};{r.LastUpdatedAt:dd/MM/yyyy HH:mm};{r.DaysSinceUpdate};\"{r.FreshnessLabel}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.TotalProducts} mặt hàng;;{report.TotalQtyTotalOK};;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoCapNhatCuoi_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
 }

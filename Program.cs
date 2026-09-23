@@ -4606,6 +4606,32 @@ app.MapPost("/api/inventory-out-hists/{id:int}/cancel", async (int id, IWmsServi
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Báo cáo Tồn kho cập nhật cuối theo Mặt hàng (port từ Rpt_Inv_InvBalance_LastUpdInvByProduct Skycic)
+app.MapGet("/api/reports/last-upd-inv-by-product", async (int? warehouseId, string? q, IWmsService svc) =>
+{
+    var report = await svc.LastUpdInvByProductReportAsync(warehouseId, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/reports/inv-balance-last-upd-by-product", async (int? warehouseId, string? q, IWmsService svc) =>
+{
+    var report = await svc.LastUpdInvByProductReportAsync(warehouseId, q);
+    return Results.Ok(new
+    {
+        warehouse = report.WarehouseName,
+        warehouseId = report.WarehouseId,
+        summary = new
+        {
+            totalProducts = report.TotalProducts,
+            totalQtyTotalOK = report.TotalQtyTotalOK,
+            freshCount = report.FreshCount,
+            staleCount = report.StaleCount,
+            latestUpdatedAt = report.LatestUpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+        },
+        items = report.Rows
+    });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 

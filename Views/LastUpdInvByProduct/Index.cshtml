@@ -1,0 +1,222 @@
+@model LastUpdInvByProductReport
+@{
+    ViewData["Title"] = "Tồn kho cập nhật cuối theo Mặt hàng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var keyword = (string)ViewBag.Keyword;
+}
+
+<style>
+    @@media print {
+        .sidebar, .topbar, .no-print, .btn, form { display: none !important; }
+        .content-area { padding: 0 !important; }
+        body { background: #fff !important; font-size: 11px !important; }
+        .card { border: none !important; box-shadow: none !important; }
+        .table { font-size: 10px !important; }
+        .print-header { display: block !important; }
+        .print-signatures { display: flex !important; }
+        @@page { size: landscape; margin: 10mm; }
+    }
+    .print-header, .print-signatures { display: none; }
+    .stat-num { font-size: 1.6rem; font-weight: 700; line-height: 1.2; }
+</style>
+
+<!-- Tiêu đề trang & Nút hành động -->
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-geo-fill text-primary me-2"></i>Tồn kho cập nhật cuối theo Mặt hàng</h5>
+        <div class="text-muted small">Port từ <code>Rpt_Inv_InvBalance_LastUpdInvByProduct</code> (Skycic) — Tra cứu kho đang giữ tồn của từng mặt hàng &amp; độ mới dữ liệu tồn kho</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/LastUpdInvByProduct/ExportCsv?warehouseId=@selectedWid&q=@Uri.EscapeDataString(keyword ?? "")"
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> In báo cáo (A4 ngang)
+        </button>
+        <a href="/Inventory" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-clipboard-data me-1"></i> Tồn kho
+        </a>
+    </div>
+</div>
+
+<!-- Tiêu đề khi in ấn -->
+<div class="print-header mb-4">
+    <div class="text-center">
+        <h3 class="fw-bold text-uppercase mb-1">Báo Cáo Tồn Kho Cập Nhật Cuối Theo Mặt Hàng</h3>
+        <div class="text-muted">Kho áp dụng: <strong>@Model.WarehouseName</strong> | Thời điểm in: <strong>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</strong></div>
+    </div>
+</div>
+
+<!-- 4 Thẻ KPI thống kê -->
+<div class="row g-3 mb-3 no-print">
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-primary border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Số mặt hàng có tồn</div>
+            <div class="stat-num text-primary mt-1">@Model.TotalProducts <span class="fs-6 fw-normal text-muted">mặt hàng</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Tổng tồn:</span>
+                <strong class="text-dark">@Model.TotalQtyTotalOK.ToString("N0") sp</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-success border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Cập nhật trong 7 ngày</div>
+            <div class="stat-num text-success mt-1">@Model.FreshCount <span class="fs-6 fw-normal text-muted">mặt hàng</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Dữ liệu mới:</span>
+                <strong class="text-success">Vừa cập nhật</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-danger border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Quá 30 ngày chưa cập nhật</div>
+            <div class="stat-num text-danger mt-1">@Model.StaleCount <span class="fs-6 fw-normal text-muted">mặt hàng</span></div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Cần kiểm tra:</span>
+                <strong class="text-danger">Dữ liệu cũ</strong>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm p-3 border-start border-info border-4">
+            <div class="text-muted small text-uppercase fw-semibold">Cập nhật mới nhất</div>
+            <div class="stat-num text-info mt-1" style="font-size:1.1rem;">@Model.LatestUpdatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+            <div class="small text-muted mt-2 d-flex justify-content-between">
+                <span>Kho áp dụng:</span>
+                <strong class="text-info">@Model.WarehouseName</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-3">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted mb-1">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Toàn bộ hệ thống —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name (@w.Code)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small fw-semibold text-muted mb-1">Tìm kiếm</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Mã hàng, tên hàng..." />
+                </div>
+            </div>
+            <div class="col-md-3 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="Áp dụng bộ lọc">
+                    <i class="bi bi-funnel"></i> Lọc
+                </button>
+                <a href="/LastUpdInvByProduct" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu chi tiết -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-table me-2 text-primary"></i>Bảng kê Tồn kho cập nhật cuối theo Mặt hàng
+            <span class="badge bg-light text-dark ms-2 fw-normal border">@Model.TotalProducts mặt hàng</span>
+        </h6>
+        <div class="small text-muted no-print">
+            Kho giữ tồn = kho có <strong>tồn lớn nhất</strong> (hoặc cập nhật gần nhất nếu tồn = 0)
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 40px;">STT</th>
+                    <th style="width: 120px;">Mã hàng</th>
+                    <th style="min-width: 200px;">Tên hàng hoá</th>
+                    <th style="width: 70px;">ĐVT</th>
+                    <th style="min-width: 160px;">Kho giữ tồn</th>
+                    <th class="text-end" style="width: 100px;">Tồn tại kho</th>
+                    <th class="text-end" style="width: 110px;">Tổng tồn các kho</th>
+                    <th class="text-center" style="width: 90px;">Số kho có tồn</th>
+                    <th class="text-center" style="width: 140px;">Cập nhật cuối</th>
+                    <th class="text-center" style="width: 90px;">Số ngày</th>
+                    <th class="text-center" style="width: 120px;">Độ mới dữ liệu</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="11" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                            Không có dữ liệu tồn kho phù hợp với điều kiện lọc.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        <tr>
+                            <td class="text-center text-muted small">@(stt++)</td>
+                            <td><span class="fw-semibold font-monospace text-primary">@r.ProductCode</span></td>
+                            <td><span class="fw-medium text-dark">@r.ProductName</span></td>
+                            <td class="text-muted small">@r.Uom</td>
+                            <td>
+                                <span class="fw-medium text-dark">@r.WarehouseName</span>
+                                <span class="badge bg-light text-secondary border ms-1">@r.WarehouseCode</span>
+                            </td>
+                            <td class="text-end fw-bold text-success">@r.QtyTotalOK.ToString("N0")</td>
+                            <td class="text-end fw-semibold text-dark">@r.TotalQtyAllWarehouses.ToString("N0")</td>
+                            <td class="text-center"><span class="badge bg-light text-dark border">@r.WarehouseCount</span></td>
+                            <td class="text-center small text-muted">@r.LastUpdatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-center fw-semibold @(r.DaysSinceUpdate > 30 ? "text-danger" : "text-muted")">@r.DaysSinceUpdate</td>
+                            <td class="text-center"><span class="badge @r.FreshnessBadgeClass">@r.FreshnessLabel</span></td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                <tfoot class="table-light fw-bold border-top-2">
+                    <tr>
+                        <td colspan="5" class="text-end text-uppercase">TỔNG CỘNG (@Model.TotalProducts mặt hàng):</td>
+                        <td class="text-end text-success">@Model.TotalQtyTotalOK.ToString("N0")</td>
+                        <td colspan="5" class="text-muted small fw-normal">Cập nhật trong 7 ngày: @Model.FreshCount · Quá 30 ngày: @Model.StaleCount</td>
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    </div>
+</div>
+
+<!-- Khối chữ ký khi in ấn chuẩn kế toán WMS -->
+<div class="print-signatures row mt-5 pt-4 text-center">
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Người lập biểu</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên)</div>
+        <div class="fw-semibold">Admin / WMS Operator</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Kế toán kho / Thủ kho</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên)</div>
+        <div class="fw-semibold">Thủ kho trưởng</div>
+    </div>
+    <div class="col-4">
+        <div class="fw-bold text-uppercase mb-1">Giám đốc / Kế toán trưởng</div>
+        <div class="text-muted small fst-italic mb-5">(Ký, họ tên &amp; đóng dấu)</div>
+        <div class="fw-semibold">Phê duyệt</div>
+    </div>
+</div>

@@ -4251,4 +4251,39 @@ public record InventoryOutHistReport(
     int TotalQty,
     int TotalSerialsCount,
     List<InventoryOutHistRow> Rows
+);// ==================== BÁO CÁO TỒN KHO CẬP NHẬT CUỐI THEO MẶT HÀNG (Rpt_Inv_InvBalance_LastUpdInvByProduct Skycic) ====================
+
+/// <summary>Dòng báo cáo Tồn kho cập nhật cuối theo Mặt hàng (port từ Rpt_Inv_InvBalance_LastUpdInvByProduct Skycic).
+/// Với mỗi mặt hàng, xác định kho đang giữ tồn lớn nhất (hoặc kho cập nhật gần nhất nếu tồn = 0),
+/// kèm số lượng tồn và thời điểm cập nhật cuối cùng của kho đó.</summary>
+public record LastUpdInvByProductRow(
+    int ProductId,
+    string ProductCode,          // Mã hàng hóa (ProductCode)
+    string ProductName,          // Tên hàng hóa
+    string Uom,                  // Đơn vị tính
+    int WarehouseId,             // Kho đang giữ tồn (InvCode)
+    string WarehouseCode,        // Mã kho
+    string WarehouseName,        // Tên kho
+    int QtyTotalOK,              // Số lượng tồn kho tại kho đó (QtyTotalOK)
+    int QtyInv,                  // Số lượng tồn quy đổi (QtyInv = QtyTotalOK * 100 / ValConvert)
+    DateTime LastUpdatedAt,      // Thời điểm cập nhật tồn cuối cùng (LogLUDTimeUTC)
+    int DaysSinceUpdate,         // Số ngày kể từ lần cập nhật cuối
+    int WarehouseCount,          // Số kho có phát sinh tồn của mặt hàng này
+    int TotalQtyAllWarehouses,   // Tổng tồn của mặt hàng trên toàn bộ các kho
+    string FreshnessLabel,       // Nhãn độ mới dữ liệu (Vừa cập nhật / Trong tuần / Cũ / Rất cũ)
+    string FreshnessBadgeClass   // badge color
+);
+
+/// <summary>Báo cáo Tồn kho cập nhật cuối theo Mặt hàng tổng hợp (port từ Rpt_Inv_InvBalance_LastUpdInvByProduct Skycic).
+/// Tra cứu nhanh kho đang giữ tồn của từng mặt hàng và độ mới của dữ liệu tồn kho.</summary>
+public record LastUpdInvByProductReport(
+    int? WarehouseId,
+    string WarehouseName,
+    string? Keyword,
+    int TotalProducts,           // Số mặt hàng có tồn
+    int TotalQtyTotalOK,         // Tổng số lượng tồn của các dòng
+    int FreshCount,              // Số mặt hàng cập nhật trong 7 ngày
+    int StaleCount,              // Số mặt hàng cập nhật quá 30 ngày
+    DateTime LatestUpdatedAt,    // Thời điểm cập nhật mới nhất trong toàn bộ dữ liệu
+    List<LastUpdInvByProductRow> Rows
 );

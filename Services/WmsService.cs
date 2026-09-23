@@ -114,6 +114,7 @@ public interface IWmsService
     Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
     Task<LeafWarehouseBalanceReport> LeafWarehouseBalanceReportAsync(int? warehouseId, string? keyword = null, DateTime? asOfDate = null);
     Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null);
+    Task<LastUpdInvByProductReport> LastUpdInvByProductReportAsync(int? warehouseId, string? keyword = null);
     Task<InventoryTransactionReport> InventoryTransactionReportAsync(int? warehouseId, int? productId, InventoryTxnType? txnType, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<int> CreateInventoryTransactionAsync(InventoryTransaction txn);
     Task<List<Supplier>> SuppliersAsync(string? q = null, bool? activeOnly = null);
@@ -14174,6 +14175,125 @@ public class WmsService(AppDbContext db) : IWmsService
         doc.Status = OutHistStatus.Cancelled;
         await db.SaveChangesAsync();
         return (true, $"Đã hủy phiếu xuất kho theo lịch sử {doc.Code}.");
+    }
+
+    /// <summary>Báo cáo Tồn kho cập nhật cuối theo Mặt hàng (port từ Rpt_Inv_InvBalance_LastUpdInvByProduct Skycic).
+    /// Với mỗi mặt hàng: chọn kho đang giữ tồn lớn nhất (QtyTotalOK desc); nếu tồn = 0 thì chọn kho cập nhật gần nhất.
+    /// Kèm số lượng tồn, thời điểm cập nhật cuối (LogLUDTimeUTC) và độ mới dữ liệu.</summary>
+    public async Task<LastUpdInvByProductReport> LastUpdInvByProductReportAsync(int? warehouseId, string? keyword = null)
+    {
+        string whName = "Toàn hệ thống";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+        var targetWhIds = targetWarehouses.Select(w => w.Id).ToHashSet();
+        var whDict = allWarehouses.ToDictionary(w => w.Id, w => w);
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLowerInvariant();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+        var productIds = products.Select(p => p.Id).ToHashSet();
+
+        // Tồn hiện tại theo (kho, mặt hàng) từ các phiếu đã ghi sổ + thời điểm cập nhật cuối của mỗi cặp
+        var qtyMap = new Dictionary<(int whId, int prodId), int>();
+        var lastUpdMap = new Dictionary<(int whId, int prodId), DateTime>();
+
+        void Apply(int whId, int prodId, int delta, DateTime when)
+        {
+            if (!targetWhIds.Contains(whId) || !productIds.Contains(prodId)) return;
+            qtyMap.TryGetValue((whId, prodId), out var cur);
+            qtyMap[(whId, prodId)] = cur + delta;
+            if (!lastUpdMap.TryGetValue((whId, prodId), out var last) || when > last)
+                lastUpdMap[(whId, prodId)] = when;
+        }
+
+        var postedDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Lines.Any(l => productIds.Contains(l.ProductId)))
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date).ThenBy(d => d.Id)
+            .ToListAsync();
+
+        foreach (var d in postedDocs)
+        {
+            foreach (var l in d.Lines)
+            {
+                if (!productIds.Contains(l.ProductId) || l.Quantity == 0) continue;
+                if (d.Type == DocType.In && d.ToWarehouseId is { } to) Apply(to, l.ProductId, l.Quantity, d.Date);
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fr) Apply(fr, l.ProductId, -l.Quantity, d.Date);
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } f) Apply(f, l.ProductId, -l.Quantity, d.Date);
+                    if (d.ToWarehouseId is { } t) Apply(t, l.ProductId, l.Quantity, d.Date);
+                }
+            }
+        }
+
+        // Gom tồn theo mặt hàng -> chọn kho giữ tồn lớn nhất (hoặc cập nhật gần nhất nếu tồn = 0)
+        var byProduct = new Dictionary<int, List<(int whId, int qty, DateTime last)>>();
+        foreach (var kv in qtyMap)
+        {
+            var (whId, prodId) = kv.Key;
+            int qty = kv.Value;
+            var last = lastUpdMap.TryGetValue(kv.Key, out var l) ? l : DateTime.MinValue;
+            if (!byProduct.TryGetValue(prodId, out var list)) { list = new List<(int, int, DateTime)>(); byProduct[prodId] = list; }
+            list.Add((whId, qty, last));
+        }
+
+        var today = DateTime.Today;
+        var rows = new List<LastUpdInvByProductRow>();
+        foreach (var p in products)
+        {
+            if (!byProduct.TryGetValue(p.Id, out var entries) || entries.Count == 0) continue;
+
+            // Kho giữ tồn lớn nhất; nếu tất cả tồn = 0 thì chọn kho cập nhật gần nhất
+            var chosen = entries.OrderByDescending(e => e.qty).ThenByDescending(e => e.last).First();
+            if (chosen.qty <= 0)
+                chosen = entries.OrderByDescending(e => e.last).First();
+
+            int totalQty = entries.Sum(e => e.qty);
+            int whCount = entries.Count(e => e.qty > 0);
+            var wh = whDict.TryGetValue(chosen.whId, out var w) ? w : null;
+            var lastUpd = chosen.last == DateTime.MinValue ? today : chosen.last;
+            int daysSince = Math.Max(0, (today - lastUpd.Date).Days);
+
+            string freshLabel, freshBadge;
+            if (daysSince <= 7) { freshLabel = "Vừa cập nhật"; freshBadge = "bg-success text-white"; }
+            else if (daysSince <= 30) { freshLabel = "Trong tháng"; freshBadge = "bg-info text-dark"; }
+            else if (daysSince <= 90) { freshLabel = "Cũ"; freshBadge = "bg-warning text-dark"; }
+            else { freshLabel = "Rất cũ"; freshBadge = "bg-danger text-white"; }
+
+            rows.Add(new LastUpdInvByProductRow(
+                p.Id, p.Code, p.Name, p.Uom,
+                chosen.whId, wh?.Code ?? "—", wh?.Name ?? "—",
+                chosen.qty, chosen.qty,
+                lastUpd, daysSince, whCount, totalQty,
+                freshLabel, freshBadge));
+        }
+
+        rows = rows.OrderByDescending(r => r.QtyTotalOK).ThenBy(r => r.ProductCode).ToList();
+
+        return new LastUpdInvByProductReport(
+            warehouseId,
+            whName,
+            keyword,
+            rows.Count,
+            rows.Sum(r => r.QtyTotalOK),
+            rows.Count(r => r.DaysSinceUpdate <= 7),
+            rows.Count(r => r.DaysSinceUpdate > 30),
+            rows.Count > 0 ? rows.Max(r => r.LastUpdatedAt) : DateTime.Today,
+            rows
+        );
     }
 
 }
