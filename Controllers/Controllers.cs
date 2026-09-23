@@ -5184,6 +5184,153 @@ public class MapDeliveryOrderController(IWmsService svc) : Controller
     }
 }
 
+public class TempPrintController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? typeCode, bool? activeOnly)
+    {
+        ViewBag.Types = await svc.TempPrintTypesAsync();
+        ViewBag.Keyword = q ?? "";
+        ViewBag.TypeCode = typeCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.TempPrintsReportAsync(q, typeCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var item = await svc.GetTempPrintAsync(id);
+        if (item == null) return NotFound(new { error = "Không tìm thấy mẫu in." });
+        return Json(item);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Preview(int id)
+    {
+        var preview = await svc.PreviewTempPrintAsync(id);
+        if (preview == null) return NotFound(new { error = "Không tìm thấy mẫu in để xem trước." });
+        return Json(preview);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(TempPrint item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name) || string.IsNullOrWhiteSpace(item.HeaderTitle))
+        {
+            TempData["Error"] = "Vui lòng nhập tên mẫu in và tiêu đề biểu mẫu.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            await svc.CreateTempPrintAsync(item);
+            TempData["Success"] = $"Đã tạo mới biểu mẫu in '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, TempPrint item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name) || string.IsNullOrWhiteSpace(item.HeaderTitle))
+        {
+            TempData["Error"] = "Vui lòng nhập tên mẫu in và tiêu đề biểu mẫu.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (ok, msg) = await svc.UpdateTempPrintAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleTempPrintStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetDefault(int id)
+    {
+        var (ok, msg) = await svc.SetDefaultTempPrintAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteTempPrintAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateType(TempPrintType item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Code) || string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã và tên loại mẫu in.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            await svc.CreateTempPrintTypeAsync(item);
+            TempData["Success"] = $"Đã tạo loại mẫu in '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? typeCode, bool? activeOnly)
+    {
+        var report = await svc.TempPrintsReportAsync(q, typeCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC BIỂU MẪU IN KHO & TEM NHÃN MÃ VẠCH (INVF_TEMPPRINT)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc loại mẫu:;{(string.IsNullOrWhiteSpace(typeCode) ? "Tất cả" : typeCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang hiệu lực" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+
+        sb.AppendLine("STT;Mã mẫu;Tên mẫu in;Loại nghiệp vụ;Tên loại;Khổ giấy;Đơn vị áp dụng;Tiêu đề biểu mẫu;Mẫu mặc định;Trạng thái;Ghi chú;Ngày tạo;Cập nhật lần cuối");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var isDefaultStr = r.IsDefault ? "Mặc định (*)" : "Tùy chọn";
+            var statusStr = r.IsActive ? "Đang hiệu lực" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.TypeCode}\";\"{r.TypeName}\";\"{r.PaperSizeLabel}\";\"{r.UnitName.Replace("\"", "\"\"")}\";\"{r.HeaderTitle.Replace("\"", "\"\"")}\";\"{isDefaultStr}\";\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy HH:mm};{(r.UpdatedAt.HasValue ? r.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm") : "-")}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ MẪU IN:;{report.TotalTemplates};;;;;;;;;");
+        sb.AppendLine($";;MẪU ĐANG HIỆU LỰC:;{report.ActiveCount};;;;;;;;;");
+        sb.AppendLine($";;MẪU TẠM DỪNG:;{report.InactiveCount};;;;;;;;;");
+        sb.AppendLine($";;LOẠI NGHIỆP VỤ:;{report.SupportedTypesCount};;;;;;;;;");
+        sb.AppendLine($";;MẪU MẶC ĐỊNH:;{report.DefaultTemplatesCount};;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"BieuMauIn_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+
 
 
 

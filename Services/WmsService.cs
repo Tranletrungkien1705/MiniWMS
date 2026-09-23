@@ -281,6 +281,21 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteDealerAsync(int id);
     Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<List<TempPrintType>> TempPrintTypesAsync(bool? activeOnly = null);
+    Task<List<TempPrint>> TempPrintsAsync(string? typeCode = null, bool? activeOnly = null);
+    Task<TempPrintReport> TempPrintsReportAsync(string? q = null, string? typeCode = null, bool? activeOnly = null);
+    Task<TempPrint?> GetTempPrintAsync(int id);
+    Task<TempPrint?> GetTempPrintByCodeAsync(string code);
+    Task<TempPrint?> GetDefaultTempPrintByTypeAsync(string typeCode);
+    Task<TempPrintPreviewResult?> PreviewTempPrintAsync(int id);
+    Task<int> CreateTempPrintAsync(TempPrint item);
+    Task<(bool ok, string msg)> UpdateTempPrintAsync(int id, TempPrint item);
+    Task<(bool ok, string msg)> ToggleTempPrintStatusAsync(int id);
+    Task<(bool ok, string msg)> SetDefaultTempPrintAsync(int id);
+    Task<(bool ok, string msg)> DeleteTempPrintAsync(int id);
+    Task<int> CreateTempPrintTypeAsync(TempPrintType item);
+    Task<(bool ok, string msg)> UpdateTempPrintTypeAsync(int id, TempPrintType item);
+    Task<(bool ok, string msg)> DeleteTempPrintTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -9271,6 +9286,449 @@ public class WmsService(AppDbContext db) : IWmsService
             areaSummaries
         );
     }
+
+    // ==================== QUẢN LÝ BIỂU MẪU IN KHO & THIẾT KẾ TEM NHÃN (InvF_TempPrint & Mst_TempPrintType Skycic) ====================
+    public Task<List<TempPrintType>> TempPrintTypesAsync(bool? activeOnly = null)
+    {
+        var query = db.TempPrintTypes.AsQueryable();
+        if (activeOnly == true) query = query.Where(t => t.IsActive);
+        return query.OrderBy(t => t.GroupCode).ThenBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<List<TempPrint>> TempPrintsAsync(string? typeCode = null, bool? activeOnly = null)
+    {
+        var query = db.TempPrints.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(typeCode))
+        {
+            var tc = typeCode.Trim().ToUpperInvariant();
+            query = query.Where(t => t.TypeCode.ToUpper() == tc);
+        }
+        if (activeOnly == true) query = query.Where(t => t.IsActive);
+        return query.OrderBy(t => t.TypeCode).ThenBy(t => t.Code).ToListAsync();
+    }
+
+    public async Task<TempPrintReport> TempPrintsReportAsync(string? q = null, string? typeCode = null, bool? activeOnly = null)
+    {
+        var types = await db.TempPrintTypes.ToListAsync();
+        var typeDict = types.ToDictionary(t => t.Code.ToUpper(), t => t);
+
+        var query = db.TempPrints.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(typeCode))
+        {
+            var tc = typeCode.Trim().ToUpperInvariant();
+            query = query.Where(t => t.TypeCode.ToUpper() == tc);
+        }
+        if (activeOnly.HasValue)
+        {
+            query = query.Where(t => t.IsActive == activeOnly.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLower();
+            query = query.Where(t => t.Code.ToLower().Contains(term) ||
+                                     t.Name.ToLower().Contains(term) ||
+                                     t.HeaderTitle.ToLower().Contains(term) ||
+                                     t.TypeCode.ToLower().Contains(term) ||
+                                     t.UnitName.ToLower().Contains(term));
+        }
+
+        var allTemplates = await query.OrderByDescending(t => t.IsDefault).ThenBy(t => t.TypeCode).ThenBy(t => t.Code).ToListAsync();
+
+        var rows = allTemplates.Select(t =>
+        {
+            typeDict.TryGetValue(t.TypeCode.ToUpper(), out var tType);
+            return new TempPrintRow(
+                t.Id,
+                t.Code,
+                t.Name,
+                t.TypeCode,
+                tType?.Name ?? t.TypeCode,
+                tType?.GroupCode ?? "DOC",
+                t.PaperSize,
+                PaperSizeLabel(t.PaperSize),
+                t.UnitName,
+                t.HeaderTitle,
+                t.IsDefault,
+                t.IsActive,
+                t.Remark,
+                t.CreatedAt,
+                t.UpdatedAt
+            );
+        }).ToList();
+
+        var totalAll = await db.TempPrints.CountAsync();
+        var activeAll = await db.TempPrints.CountAsync(t => t.IsActive);
+        var inactiveAll = totalAll - activeAll;
+        var supportedTypes = await db.TempPrints.Select(t => t.TypeCode).Distinct().CountAsync();
+        var defaultCount = await db.TempPrints.CountAsync(t => t.IsDefault);
+
+        return new TempPrintReport(
+            typeCode,
+            activeOnly,
+            q,
+            totalAll,
+            activeAll,
+            inactiveAll,
+            supportedTypes,
+            defaultCount,
+            rows
+        );
+    }
+
+    public Task<TempPrint?> GetTempPrintAsync(int id) =>
+        db.TempPrints.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<TempPrint?> GetTempPrintByCodeAsync(string code) =>
+        db.TempPrints.FirstOrDefaultAsync(t => t.Code.ToLower() == code.Trim().ToLower());
+
+    public Task<TempPrint?> GetDefaultTempPrintByTypeAsync(string typeCode)
+    {
+        var tc = typeCode.Trim().ToUpperInvariant();
+        return db.TempPrints.FirstOrDefaultAsync(t => t.TypeCode.ToUpper() == tc && t.IsDefault && t.IsActive);
+    }
+
+    public async Task<TempPrintPreviewResult?> PreviewTempPrintAsync(int id)
+    {
+        var t = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
+        if (t == null) return null;
+
+        var tType = await db.TempPrintTypes.FirstOrDefaultAsync(x => x.Code.ToUpper() == t.TypeCode.ToUpper());
+        string typeName = tType?.Name ?? t.TypeCode;
+
+        string docNo = t.TypeCode switch
+        {
+            "IN" => "PN-2026-030089",
+            "OUT" => "PX-2026-030145",
+            "MOVE" => "PC-2026-030032",
+            "AUDIT" => "KK-2026-030012",
+            "CARTON" => "CTN-2026-00452",
+            "BOX" => "BOX-2026-0128",
+            "K80" => "POS-2026-0099",
+            _ => "DOC-2026-0088"
+        };
+        string todayStr = DateTime.Today.ToString("dd/MM/yyyy");
+        string todayFull = $"Ngày {DateTime.Today.Day:D2} tháng {DateTime.Today.Month:D2} năm {DateTime.Today.Year}";
+
+        string partnerName = t.TypeCode switch
+        {
+            "IN" => "Công ty TNHH Apple Computer Việt Nam",
+            "OUT" => "Công ty Cổ phần Bán lẻ Kỹ thuật số FPT (FPT Retail)",
+            "MOVE" => "Kho TP. Hồ Chí Minh - Chi nhánh Tân Bình",
+            "AUDIT" => "Hội đồng kiểm kê kho MiniWMS",
+            "CARTON" => "Tổng Đại lý Phân phối Miền Bắc - Phúc Thịnh",
+            _ => "Khách hàng thương mại"
+        };
+
+        string partnerAddress = t.TypeCode switch
+        {
+            "IN" => "Tầng 5, Tòa nhà Metropolitan, 235 Đồng Khởi, Q.1, TP.HCM",
+            "OUT" => "261 - 263 Khánh Hội, Phường 2, Quận 4, TP.HCM",
+            "MOVE" => "KCN Tân Bình, Tây Thạnh, Tân Phú, TP.HCM",
+            _ => "Số 188 Nguyễn Trãi, Thanh Xuân, Hà Nội"
+        };
+
+        string reason = t.TypeCode switch
+        {
+            "IN" => "Nhập kho theo Đơn đặt hàng mua PO-2026-881, Hóa đơn VAT 004812",
+            "OUT" => "Xuất bán buôn theo Đơn hàng SO-2026-9812, Lệnh giao DO-0388",
+            "MOVE" => "Điều chuyển cân đối an toàn định mức tồn kho chi nhánh miền Nam",
+            "AUDIT" => "Kiểm kê toàn diện số dư thực tế kỳ chốt tháng 03/2026",
+            "CARTON" => "Đóng kiện xuất kho vận chuyển logistics liên tỉnh",
+            _ => "Nghiệp vụ lưu chuyển kho"
+        };
+
+        string itemsTableHtml = @"
+<table style=""width:100%; border-collapse:collapse; margin:15px 0; font-size:13px;"">
+    <thead>
+        <tr style=""background:#f2f2f2; text-align:center;"">
+            <th style=""border:1px solid #000; padding:6px; width:40px;"">STT</th>
+            <th style=""border:1px solid #000; padding:6px; width:100px;"">Mã hàng</th>
+            <th style=""border:1px solid #000; padding:6px;"">Tên hàng hóa, quy cách</th>
+            <th style=""border:1px solid #000; padding:6px; width:60px;"">ĐVT</th>
+            <th style=""border:1px solid #000; padding:6px; width:70px;"">Số lượng</th>
+            <th style=""border:1px solid #000; padding:6px; width:110px;"">Đơn giá</th>
+            <th style=""border:1px solid #000; padding:6px; width:120px;"">Thành tiền (VNĐ)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">1</td>
+            <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">IP15-128</td>
+            <td style=""border:1px solid #000; padding:6px;"">Điện thoại iPhone 15 128GB Black - Chính hãng VN/A</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiếc</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">50</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right;"">19,500,000</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">975,000,000</td>
+        </tr>
+        <tr>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">2</td>
+            <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">MAC-M3-16</td>
+            <td style=""border:1px solid #000; padding:6px;"">MacBook Air 13 inch M3 (16GB RAM / 256GB SSD) Space Gray</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Máy</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">15</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right;"">27,000,000</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">405,000,000</td>
+        </tr>
+        <tr>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">3</td>
+            <td style=""border:1px solid #000; padding:6px; font-weight:bold;"">WATCH-S9-41</td>
+            <td style=""border:1px solid #000; padding:6px;"">Đồng hồ thông minh Apple Watch Series 9 GPS 41mm</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">Chiếc</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">10</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right;"">7,000,000</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; font-weight:bold;"">70,000,000</td>
+        </tr>
+        <tr style=""font-weight:bold; background:#fafafa;"">
+            <td colspan=""4"" style=""border:1px solid #000; padding:6px; text-align:center;"">CỘNG TỔNG</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; color:#b02a37;"">75</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:center;"">x</td>
+            <td style=""border:1px solid #000; padding:6px; text-align:right; color:#b02a37;"">1,450,000,000</td>
+        </tr>
+    </tbody>
+</table>
+<div style=""font-size:13px; font-style:italic; margin-bottom:15px;"">
+    - Tổng số tiền (viết bằng chữ): <strong>Một tỷ bốn trăm năm mươi triệu đồng chẵn.</strong><br/>
+    - Kèm theo: <strong>03</strong> chứng từ gốc (Hóa đơn GTGT, Phiếu xuất xưởng, Giấy bảo hành).
+</div>";
+
+        string signaturesHtml = @"
+<table style=""width:100%; border-collapse:collapse; margin-top:25px; font-size:13px; text-align:center;"">
+    <tr>
+        <td style=""width:25%; font-weight:bold;"">NGƯỜI LẬP BIỂU<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Nguyễn Thị Thu</strong></td>
+        <td style=""width:25%; font-weight:bold;"">NGƯỜI GIAO HÀNG<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Trần Đình Trọng</strong></td>
+        <td style=""width:25%; font-weight:bold;"">THỦ KHO<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên)</span><br/><br/><br/><br/><strong>Nguyễn Văn Hùng</strong></td>
+        <td style=""width:25%; font-weight:bold;"">KẾ TOÁN TRƯỞNG / GIÁM ĐỐC<br/><span style=""font-weight:normal; font-style:italic; font-size:11px;"">(Ký, họ tên, đóng dấu)</span><br/><br/><br/><br/><strong>Lê Hoàng Long</strong></td>
+    </tr>
+</table>";
+
+        string barcodeSvg = $@"
+<div style=""display:inline-block; border:1px solid #000; padding:4px 10px; background:#fff; text-align:center;"">
+    <div style=""font-family:monospace; font-size:24px; letter-spacing:3px; font-weight:bold;"">||| | | |||| | ||||| | |||</div>
+    <div style=""font-size:11px; font-weight:bold; letter-spacing:1px;"">*{docNo}*</div>
+</div>";
+
+        string html = t.BodyTemplateHtml;
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            html = "<p>Mẫu in chưa có nội dung template.</p>";
+        }
+
+        html = html
+            .Replace("{{DocNo}}", docNo)
+            .Replace("{{DocDate}}", todayStr)
+            .Replace("{{DocDateFull}}", todayFull)
+            .Replace("{{UnitName}}", t.UnitName ?? "")
+            .Replace("{{UnitAddress}}", t.UnitAddress ?? "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội")
+            .Replace("{{UnitPhone}}", t.UnitPhone ?? "024-3795-8888")
+            .Replace("{{UnitEmail}}", t.UnitEmail ?? "contact@miniwms.vn")
+            .Replace("{{HeaderTitle}}", t.HeaderTitle ?? "")
+            .Replace("{{SubTitle}}", t.SubTitle ?? "")
+            .Replace("{{WarehouseName}}", "Kho Hà Nội (KHO-HN)")
+            .Replace("{{WarehouseAddress}}", "KCN Bắc Thăng Long, Đông Anh, Hà Nội")
+            .Replace("{{PartnerName}}", partnerName)
+            .Replace("{{PartnerAddress}}", partnerAddress)
+            .Replace("{{Deliverer}}", "Trần Đình Trọng (Bộ phận Vận chuyển)")
+            .Replace("{{Receiver}}", "Nguyễn Văn Hùng (Thủ kho tiếp nhận)")
+            .Replace("{{Reason}}", reason)
+            .Replace("{{Note}}", "Hàng hóa nguyên kiện, đầy đủ chứng chỉ CO/CQ và phiếu bảo hành chính hãng.")
+            .Replace("{{NoteFooter}}", t.NoteFooter ?? "")
+            .Replace("{{TotalQty}}", "75")
+            .Replace("{{TotalAmount}}", "1,450,000,000 đ")
+            .Replace("{{TotalAmountWords}}", "Một tỷ bốn trăm năm mươi triệu đồng chẵn")
+            .Replace("{{ItemsTable}}", itemsTableHtml)
+            .Replace("{{Signatures}}", signaturesHtml)
+            .Replace("{{Barcode}}", barcodeSvg);
+
+        return new TempPrintPreviewResult(
+            t.Id,
+            t.Code,
+            t.Name,
+            t.TypeCode,
+            typeName,
+            t.PaperSize,
+            PaperSizeCss(t.PaperSize),
+            html
+        );
+    }
+
+    public async Task<int> CreateTempPrintAsync(TempPrint item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"PRT_{item.TypeCode}_{DateTime.Now:yyMMddHHmmss}";
+        }
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        item.TypeCode = item.TypeCode.Trim().ToUpperInvariant();
+        item.CreatedAt = DateTime.Now;
+
+        bool exists = await db.TempPrints.AnyAsync(x => x.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã mẫu in '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        if (item.IsDefault)
+        {
+            await db.TempPrints
+                .Where(x => x.TypeCode == item.TypeCode && x.IsDefault)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDefault, false));
+        }
+
+        db.TempPrints.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateTempPrintAsync(int id, TempPrint item)
+    {
+        var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+
+        existing.Name = item.Name.Trim();
+        existing.TypeCode = item.TypeCode.Trim().ToUpperInvariant();
+        existing.PaperSize = string.IsNullOrWhiteSpace(item.PaperSize) ? "A4_Portrait" : item.PaperSize.Trim();
+        existing.UnitName = item.UnitName?.Trim() ?? "";
+        existing.UnitAddress = item.UnitAddress?.Trim();
+        existing.UnitPhone = item.UnitPhone?.Trim();
+        existing.UnitEmail = item.UnitEmail?.Trim();
+        existing.HeaderTitle = item.HeaderTitle?.Trim() ?? "";
+        existing.SubTitle = item.SubTitle?.Trim();
+        existing.BodyTemplateHtml = item.BodyTemplateHtml ?? "";
+        existing.NoteFooter = item.NoteFooter?.Trim();
+        existing.IsActive = item.IsActive;
+        existing.Remark = item.Remark?.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        if (item.IsDefault && !existing.IsDefault)
+        {
+            await db.TempPrints
+                .Where(x => x.TypeCode == existing.TypeCode && x.Id != id && x.IsDefault)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDefault, false));
+            existing.IsDefault = true;
+        }
+        else if (!item.IsDefault && existing.IsDefault)
+        {
+            existing.IsDefault = false;
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật mẫu in '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleTempPrintStatusAsync(int id)
+    {
+        var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt mẫu in '{existing.Code}'." : $"Đã chuyển mẫu in '{existing.Code}' sang trạng thái tạm dừng.");
+    }
+
+    public async Task<(bool ok, string msg)> SetDefaultTempPrintAsync(int id)
+    {
+        var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+
+        await db.TempPrints
+            .Where(x => x.TypeCode == existing.TypeCode && x.Id != id && x.IsDefault)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDefault, false));
+
+        existing.IsDefault = true;
+        existing.IsActive = true;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã đặt mẫu in '{existing.Name}' ({existing.Code}) làm mẫu in mặc định cho nghiệp vụ {existing.TypeCode}.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteTempPrintAsync(int id)
+    {
+        var existing = await db.TempPrints.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mẫu in.");
+
+        if (existing.IsDefault)
+        {
+            return (false, $"Mẫu in '{existing.Code}' đang là mẫu mặc định cho loại {existing.TypeCode}. Vui lòng chỉ định mẫu khác làm mặc định trước khi xóa.");
+        }
+
+        db.TempPrints.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa mẫu in '{existing.Code}'.");
+    }
+
+    public async Task<int> CreateTempPrintTypeAsync(TempPrintType item)
+    {
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        item.GroupCode = string.IsNullOrWhiteSpace(item.GroupCode) ? "DOC" : item.GroupCode.Trim().ToUpperInvariant();
+        item.CreatedAt = DateTime.Now;
+
+        bool exists = await db.TempPrintTypes.AnyAsync(x => x.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã loại mẫu in '{item.Code}' đã tồn tại.");
+        }
+
+        db.TempPrintTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateTempPrintTypeAsync(int id, TempPrintType item)
+    {
+        var existing = await db.TempPrintTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại mẫu in.");
+
+        existing.Name = item.Name.Trim();
+        existing.GroupCode = string.IsNullOrWhiteSpace(item.GroupCode) ? "DOC" : item.GroupCode.Trim().ToUpperInvariant();
+        existing.Description = item.Description?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật loại mẫu in '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteTempPrintTypeAsync(int id)
+    {
+        var existing = await db.TempPrintTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại mẫu in.");
+
+        bool inUse = await db.TempPrints.AnyAsync(x => x.TypeCode == existing.Code);
+        if (inUse)
+        {
+            return (false, $"Loại mẫu '{existing.Code}' đang có các mẫu in liên kết, không thể xóa.");
+        }
+
+        db.TempPrintTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại mẫu in '{existing.Code}'.");
+    }
+
+    private static string PaperSizeLabel(string? size) => size switch
+    {
+        "A4_Portrait" => "A4 Dọc (210 x 297 mm)",
+        "A4_Landscape" => "A4 Ngang (297 x 210 mm)",
+        "A5_Landscape" => "A5 Ngang (210 x 148 mm)",
+        "A5_Portrait" => "A5 Dọc (148 x 210 mm)",
+        "Label_100x150" => "Decal Thùng 100 x 150 mm",
+        "Label_100x75" => "Decal Hộp 100 x 75 mm",
+        "Thermal_K80" => "In nhiệt POS K80 (80 mm)",
+        _ => size ?? "A4 Dọc"
+    };
+
+    private static string PaperSizeCss(string? size) => size switch
+    {
+        "A4_Portrait" => "width: 210mm; min-height: 297mm; padding: 15mm 20mm; margin: 0 auto; background: #fff;",
+        "A4_Landscape" => "width: 297mm; min-height: 210mm; padding: 15mm 20mm; margin: 0 auto; background: #fff;",
+        "A5_Landscape" => "width: 210mm; min-height: 148mm; padding: 10mm 15mm; margin: 0 auto; background: #fff;",
+        "A5_Portrait" => "width: 148mm; min-height: 210mm; padding: 10mm 12mm; margin: 0 auto; background: #fff;",
+        "Label_100x150" => "width: 100mm; min-height: 150mm; padding: 8mm; margin: 0 auto; background: #fff; border: 1px dashed #bbb;",
+        "Label_100x75" => "width: 100mm; min-height: 75mm; padding: 6mm; margin: 0 auto; background: #fff; border: 1px dashed #bbb;",
+        "Thermal_K80" => "width: 80mm; min-height: 160mm; padding: 5mm; margin: 0 auto; background: #fff; font-family: monospace;",
+        _ => "width: 210mm; min-height: 297mm; padding: 15mm 20mm; margin: 0 auto; background: #fff;"
+    };
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
 }

@@ -1,0 +1,710 @@
+@model TempPrintReport
+@{
+    ViewData["Title"] = "Quản lý Biểu mẫu in kho & Thiết kế tem nhãn";
+    var types = ViewBag.Types as List<TempPrintType> ?? [];
+    var keyword = Model.Keyword ?? "";
+    var typeFilter = Model.TypeCodeFilter ?? "";
+    var activeFilter = Model.ActiveFilter;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1">
+            <i class="bi bi-printer text-primary me-2"></i>Quản lý Biểu mẫu in kho & Thiết kế tem nhãn
+        </h5>
+        <div class="text-muted small">
+            Port từ <code>InvF_TempPrint</code> & <code>Mst_TempPrintType</code> (Skycic) — Thiết kế, quản lý và xem trước biểu mẫu phiếu kho (TT200) & tem nhãn bao bì Barcode/QR
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#typesModal">
+            <i class="bi bi-tags me-1"></i> Loại mẫu in (@types.Count)
+        </button>
+        <a href="/TempPrint/ExportCsv?q=@keyword&typeCode=@typeFilter&activeOnly=@activeFilter" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createTempPrintModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Mẫu in mới
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ MẪU IN</span>
+                    <i class="bi bi-printer-fill text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalTemplates</div>
+                <div class="small text-muted">@Model.SupportedTypesCount loại chứng từ & tem nhãn</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẪU ĐANG HIỆU LỰC</span>
+                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">@Model.InactiveCount mẫu tạm dừng sử dụng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NGHIỆP VỤ HỖ TRỢ</span>
+                    <i class="bi bi-diagram-3-fill text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SupportedTypesCount</div>
+                <div class="small text-muted">Nhập, Xuất, Chuyển, Kiểm kê, Decal, K80</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẪU MẶC ĐỊNH SẴN SÀNG</span>
+                    <i class="bi bi-star-fill text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-warning">@Model.DefaultTemplatesCount</div>
+                <div class="small text-muted">Tự động nạp khi xuất in phiếu kho</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control" placeholder="Tìm theo mã, tên mẫu, tiêu đề, công ty..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="typeCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả loại mẫu in --</option>
+                    @foreach (var tp in types)
+                    {
+                        <option value="@tp.Code" selected="@(typeFilter == tp.Code)">@tp.Code - @tp.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái --</option>
+                    <option value="true" selected="@(activeFilter == true)">Đang hiệu lực</option>
+                    <option value="false" selected="@(activeFilter == false)">Tạm dừng</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/TempPrint" class="btn btn-sm btn-light border">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách mẫu in -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:40px" class="text-center">STT</th>
+                    <th style="width:140px">Mã mẫu in</th>
+                    <th>Tên mẫu in & Tiêu đề</th>
+                    <th style="width:130px">Loại biểu mẫu</th>
+                    <th style="width:130px">Khổ giấy</th>
+                    <th style="width:180px">Đơn vị áp dụng</th>
+                    <th style="width:100px" class="text-center">Mặc định</th>
+                    <th style="width:100px" class="text-center">Trạng thái</th>
+                    <th style="width:150px" class="text-end pe-3">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="9" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                            Không tìm thấy biểu mẫu in nào phù hợp điều kiện lọc.
+                        </td>
+                    </tr>
+                }
+                @{ int stt = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    <tr>
+                        <td class="text-center text-muted">@(stt++)</td>
+                        <td>
+                            <strong class="font-monospace text-primary">@r.Code</strong>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-dark">@r.Name</div>
+                            <div class="text-muted small">
+                                <i class="bi bi-card-heading me-1"></i>@r.HeaderTitle
+                                @if (!string.IsNullOrEmpty(r.Remark))
+                                {
+                                    <span class="text-secondary ms-2" title="@r.Remark">· @r.Remark</span>
+                                }
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge @(r.GroupCode == "LABEL" ? "bg-warning text-dark" : "bg-info text-dark")">
+                                <i class="bi @(r.GroupCode == "LABEL" ? "bi-upc-scan" : "bi-file-earmark-text") me-1"></i>@r.TypeCode
+                            </span>
+                            <div class="text-muted small text-truncate" style="max-width:120px;" title="@r.TypeName">@r.TypeName</div>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">@r.PaperSizeLabel</span>
+                        </td>
+                        <td>
+                            <div class="text-truncate text-secondary small fw-semibold" style="max-width:170px;" title="@r.UnitName">
+                                @r.UnitName
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsDefault)
+                            {
+                                <span class="badge bg-warning text-dark" title="Mẫu in mặc định khi thực hiện thao tác in">
+                                    <i class="bi bi-star-fill text-danger me-1"></i>Mặc định
+                                </span>
+                            }
+                            else
+                            {
+                                <form method="post" action="/TempPrint/SetDefault/@r.Id" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-link text-muted p-0 text-decoration-none" title="Nhấn để đặt mẫu này làm mặc định">
+                                        <i class="bi bi-star"></i> Đặt
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                    <i class="bi bi-check-circle me-1"></i>Hiệu lực
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end pe-3">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" onclick="openPreviewModal(@r.Id)" title="Xem trước mẫu in & In ấn trực quan">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="openEditModal(@r.Id)" title="Chỉnh sửa mẫu in">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" action="/TempPrint/ToggleStatus/@r.Id" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-outline-warning" title="@(r.IsActive ? "Tạm dừng hiệu lực" : "Kích hoạt hiệu lực")">
+                                        <i class="bi @(r.IsActive ? "bi-slash-circle" : "bi-check2-circle")"></i>
+                                    </button>
+                                </form>
+                                @if (!r.IsDefault)
+                                {
+                                    <form method="post" action="/TempPrint/Delete/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa mẫu in @r.Code?');">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-outline-danger" title="Xóa mẫu in">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL XEM TRƯỚC (LIVE PREVIEW) -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light py-2">
+                <div>
+                    <h6 class="modal-title fw-bold mb-0">
+                        <i class="bi bi-eye text-primary me-2"></i>Xem trước mẫu in: <span id="previewModalTitle" class="text-primary"></span>
+                    </h6>
+                    <div class="text-muted small" id="previewModalSub"></div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-success" onclick="printRenderedHtml()">
+                        <i class="bi bi-printer me-1"></i> In mẫu này ngay
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body bg-secondary bg-opacity-10 p-3 text-center">
+                <div class="d-inline-block text-start shadow-sm border" id="previewPaper" style="background:#fff; box-shadow:0 0 10px rgba(0,0,0,0.15);">
+                    <div id="previewContent"></div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <span class="text-muted small me-auto">
+                    <i class="bi bi-info-circle me-1"></i> Dữ liệu trên hiển thị mô phỏng theo các thẻ thay thế: <code>{{DocNo}}</code>, <code>{{DocDate}}</code>, <code>{{ItemsTable}}</code>, <code>{{Signatures}}</code>...
+                </span>
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL THÊM MỚI MẪU IN -->
+<div class="modal fade" id="createTempPrintModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="post" action="/TempPrint/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-primary text-white py-2">
+                    <h6 class="modal-title fw-bold mb-0">
+                        <i class="bi bi-plus-circle me-2"></i>Thêm mới Mẫu in kho / Thiết kế tem nhãn
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="font-size:13px">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mã mẫu in (tùy chọn)</label>
+                            <input type="text" name="Code" class="form-control form-control-sm text-uppercase" placeholder="VD: PN_TT200_A4" />
+                            <div class="text-muted" style="font-size:11px">Để trống để tự động sinh mã</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Tên mẫu in <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" class="form-control form-control-sm" placeholder="VD: Phiếu nhập kho chuẩn TT200 (A4)" required />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Loại nghiệp vụ <span class="text-danger">*</span></label>
+                            <select name="TypeCode" class="form-select form-select-sm" required>
+                                @foreach (var tp in types)
+                                {
+                                    <option value="@tp.Code">@tp.Code - @tp.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Khổ giấy in <span class="text-danger">*</span></label>
+                            <select name="PaperSize" class="form-select form-select-sm">
+                                <option value="A4_Portrait" selected>A4 Dọc (210 x 297 mm)</option>
+                                <option value="A4_Landscape">A4 Ngang (297 x 210 mm)</option>
+                                <option value="A5_Landscape">A5 Ngang (210 x 148 mm)</option>
+                                <option value="A5_Portrait">A5 Dọc (148 x 210 mm)</option>
+                                <option value="Label_100x150">Decal Thùng (100 x 150 mm)</option>
+                                <option value="Label_100x75">Decal Hộp (100 x 75 mm)</option>
+                                <option value="Thermal_K80">In nhiệt POS K80 (80 mm)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">Tên công ty / Doanh nghiệp <span class="text-danger">*</span></label>
+                            <input type="text" name="UnitName" value="CÔNG TY CỔ PHẦN LOGISTICS MINIWMS" class="form-control form-control-sm" required />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Địa chỉ trụ sở</label>
+                            <input type="text" name="UnitAddress" value="Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Điện thoại</label>
+                            <input type="text" name="UnitPhone" value="024-3795-8888" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Email</label>
+                            <input type="text" name="UnitEmail" value="kho.tong@miniwms.vn" class="form-control form-control-sm" />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tiêu đề chính biểu mẫu <span class="text-danger">*</span></label>
+                            <input type="text" name="HeaderTitle" class="form-control form-control-sm" placeholder="VD: PHIẾU NHẬP KHO" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tiêu đề phụ / Căn cứ ban hành</label>
+                            <input type="text" name="SubTitle" class="form-control form-control-sm" placeholder="VD: Mẫu số 01 - VT (Ban hành theo TT số 200/2014/TT-BTC)" />
+                        </div>
+                    </div>
+
+                    <!-- Editor HTML template -->
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0">Nội dung khung HTML mẫu in (Body Template)</label>
+                            <span class="text-muted small">Nhấn nút bên dưới để chèn nhanh token</span>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-1 flex-wrap gap-1">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{DocNo}}')">{{DocNo}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{DocDateFull}}')">{{DocDateFull}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{WarehouseName}}')">{{WarehouseName}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{PartnerName}}')">{{PartnerName}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{Deliverer}}')">{{Deliverer}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{Receiver}}')">{{Receiver}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{ItemsTable}}')">{{ItemsTable}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{Signatures}}')">{{Signatures}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('createBodyHtml', '{{Barcode}}')">{{Barcode}}</button>
+                        </div>
+                        <textarea id="createBodyHtml" name="BodyTemplateHtml" class="form-control font-monospace" rows="9" style="font-size:12px;" placeholder="Dán mã HTML bố cục biểu mẫu hoặc bấm chèn token..."></textarea>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Lời dặn / Ghi chú chân trang (Note Footer)</label>
+                        <input type="text" name="NoteFooter" class="form-control form-control-sm" placeholder="VD: Hàng hóa nguyên niêm phong, kiểm đếm đủ số lượng..." />
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Ghi chú nghiệp vụ</label>
+                            <input type="text" name="Remark" class="form-control form-control-sm" placeholder="Ghi chú áp dụng cho phòng ban nào..." />
+                        </div>
+                        <div class="col-md-3 pt-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="IsDefault" value="true" id="createIsDefault">
+                                <label class="form-check-label fw-semibold" for="createIsDefault">
+                                    <i class="bi bi-star-fill text-warning me-1"></i>Đặt làm mặc định
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-3 pt-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="createIsActive" checked>
+                                <label class="form-check-label fw-semibold" for="createIsActive">
+                                    <i class="bi bi-check2-circle text-success me-1"></i>Hiệu lực ngay
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-check-lg me-1"></i> Tạo mẫu in
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHỈNH SỬA MẪU IN -->
+<div class="modal fade" id="editTempPrintModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="editForm" method="post" action="">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-secondary text-white py-2">
+                    <h6 class="modal-title fw-bold mb-0">
+                        <i class="bi bi-pencil-square me-2"></i>Chỉnh sửa Mẫu in: <span id="editCodeLabel" class="text-warning font-monospace"></span>
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="font-size:13px">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-7">
+                            <label class="form-label fw-semibold">Tên mẫu in <span class="text-danger">*</span></label>
+                            <input type="text" id="editName" name="Name" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Loại nghiệp vụ <span class="text-danger">*</span></label>
+                            <select id="editTypeCode" name="TypeCode" class="form-select form-select-sm" required>
+                                @foreach (var tp in types)
+                                {
+                                    <option value="@tp.Code">@tp.Code - @tp.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Khổ giấy in <span class="text-danger">*</span></label>
+                            <select id="editPaperSize" name="PaperSize" class="form-select form-select-sm">
+                                <option value="A4_Portrait">A4 Dọc (210 x 297 mm)</option>
+                                <option value="A4_Landscape">A4 Ngang (297 x 210 mm)</option>
+                                <option value="A5_Landscape">A5 Ngang (210 x 148 mm)</option>
+                                <option value="A5_Portrait">A5 Dọc (148 x 210 mm)</option>
+                                <option value="Label_100x150">Decal Thùng (100 x 150 mm)</option>
+                                <option value="Label_100x75">Decal Hộp (100 x 75 mm)</option>
+                                <option value="Thermal_K80">In nhiệt POS K80 (80 mm)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">Tên đơn vị / Doanh nghiệp <span class="text-danger">*</span></label>
+                            <input type="text" id="editUnitName" name="UnitName" class="form-control form-control-sm" required />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Địa chỉ trụ sở</label>
+                            <input type="text" id="editUnitAddress" name="UnitAddress" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Điện thoại</label>
+                            <input type="text" id="editUnitPhone" name="UnitPhone" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Email</label>
+                            <input type="text" id="editUnitEmail" name="UnitEmail" class="form-control form-control-sm" />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tiêu đề chính biểu mẫu <span class="text-danger">*</span></label>
+                            <input type="text" id="editHeaderTitle" name="HeaderTitle" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tiêu đề phụ / Căn cứ</label>
+                            <input type="text" id="editSubTitle" name="SubTitle" class="form-control form-control-sm" />
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0">Nội dung khung HTML mẫu in (Body Template)</label>
+                            <span class="text-muted small">Nhấn nút bên dưới để chèn nhanh token</span>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-1 flex-wrap gap-1">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{DocNo}}')">{{DocNo}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{DocDateFull}}')">{{DocDateFull}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{WarehouseName}}')">{{WarehouseName}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{PartnerName}}')">{{PartnerName}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{Deliverer}}')">{{Deliverer}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{Receiver}}')">{{Receiver}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{ItemsTable}}')">{{ItemsTable}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{Signatures}}')">{{Signatures}}</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertToken('editBodyHtml', '{{Barcode}}')">{{Barcode}}</button>
+                        </div>
+                        <textarea id="editBodyHtml" name="BodyTemplateHtml" class="form-control font-monospace" rows="9" style="font-size:12px;"></textarea>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Lời dặn / Ghi chú chân trang (Note Footer)</label>
+                        <input type="text" id="editNoteFooter" name="NoteFooter" class="form-control form-control-sm" />
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Ghi chú</label>
+                            <input type="text" id="editRemark" name="Remark" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-3 pt-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="IsDefault" value="true" id="editIsDefault">
+                                <label class="form-check-label fw-semibold" for="editIsDefault">
+                                    <i class="bi bi-star-fill text-warning me-1"></i>Đặt làm mặc định
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-3 pt-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="editIsActive">
+                                <label class="form-check-label fw-semibold" for="editIsActive">
+                                    <i class="bi bi-check2-circle text-success me-1"></i>Đang hiệu lực
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-check-lg me-1"></i> Lưu thay đổi
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL QUẢN LÝ LOẠI MẪU IN (MST_TEMPPRINTTYPE) -->
+<div class="modal fade" id="typesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-light py-2">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="bi bi-tags text-primary me-2"></i>Danh mục Loại mẫu in (Mst_TempPrintType)
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="font-size:13px">
+                <div class="card border mb-3">
+                    <div class="card-header bg-light py-1 fw-semibold small">
+                        <i class="bi bi-plus-circle me-1"></i> Thêm nhanh loại mẫu in mới
+                    </div>
+                    <div class="card-body p-2">
+                        <form method="post" action="/TempPrint/CreateType" class="row g-2 align-items-center">
+                            @Html.AntiForgeryToken()
+                            <div class="col-md-3">
+                                <input type="text" name="Code" class="form-control form-control-sm text-uppercase" placeholder="Mã loại (vd: RETURN)" required />
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" name="Name" class="form-control form-control-sm" placeholder="Tên loại mẫu in..." required />
+                            </div>
+                            <div class="col-md-2">
+                                <select name="GroupCode" class="form-select form-select-sm">
+                                    <option value="DOC">Chứng từ (DOC)</option>
+                                    <option value="LABEL">Tem nhãn (LABEL)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-sm btn-success w-100">
+                                    <i class="bi bi-plus-lg me-1"></i> Thêm loại
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:100px">Mã loại</th>
+                                <th>Tên loại mẫu in</th>
+                                <th style="width:110px" class="text-center">Nhóm</th>
+                                <th>Mô tả quy cách</th>
+                                <th style="width:100px" class="text-center">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tp in types)
+                            {
+                                <tr>
+                                    <td><strong class="font-monospace text-primary">@tp.Code</strong></td>
+                                    <td class="fw-semibold">@tp.Name</td>
+                                    <td class="text-center">
+                                        <span class="badge @(tp.GroupCode == "LABEL" ? "bg-warning text-dark" : "bg-info text-dark")">@tp.GroupCode</span>
+                                    </td>
+                                    <td class="text-muted small">@tp.Description</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-success-subtle text-success">Hoạt động</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // Hàm chèn token vào vị trí con trỏ trong textarea
+    function insertToken(textareaId, token) {
+        var textarea = document.getElementById(textareaId);
+        if (!textarea) return;
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var text = textarea.value;
+        textarea.value = text.substring(0, start) + token + text.substring(end);
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    }
+
+    // Mở modal Xem trước (Live Preview)
+    async function openPreviewModal(id) {
+        try {
+            var res = await fetch('/TempPrint/Preview/' + id);
+            if (!res.ok) {
+                alert('Không thể tải dữ liệu xem trước.');
+                return;
+            }
+            var data = await res.json();
+            document.getElementById('previewModalTitle').innerText = data.name + ' (' + data.code + ')';
+            document.getElementById('previewModalSub').innerText = 'Loại: ' + data.typeName + ' · Khổ giấy: ' + data.paperSize;
+
+            var paper = document.getElementById('previewPaper');
+            paper.setAttribute('style', data.paperSizeCss + '; box-shadow:0 0 15px rgba(0,0,0,0.15);');
+            document.getElementById('previewContent').innerHTML = data.renderedHtml;
+
+            var modal = new bootstrap.Modal(document.getElementById('previewModal'));
+            modal.show();
+        } catch (e) {
+            alert('Lỗi: ' + e.message);
+        }
+    }
+
+    // In trực tiếp nội dung render
+    function printRenderedHtml() {
+        var content = document.getElementById('previewPaper').innerHTML;
+        var printWindow = window.open('', '', 'width=900,height=800');
+        printWindow.document.write('<html><head><title>In Biểu Mẫu WMS</title>');
+        printWindow.document.write('<style>body{margin:0;padding:10mm;background:#fff;font-family:Arial,sans-serif;} table{border-collapse:collapse;width:100%;} @@media print { @@page { margin: 10mm; } body { padding: 0; } }</style>');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(content);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(function() {
+            printWindow.print();
+            printWindow.close();
+        }, 350);
+    }
+
+    // Mở modal Chỉnh sửa
+    async function openEditModal(id) {
+        try {
+            var res = await fetch('/TempPrint/Detail/' + id);
+            if (!res.ok) {
+                alert('Không thể tải thông tin mẫu in.');
+                return;
+            }
+            var item = await res.json();
+            document.getElementById('editForm').action = '/TempPrint/Update/' + item.id;
+            document.getElementById('editCodeLabel').innerText = item.code;
+            document.getElementById('editName').value = item.name || '';
+            document.getElementById('editTypeCode').value = item.typeCode || 'IN';
+            document.getElementById('editPaperSize').value = item.paperSize || 'A4_Portrait';
+            document.getElementById('editUnitName').value = item.unitName || '';
+            document.getElementById('editUnitAddress').value = item.unitAddress || '';
+            document.getElementById('editUnitPhone').value = item.unitPhone || '';
+            document.getElementById('editUnitEmail').value = item.unitEmail || '';
+            document.getElementById('editHeaderTitle').value = item.headerTitle || '';
+            document.getElementById('editSubTitle').value = item.subTitle || '';
+            document.getElementById('editBodyHtml').value = item.bodyTemplateHtml || '';
+            document.getElementById('editNoteFooter').value = item.noteFooter || '';
+            document.getElementById('editRemark').value = item.remark || '';
+            document.getElementById('editIsDefault').checked = item.isDefault === true;
+            document.getElementById('editIsActive').checked = item.isActive === true;
+
+            var modal = new bootstrap.Modal(document.getElementById('editTempPrintModal'));
+            modal.show();
+        } catch (e) {
+            alert('Lỗi: ' + e.message);
+        }
+    }
+</script>
+}

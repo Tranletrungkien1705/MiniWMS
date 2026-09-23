@@ -54,6 +54,8 @@ public class AppDbContext : DbContext
     public DbSet<CustomerSource> CustomerSources => Set<CustomerSource>();
     public DbSet<MoveOrdType> MoveOrdTypes => Set<MoveOrdType>();
     public DbSet<Dealer> Dealers => Set<Dealer>();
+    public DbSet<TempPrintType> TempPrintTypes => Set<TempPrintType>();
+    public DbSet<TempPrint> TempPrints => Set<TempPrint>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -337,6 +339,18 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.InventoryOutFGId, x.ProductId, x.SerialNo });
             e.HasOne(x => x.InventoryOutFG).WithMany(x => x.Serials).HasForeignKey(x => x.InventoryOutFGId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<TempPrintType>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<TempPrint>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.TypeCode });
+            e.HasIndex(x => new { x.OrgId, x.IsDefault });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

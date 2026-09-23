@@ -3066,6 +3066,171 @@ app.MapGet("/api/reports/map-delivery-order/export-csv", async (
     return Results.File(bytes, "text/csv; charset=utf-8", $"BanDoGiaoHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
 });
 
+// ==================== QUẢN LÝ BIỂU MẪU IN KHO & THIẾT KẾ TEM NHÃN (InvF_TempPrint & Mst_TempPrintType Skycic) ====================
+app.MapGet("/api/temp-prints", async (string? q, string? typeCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.TempPrintsReportAsync(q, typeCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/temp-prints/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetTempPrintAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy mẫu in." });
+});
+
+app.MapGet("/api/temp-prints/code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetTempPrintByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy mẫu in." });
+});
+
+app.MapGet("/api/temp-prints/default/{typeCode}", async (string typeCode, IWmsService svc) =>
+{
+    var item = await svc.GetDefaultTempPrintByTypeAsync(typeCode);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = $"Không tìm thấy mẫu in mặc định cho loại {typeCode}." });
+});
+
+app.MapGet("/api/temp-prints/{id:int}/preview", async (int id, IWmsService svc) =>
+{
+    var preview = await svc.PreviewTempPrintAsync(id);
+    return preview != null ? Results.Ok(preview) : Results.NotFound(new { error = "Không tìm thấy mẫu in." });
+});
+
+app.MapPost("/api/temp-prints", async (CreateTempPrintDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.HeaderTitle))
+        return Results.BadRequest(new { error = "Tên mẫu in và tiêu đề biểu mẫu không được để trống." });
+
+    var item = new TempPrint
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        TypeCode = string.IsNullOrWhiteSpace(dto.TypeCode) ? "IN" : dto.TypeCode.Trim().ToUpperInvariant(),
+        PaperSize = string.IsNullOrWhiteSpace(dto.PaperSize) ? "A4_Portrait" : dto.PaperSize.Trim(),
+        UnitName = string.IsNullOrWhiteSpace(dto.UnitName) ? "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS" : dto.UnitName.Trim(),
+        UnitAddress = dto.UnitAddress?.Trim(),
+        UnitPhone = dto.UnitPhone?.Trim(),
+        UnitEmail = dto.UnitEmail?.Trim(),
+        HeaderTitle = dto.HeaderTitle.Trim(),
+        SubTitle = dto.SubTitle?.Trim(),
+        BodyTemplateHtml = dto.BodyTemplateHtml ?? "",
+        NoteFooter = dto.NoteFooter?.Trim(),
+        IsDefault = dto.IsDefault ?? false,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateTempPrintAsync(item);
+        return Results.Created($"/api/temp-prints/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/temp-prints/{id:int}", async (int id, UpdateTempPrintDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.HeaderTitle))
+        return Results.BadRequest(new { error = "Tên mẫu in và tiêu đề biểu mẫu không được để trống." });
+
+    var item = new TempPrint
+    {
+        Name = dto.Name.Trim(),
+        TypeCode = string.IsNullOrWhiteSpace(dto.TypeCode) ? "IN" : dto.TypeCode.Trim().ToUpperInvariant(),
+        PaperSize = string.IsNullOrWhiteSpace(dto.PaperSize) ? "A4_Portrait" : dto.PaperSize.Trim(),
+        UnitName = string.IsNullOrWhiteSpace(dto.UnitName) ? "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS" : dto.UnitName.Trim(),
+        UnitAddress = dto.UnitAddress?.Trim(),
+        UnitPhone = dto.UnitPhone?.Trim(),
+        UnitEmail = dto.UnitEmail?.Trim(),
+        HeaderTitle = dto.HeaderTitle.Trim(),
+        SubTitle = dto.SubTitle?.Trim(),
+        BodyTemplateHtml = dto.BodyTemplateHtml ?? "",
+        NoteFooter = dto.NoteFooter?.Trim(),
+        IsDefault = dto.IsDefault ?? false,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    var (ok, msg) = await svc.UpdateTempPrintAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/temp-prints/{id:int}/toggle-status", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleTempPrintStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/temp-prints/{id:int}/set-default", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.SetDefaultTempPrintAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/temp-prints/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteTempPrintAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapGet("/api/temp-print-types", async (bool? activeOnly, IWmsService svc) =>
+{
+    var list = await svc.TempPrintTypesAsync(activeOnly);
+    return Results.Ok(list);
+});
+
+app.MapPost("/api/temp-print-types", async (CreateTempPrintTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Mã và tên loại mẫu in không được để trống." });
+
+    var item = new TempPrintType
+    {
+        Code = dto.Code.Trim().ToUpperInvariant(),
+        Name = dto.Name.Trim(),
+        GroupCode = string.IsNullOrWhiteSpace(dto.GroupCode) ? "DOC" : dto.GroupCode.Trim().ToUpperInvariant(),
+        Description = dto.Description?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+
+    try
+    {
+        var id = await svc.CreateTempPrintTypeAsync(item);
+        return Results.Created($"/api/temp-print-types/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/temp-print-types/{id:int}", async (int id, UpdateTempPrintTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Tên loại mẫu in không được để trống." });
+
+    var item = new TempPrintType
+    {
+        Name = dto.Name.Trim(),
+        GroupCode = string.IsNullOrWhiteSpace(dto.GroupCode) ? "DOC" : dto.GroupCode.Trim().ToUpperInvariant(),
+        Description = dto.Description?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+
+    var (ok, msg) = await svc.UpdateTempPrintTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/temp-print-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteTempPrintTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3145,3 +3310,8 @@ record CreateMoveOrdTypeDto(string? Code, string Name, string? Description, bool
 record UpdateMoveOrdTypeDto(string Name, string? Description, bool? IsUrgent, bool? IsActive);
 record CreateDealerDto(string? Code, string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
 record UpdateDealerDto(string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
+record CreateTempPrintDto(string? Code, string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
+record UpdateTempPrintDto(string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
+record CreateTempPrintTypeDto(string? Code, string Name, string? GroupCode, string? Description, bool? IsActive);
+record UpdateTempPrintTypeDto(string Name, string? GroupCode, string? Description, bool? IsActive);
+

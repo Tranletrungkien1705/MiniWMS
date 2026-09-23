@@ -2676,6 +2676,88 @@ public record MapDeliveryOrderReport(
     List<AreaDeliverySummary> AreaSummaries  // Bảng phân bổ theo khu vực
 );
 
+/// <summary>Danh mục Loại mẫu in kho (port từ Mst_TempPrintType Skycic: TempPrintType, TempPrintName, Remark, FlagActive).</summary>
+public class TempPrintType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã loại mẫu in (IN, OUT, MOVE, AUDIT, CARTON, BOX, K80)
+    public string Name { get; set; } = "";             // Tên loại mẫu in (Phiếu nhập kho, Phiếu xuất kho, Phiếu chuyển kho, Biên bản kiểm kê, Tem thùng carton, Tem đóng hộp, Phiếu in nhiệt K80)
+    public string GroupCode { get; set; } = "DOC";     // Nhóm mẫu: DOC (Chứng từ kho) hoặc LABEL (Tem nhãn mã vạch)
+    public string? Description { get; set; }          // Mô tả loại biểu mẫu
+    public bool IsActive { get; set; } = true;         // Trạng thái hiệu lực (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Biểu mẫu in kho & Thiết kế tem nhãn WMS (port từ InvF_TempPrint Skycic: IF_TempPrintNo, TempPrintType, IF_TempPrintName, NNTName, NNTAddress, NNTPhone, NNTEmail, TempPrintBody, FlagActive, Remark).</summary>
+public class TempPrint : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã mẫu in (IF_TempPrintNo, vd: PN_A4_STD, PX_A4_STD, PC_A4_STD, PKK_A4_STD, LABEL_CARTON, LABEL_BOX, PX_K80)
+    public string Name { get; set; } = "";             // Tên mẫu in (IF_TempPrintName, vd: Phiếu nhập kho tiêu chuẩn TT200 (A4))
+    public string TypeCode { get; set; } = "IN";       // Loại mẫu in liên kết với TempPrintType (IN, OUT, MOVE, AUDIT, CARTON, BOX, K80)
+    public string PaperSize { get; set; } = "A4_Portrait"; // Khổ giấy: A4_Portrait, A4_Landscape, A5_Landscape, Label_100x150, Label_100x75, Thermal_K80
+    public string UnitName { get; set; } = "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS"; // Tên đơn vị / doanh nghiệp (NNTName)
+    public string? UnitAddress { get; set; }           // Địa chỉ công ty (NNTAddress)
+    public string? UnitPhone { get; set; }             // Số điện thoại (NNTPhone)
+    public string? UnitEmail { get; set; }             // Email liên hệ (NNTEmail)
+    public string HeaderTitle { get; set; } = "";      // Tiêu đề biểu mẫu (vd: PHIẾU NHẬP KHO, PHIẾU XUẤT KHO KIÊM BÀN GIAO)
+    public string? SubTitle { get; set; }              // Tiêu đề phụ (vd: Mẫu số 01 - VT, Ban hành theo Thông tư số 200/2014/TT-BTC)
+    public string BodyTemplateHtml { get; set; } = ""; // Nội dung mã HTML template của biểu mẫu (TempPrintBody) với token thay thế
+    public string? NoteFooter { get; set; }            // Lời dặn / Điều khoản chân trang (vd: Đã nhận đủ hàng hóa nguyên đai nguyên kiện...)
+    public bool IsDefault { get; set; } = false;       // Là mẫu in mặc định cho loại nghiệp vụ này
+    public bool IsActive { get; set; } = true;         // Cờ hoạt động (FlagActive)
+    public string? Remark { get; set; }                // Ghi chú
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Dòng thông tin hiển thị mẫu in kho trên danh sách tổng hợp.</summary>
+public record TempPrintRow(
+    int Id,
+    string Code,
+    string Name,
+    string TypeCode,
+    string TypeName,
+    string GroupCode,
+    string PaperSize,
+    string PaperSizeLabel,
+    string UnitName,
+    string HeaderTitle,
+    bool IsDefault,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);
+
+/// <summary>Báo cáo / Danh sách biểu mẫu in kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record TempPrintReport(
+    string? TypeCodeFilter,
+    bool? ActiveFilter,
+    string? Keyword,
+    int TotalTemplates,
+    int ActiveCount,
+    int InactiveCount,
+    int SupportedTypesCount,
+    int DefaultTemplatesCount,
+    List<TempPrintRow> Rows
+);
+
+/// <summary>Kết quả xem trước nội dung mẫu in được render dữ liệu mẫu thực tế (Live Preview).</summary>
+public record TempPrintPreviewResult(
+    int Id,
+    string Code,
+    string Name,
+    string TypeCode,
+    string TypeName,
+    string PaperSize,
+    string PaperSizeCss,
+    string RenderedHtml
+);
+
+
 
 
 

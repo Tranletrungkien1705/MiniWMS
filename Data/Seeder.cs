@@ -2903,6 +2903,386 @@ public static class Seeder
 
                 await db.SaveChangesAsync();
             }
+
+            // ==================== SEED BIỂU MẪU IN KHO & TEM NHÃN (InvF_TempPrint & Mst_TempPrintType Skycic) ====================
+            if (!await db.TempPrintTypes.AnyAsync())
+            {
+                db.TempPrintTypes.AddRange(
+                    new TempPrintType { Code = "IN", Name = "Phiếu nhập kho (TT200 / TT133)", GroupCode = "DOC", Description = "Biểu mẫu chứng từ ghi nhận nhập mua, hoàn nhập hàng hóa kho", IsActive = true },
+                    new TempPrintType { Code = "OUT", Name = "Phiếu xuất kho kiêm giao hàng", GroupCode = "DOC", Description = "Biểu mẫu xuất bán buôn, đại lý, xuất phục vụ phân phối & bán lẻ", IsActive = true },
+                    new TempPrintType { Code = "MOVE", Name = "Lệnh & Phiếu điều chuyển kho", GroupCode = "DOC", Description = "Biểu mẫu vận chuyển lưu chuyển hàng nội bộ giữa các kho", IsActive = true },
+                    new TempPrintType { Code = "AUDIT", Name = "Biên bản kiểm kê & đối soát", GroupCode = "DOC", Description = "Biên bản hội đồng kiểm kê kiểm đếm và xử lý chênh lệch kho", IsActive = true },
+                    new TempPrintType { Code = "CARTON", Name = "Tem nhãn vận chuyển thùng Carton", GroupCode = "LABEL", Description = "Nhãn dán tiêu chuẩn kiện hàng Carton Barcode & QR Code", IsActive = true },
+                    new TempPrintType { Code = "BOX", Name = "Tem nhãn định danh hộp bao bì", GroupCode = "LABEL", Description = "Nhãn dán hộp inner box quản lý quy cách sản phẩm", IsActive = true },
+                    new TempPrintType { Code = "K80", Name = "Phiếu xuất giao nhanh nhiệt K80", GroupCode = "DOC", Description = "Biểu mẫu in máy in bill nhiệt khổ 80mm giao nhanh", IsActive = true }
+                );
+                await db.SaveChangesAsync();
+            }
+
+            if (!await db.TempPrints.AnyAsync())
+            {
+                var bodyInA4 = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; line-height:1.4; color:#111;"">
+    <div style=""display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:8px; margin-bottom:15px;"">
+        <div style=""font-size:12px;"">
+            <div style=""font-weight:bold; font-size:14px; text-transform:uppercase;"">{{UnitName}}</div>
+            <div>Địa chỉ: {{UnitAddress}}</div>
+            <div>Điện thoại: {{UnitPhone}} | Email: {{UnitEmail}}</div>
+        </div>
+        <div style=""text-align:right; font-size:11px;"">
+            <div style=""font-weight:bold;"">Mẫu số: 01 - VT</div>
+            <div style=""font-style:italic;"">(Ban hành theo TT số 200/2014/TT-BTC)</div>
+            <div style=""margin-top:4px;"">{{Barcode}}</div>
+        </div>
+    </div>
+    <div style=""text-align:center; margin-bottom:15px;"">
+        <div style=""font-size:20px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;"">{{HeaderTitle}}</div>
+        <div style=""font-style:italic; font-size:12px; margin-top:3px;"">{{DocDateFull}} — Số phiếu: <strong style=""font-size:14px; color:#b02a37;"">{{DocNo}}</strong></div>
+        <div style=""font-size:11px; color:#555;"">{{SubTitle}}</div>
+    </div>
+    <div style=""margin-bottom:12px; font-size:13px; line-height:1.7;"">
+        <div>- Người giao hàng: <strong>{{Deliverer}}</strong></div>
+        <div>- Đơn vị / NCC: <strong>{{PartnerName}}</strong> (Địa chỉ: {{PartnerAddress}})</div>
+        <div>- Lý do nhập kho: <em>{{Reason}}</em></div>
+        <div>- Nhập tại kho: <strong>{{WarehouseName}}</strong> (Địa chỉ: {{WarehouseAddress}})</div>
+    </div>
+    {{ItemsTable}}
+    <div style=""font-size:12px; margin-top:8px;"">
+        <div>- Ghi chú: <em>{{Note}}</em></div>
+        <div style=""font-style:italic; color:#666; margin-top:4px;"">{{NoteFooter}}</div>
+    </div>
+    {{Signatures}}
+</div>";
+
+                var bodyOutA4 = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; line-height:1.4; color:#111;"">
+    <div style=""display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:8px; margin-bottom:15px;"">
+        <div style=""font-size:12px;"">
+            <div style=""font-weight:bold; font-size:14px; text-transform:uppercase;"">{{UnitName}}</div>
+            <div>Địa chỉ: {{UnitAddress}}</div>
+            <div>Điện thoại: {{UnitPhone}} | Email: {{UnitEmail}}</div>
+        </div>
+        <div style=""text-align:right; font-size:11px;"">
+            <div style=""font-weight:bold;"">Mẫu số: 02 - VT</div>
+            <div style=""font-style:italic;"">(Ban hành theo TT số 200/2014/TT-BTC)</div>
+            <div style=""margin-top:4px;"">{{Barcode}}</div>
+        </div>
+    </div>
+    <div style=""text-align:center; margin-bottom:15px;"">
+        <div style=""font-size:20px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;"">{{HeaderTitle}}</div>
+        <div style=""font-style:italic; font-size:12px; margin-top:3px;"">{{DocDateFull}} — Số phiếu: <strong style=""font-size:14px; color:#0d6efd;"">{{DocNo}}</strong></div>
+        <div style=""font-size:11px; color:#555;"">{{SubTitle}}</div>
+    </div>
+    <div style=""margin-bottom:12px; font-size:13px; line-height:1.7;"">
+        <div>- Người nhận hàng: <strong>{{Receiver}}</strong></div>
+        <div>- Đơn vị nhận / Khách hàng: <strong>{{PartnerName}}</strong></div>
+        <div>- Địa chỉ nhận hàng: <em>{{PartnerAddress}}</em></div>
+        <div>- Lý do xuất kho: <em>{{Reason}}</em></div>
+        <div>- Xuất tại kho: <strong>{{WarehouseName}}</strong> (Địa chỉ: {{WarehouseAddress}})</div>
+    </div>
+    {{ItemsTable}}
+    <div style=""font-size:12px; margin-top:8px;"">
+        <div>- Ghi chú: <em>{{Note}}</em></div>
+        <div style=""font-style:italic; color:#666; margin-top:4px;"">{{NoteFooter}}</div>
+    </div>
+    {{Signatures}}
+</div>";
+
+                var bodyMoveA4 = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; line-height:1.4; color:#111;"">
+    <div style=""display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:8px; margin-bottom:15px;"">
+        <div style=""font-size:12px;"">
+            <div style=""font-weight:bold; font-size:14px; text-transform:uppercase;"">{{UnitName}}</div>
+            <div>Địa chỉ: {{UnitAddress}}</div>
+            <div>Hotline điều phối: {{UnitPhone}}</div>
+        </div>
+        <div style=""text-align:right; font-size:11px;"">
+            <div style=""font-weight:bold;"">LỆNH VẬN CHUYỂN NỘI BỘ</div>
+            <div style=""margin-top:4px;"">{{Barcode}}</div>
+        </div>
+    </div>
+    <div style=""text-align:center; margin-bottom:15px;"">
+        <div style=""font-size:20px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; color:#198754;"">{{HeaderTitle}}</div>
+        <div style=""font-style:italic; font-size:12px; margin-top:3px;"">{{DocDateFull}} — Lệnh số: <strong style=""font-size:14px;"">{{DocNo}}</strong></div>
+        <div style=""font-size:11px; color:#555;"">{{SubTitle}}</div>
+    </div>
+    <div style=""display:flex; justify-content:space-between; background:#f8f9fa; border:1px solid #dee2e6; border-radius:4px; padding:10px; margin-bottom:12px; font-size:13px;"">
+        <div style=""width:48%;"">
+            <div style=""font-weight:bold; color:#0d6efd;"">KHO XUẤT ĐIỀU CHUYỂN:</div>
+            <div>{{WarehouseName}}</div>
+            <div style=""font-size:12px; color:#555;"">Địa chỉ: {{WarehouseAddress}}</div>
+            <div style=""margin-top:4px;"">Thủ kho xuất: <strong>{{Deliverer}}</strong></div>
+        </div>
+        <div style=""width:48%; border-left:1px dashed #ccc; padding-left:15px;"">
+            <div style=""font-weight:bold; color:#198754;"">KHO TIẾP NHẬN ĐẾN:</div>
+            <div>{{PartnerName}}</div>
+            <div style=""font-size:12px; color:#555;"">Địa chỉ: {{PartnerAddress}}</div>
+            <div style=""margin-top:4px;"">Thủ kho nhận: <strong>{{Receiver}}</strong></div>
+        </div>
+    </div>
+    <div style=""font-size:13px; margin-bottom:10px;"">- Mục đích điều chuyển: <em>{{Reason}}</em></div>
+    {{ItemsTable}}
+    <div style=""font-size:12px; margin-top:8px;"">
+        <div>- Ghi chú vận chuyển: <em>{{Note}}</em></div>
+        <div style=""font-style:italic; color:#666; margin-top:4px;"">{{NoteFooter}}</div>
+    </div>
+    {{Signatures}}
+</div>";
+
+                var bodyAuditA4 = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; line-height:1.4; color:#111;"">
+    <div style=""display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:8px; margin-bottom:15px;"">
+        <div style=""font-size:12px;"">
+            <div style=""font-weight:bold; font-size:14px; text-transform:uppercase;"">{{UnitName}}</div>
+            <div>Địa điểm kho kiểm kê: {{WarehouseAddress}}</div>
+        </div>
+        <div style=""text-align:right; font-size:11px;"">
+            <div style=""font-weight:bold;"">Mẫu số: 05 - VT (Kiểm kê)</div>
+            <div>{{Barcode}}</div>
+        </div>
+    </div>
+    <div style=""text-align:center; margin-bottom:15px;"">
+        <div style=""font-size:20px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; color:#6f42c1;"">{{HeaderTitle}}</div>
+        <div style=""font-style:italic; font-size:12px; margin-top:3px;"">{{DocDateFull}} — Mã đợt kiểm kê: <strong style=""font-size:14px;"">{{DocNo}}</strong></div>
+        <div style=""font-size:11px; color:#555;"">{{SubTitle}}</div>
+    </div>
+    <div style=""margin-bottom:12px; font-size:13px; line-height:1.7;"">
+        <div>- Kho được kiểm kê: <strong>{{WarehouseName}}</strong></div>
+        <div>- Hội đồng kiểm kê: <strong>1. Ông Lê Hoàng Long (Trưởng ban) | 2. Ông Trần Đình Trọng (Kế toán kho) | 3. Ông Nguyễn Văn Hùng (Thủ kho)</strong></div>
+        <div>- Nội dung kiểm kê: <em>{{Reason}}</em></div>
+    </div>
+    {{ItemsTable}}
+    <div style=""font-size:12px; margin-top:8px;"">
+        <div>- Kết luận của Hội đồng: <em>{{Note}}</em></div>
+        <div style=""font-style:italic; color:#666; margin-top:4px;"">{{NoteFooter}}</div>
+    </div>
+    {{Signatures}}
+</div>";
+
+                var bodyCarton = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; color:#000; font-size:12px; line-height:1.3;"">
+    <div style=""border:2px solid #000; padding:10px; height:100%;"">
+        <div style=""display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:8px;"">
+            <div style=""font-weight:bold; font-size:14px;"">MINIWMS LOGISTICS</div>
+            <div style=""border:1px solid #000; padding:2px 6px; font-weight:bold; font-size:11px;"">STANDARD CARTON</div>
+        </div>
+        <div style=""text-align:center; margin:8px 0;"">
+            <div style=""font-size:11px; color:#444;"">MÃ THÙNG CARTON (CAN NO)</div>
+            <div style=""font-size:18px; font-weight:bold; letter-spacing:2px;"">{{DocNo}}</div>
+            <div style=""margin:5px 0;"">{{Barcode}}</div>
+        </div>
+        <div style=""border-top:1px solid #000; border-bottom:1px solid #000; padding:6px 0; margin:8px 0; font-size:11px;"">
+            <div style=""display:flex; justify-content:space-between;""><span>Kho gửi:</span><strong>{{WarehouseName}}</strong></div>
+            <div style=""display:flex; justify-content:space-between; margin-top:3px;""><span>Nơi nhận:</span><strong>{{PartnerName}}</strong></div>
+            <div style=""margin-top:3px;""><span>Địa chỉ:</span> <em>{{PartnerAddress}}</em></div>
+        </div>
+        <div style=""background:#f0f0f0; border:1px solid #ccc; padding:6px; font-size:11px; margin-bottom:8px;"">
+            <div style=""display:flex; justify-content:space-between;""><span>Mặt hàng:</span><strong>IP15-128 / MAC-M3-16</strong></div>
+            <div style=""display:flex; justify-content:space-between; margin-top:2px;""><span>Số lượng kiện:</span><strong>{{TotalQty}} sản phẩm</strong></div>
+            <div style=""display:flex; justify-content:space-between; margin-top:2px;""><span>Trọng lượng Gross:</span><strong>18.5 kg</strong></div>
+            <div style=""display:flex; justify-content:space-between; margin-top:2px;""><span>Quy cách kích thước:</span><strong>60 x 40 x 40 cm</strong></div>
+        </div>
+        <div style=""text-align:center; font-size:10px; font-weight:bold; border-top:1px dashed #000; padding-top:6px;"">
+            {{NoteFooter}}
+        </div>
+    </div>
+</div>";
+
+                var bodyBox = @"<div style=""font-family:'Segoe UI',Arial,sans-serif; color:#000; font-size:11px; line-height:1.25;"">
+    <div style=""border:2px solid #000; padding:8px; height:100%;"">
+        <div style=""display:flex; justify-content:space-between; border-bottom:1px solid #000; padding-bottom:4px; margin-bottom:6px;"">
+            <strong style=""font-size:12px;"">WMS INNER BOX LABEL</strong>
+            <span>Hộp số: <strong>{{DocNo}}</strong></span>
+        </div>
+        <div style=""text-align:center; margin:4px 0;"">
+            {{Barcode}}
+        </div>
+        <div style=""font-size:10px; margin-top:4px;"">
+            <div>Sản phẩm: <strong>Điện thoại iPhone 15 128GB (IP15-128)</strong></div>
+            <div style=""display:flex; justify-content:space-between; margin-top:2px;"">
+                <span>Số lượng đóng hộp: <strong>10 Chiếc</strong></span>
+                <span>Số lô: <strong>LOT-202603</strong></span>
+            </div>
+            <div style=""display:flex; justify-content:space-between; margin-top:2px;"">
+                <span>Đóng vào thùng: <strong>CTN-2026-00452</strong></span>
+                <span>Vị trí: <strong>K-A1-02</strong></span>
+            </div>
+        </div>
+        <div style=""text-align:center; font-size:9px; font-style:italic; margin-top:6px; border-top:1px dashed #666; padding-top:3px;"">
+            {{NoteFooter}}
+        </div>
+    </div>
+</div>";
+
+                var bodyK80 = @"<div style=""font-family:'Courier New',Courier,monospace; width:100%; font-size:12px; line-height:1.3; color:#000;"">
+    <div style=""text-align:center; margin-bottom:8px;"">
+        <div style=""font-weight:bold; font-size:14px;"">{{UnitName}}</div>
+        <div style=""font-size:10px;"">{{UnitAddress}}</div>
+        <div style=""font-size:10px;"">Hotline: {{UnitPhone}}</div>
+        <div style=""border-bottom:1px dashed #000; margin:6px 0;""></div>
+        <div style=""font-weight:bold; font-size:15px;"">{{HeaderTitle}}</div>
+        <div style=""font-size:11px;"">Số: {{DocNo}} | {{DocDate}}</div>
+    </div>
+    <div style=""font-size:11px; margin-bottom:6px;"">
+        <div>KH: {{PartnerName}}</div>
+        <div>Đ/C: {{PartnerAddress}}</div>
+        <div>Kho xuất: {{WarehouseName}}</div>
+    </div>
+    <div style=""border-bottom:1px dashed #000; margin:4px 0;""></div>
+    <div style=""font-size:11px;"">
+        <div style=""display:flex; justify-content:space-between; font-weight:bold;"">
+            <span>TÊN HÀNG</span><span>SL x GIÁ = TIỀN</span>
+        </div>
+        <div style=""margin-top:4px;"">
+            <div>1. IP15-128 (iPhone 15)</div>
+            <div style=""display:flex; justify-content:space-between; padding-left:10px;"">
+                <span>50 x 19,500,000</span><strong>975,000,000</strong>
+            </div>
+        </div>
+        <div style=""margin-top:4px;"">
+            <div>2. MAC-M3-16 (MacBook Air)</div>
+            <div style=""display:flex; justify-content:space-between; padding-left:10px;"">
+                <span>15 x 27,000,000</span><strong>405,000,000</strong>
+            </div>
+        </div>
+        <div style=""margin-top:4px;"">
+            <div>3. WATCH-S9-41 (Apple Watch)</div>
+            <div style=""display:flex; justify-content:space-between; padding-left:10px;"">
+                <span>10 x 7,000,000</span><strong>70,000,000</strong>
+            </div>
+        </div>
+    </div>
+    <div style=""border-bottom:1px dashed #000; margin:6px 0;""></div>
+    <div style=""display:flex; justify-content:space-between; font-weight:bold; font-size:13px;"">
+        <span>TỔNG CỘNG:</span><span>{{TotalAmount}}</span>
+    </div>
+    <div style=""display:flex; justify-content:space-between; font-size:11px; margin-top:2px;"">
+        <span>Tổng sản lượng:</span><strong>{{TotalQty}} sp</strong>
+    </div>
+    <div style=""border-bottom:1px dashed #000; margin:6px 0;""></div>
+    <div style=""text-align:center; margin:8px 0;"">
+        {{Barcode}}
+    </div>
+    <div style=""text-align:center; font-size:10px; margin-top:6px;"">
+        {{NoteFooter}}
+    </div>
+</div>";
+
+                db.TempPrints.AddRange(
+                    new TempPrint
+                    {
+                        Code = "PN_TT200_A4",
+                        Name = "Phiếu nhập kho tiêu chuẩn Bộ Tài chính (A4)",
+                        TypeCode = "IN",
+                        PaperSize = "A4_Portrait",
+                        UnitName = "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS",
+                        UnitAddress = "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội",
+                        UnitPhone = "024-3795-8888",
+                        UnitEmail = "kho.tong@miniwms.vn",
+                        HeaderTitle = "PHIẾU NHẬP KHO",
+                        SubTitle = "Mẫu số: 01 - VT (Ban hành theo TT số 200/2014/TT-BTC ngày 22/12/2014 của BTC)",
+                        BodyTemplateHtml = bodyInA4,
+                        NoteFooter = "Phiếu nhập kho lập 3 liên: Liên 1 lưu phòng KT, Liên 2 Thủ kho giữ ghi thẻ kho, Liên 3 giao người giao hàng.",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Mẫu in chuẩn Thông tư 200 áp dụng cho toàn bộ giao dịch nhập mua và nhập thành phẩm SX"
+                    },
+                    new TempPrint
+                    {
+                        Code = "PX_TT200_A4",
+                        Name = "Phiếu xuất kho kiêm biên bản giao nhận (A4)",
+                        TypeCode = "OUT",
+                        PaperSize = "A4_Portrait",
+                        UnitName = "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS",
+                        UnitAddress = "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội",
+                        UnitPhone = "024-3795-8888",
+                        UnitEmail = "kho.tong@miniwms.vn",
+                        HeaderTitle = "PHIẾU XUẤT KHO",
+                        SubTitle = "Mẫu số: 02 - VT (Ban hành theo TT số 200/2014/TT-BTC ngày 22/12/2014 của BTC)",
+                        BodyTemplateHtml = bodyOutA4,
+                        NoteFooter = "Hàng hóa đã được kiểm tra đủ số lượng, nguyên niêm phong, đúng quy cách xuất kho.",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Mẫu in xuất kho kiêm biên bản bàn giao vận chuyển cho khách hàng & đại lý"
+                    },
+                    new TempPrint
+                    {
+                        Code = "PC_NOIBO_A4",
+                        Name = "Phiếu xuất điều chuyển kho nội bộ (A4)",
+                        TypeCode = "MOVE",
+                        PaperSize = "A4_Portrait",
+                        UnitName = "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS",
+                        UnitAddress = "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội",
+                        UnitPhone = "024-3795-8888",
+                        HeaderTitle = "PHIẾU ĐIỀU CHUYỂN KHO NỘI BỘ",
+                        SubTitle = "Kiêm lệnh điều động & vận chuyển hàng hóa giữa các kho / chi nhánh",
+                        BodyTemplateHtml = bodyMoveA4,
+                        NoteFooter = "Lệnh điều chuyển có giá trị trong vòng 48 giờ kể từ thời điểm phát hành.",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Mẫu in luân chuyển kho nội bộ, đối soát kho xuất và kho tiếp nhận"
+                    },
+                    new TempPrint
+                    {
+                        Code = "BB_KIEMKE_A4",
+                        Name = "Biên bản kiểm kê vật tư, hàng hóa định kỳ (A4)",
+                        TypeCode = "AUDIT",
+                        PaperSize = "A4_Landscape",
+                        UnitName = "CÔNG TY CỔ PHẦN LOGISTICS MINIWMS",
+                        UnitAddress = "Lô CN-08, KCN Bắc Thăng Long, Đông Anh, TP. Hà Nội",
+                        HeaderTitle = "BIÊN BẢN KIỂM KÊ VẬT TƯ, CÔNG CỤ, HÀNG HÓA",
+                        SubTitle = "Thời điểm kiểm kê: 24h00 cuối kỳ đối soát kho",
+                        BodyTemplateHtml = bodyAuditA4,
+                        NoteFooter = "Hội đồng kiểm kê chịu trách nhiệm trước Ban Giám đốc về tính chính xác của số liệu kiểm kê thực tế.",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Mẫu in biên bản hội đồng kiểm kê kho theo Thông tư 200/2014/TT-BTC"
+                    },
+                    new TempPrint
+                    {
+                        Code = "TEM_CARTON_100X150",
+                        Name = "Tem nhãn vận chuyển kiện thùng WMS (100x150 mm)",
+                        TypeCode = "CARTON",
+                        PaperSize = "Label_100x150",
+                        UnitName = "MINIWMS SMART LOGISTICS",
+                        HeaderTitle = "CARTON SHIPPING LABEL",
+                        SubTitle = "WMS Master Shipping Unit (Standard TT-100x150)",
+                        BodyTemplateHtml = bodyCarton,
+                        NoteFooter = "FRAGILE - HANDLE WITH CARE - HÀNG DỄ VỠ XIN NHẸ TAY",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Tem dán ngoài thùng carton vận chuyển liên tỉnh và lưu kho pallet"
+                    },
+                    new TempPrint
+                    {
+                        Code = "TEM_BOX_100X75",
+                        Name = "Tem nhãn định danh hộp bao bì Inner Box (100x75 mm)",
+                        TypeCode = "BOX",
+                        PaperSize = "Label_100x75",
+                        UnitName = "MINIWMS SMART LOGISTICS",
+                        HeaderTitle = "INNER BOX PACKAGING LABEL",
+                        SubTitle = "Định danh hộp đóng gói & Quản lý vị trí lưu trữ",
+                        BodyTemplateHtml = bodyBox,
+                        NoteFooter = "CHECKED BY QC / WMS INVENTORY CONTROL",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Tem dán hộp đóng gói sản phẩm bên trong thùng master"
+                    },
+                    new TempPrint
+                    {
+                        Code = "PX_NHIET_K80",
+                        Name = "Phiếu xuất giao hàng in nhiệt POS K80 (80mm)",
+                        TypeCode = "K80",
+                        PaperSize = "Thermal_K80",
+                        UnitName = "HỆ THỐNG KHO VẬN MINIWMS",
+                        UnitAddress = "Kho Tổng Hà Nội - KCN Bắc Thăng Long",
+                        UnitPhone = "024-3795-8888",
+                        HeaderTitle = "PHIẾU XUẤT GIAO HÀNG",
+                        SubTitle = "Dành cho máy in bill / in nhiệt khổ 80mm",
+                        BodyTemplateHtml = bodyK80,
+                        NoteFooter = "Cảm ơn Quý khách! Vui lòng kiểm tra kỹ hàng trước khi nhận.",
+                        IsDefault = true,
+                        IsActive = true,
+                        Remark = "Mẫu in nhiệt cuộn 80mm cho các lệnh xuất kho giao nhanh bằng xe tải/xe máy"
+                    }
+                );
+                await db.SaveChangesAsync();
+            }
         }
     }
 
@@ -2910,7 +3290,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2965,6 +3345,12 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_ParentCode\" ON miniwms.\"Dealers\" (\"OrgId\", \"ParentCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_Level\" ON miniwms.\"Dealers\" (\"OrgId\", \"Level\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_ProvinceCode\" ON miniwms.\"Dealers\" (\"OrgId\", \"ProvinceCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"TempPrintTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"GroupCode\" text NOT NULL DEFAULT 'DOC', \"Description\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_TempPrintTypes_OrgId_Code\" ON miniwms.\"TempPrintTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"TempPrints\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"TypeCode\" text NOT NULL DEFAULT 'IN', \"PaperSize\" text NOT NULL DEFAULT 'A4_Portrait', \"UnitName\" text NOT NULL DEFAULT '', \"UnitAddress\" text NULL, \"UnitPhone\" text NULL, \"UnitEmail\" text NULL, \"HeaderTitle\" text NOT NULL DEFAULT '', \"SubTitle\" text NULL, \"BodyTemplateHtml\" text NOT NULL DEFAULT '', \"NoteFooter\" text NULL, \"IsDefault\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_Code\" ON miniwms.\"TempPrints\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_TypeCode\" ON miniwms.\"TempPrints\" (\"OrgId\", \"TypeCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_IsDefault\" ON miniwms.\"TempPrints\" (\"OrgId\", \"IsDefault\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeCode\" text NULL");
@@ -3636,7 +4022,42 @@ public static class Seeder
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_Code"" ON ""Dealers"" (""OrgId"", ""Code"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_ParentCode"" ON ""Dealers"" (""OrgId"", ""ParentCode"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_Level"" ON ""Dealers"" (""OrgId"", ""Level"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_ProvinceCode"" ON ""Dealers"" (""OrgId"", ""ProvinceCode"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_ProvinceCode"" ON ""Dealers"" (""OrgId"", ""ProvinceCode"");",
+            @"CREATE TABLE IF NOT EXISTS ""TempPrintTypes"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""GroupCode"" TEXT NOT NULL DEFAULT 'DOC',
+                ""Description"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TempPrintTypes_OrgId_Code"" ON ""TempPrintTypes"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""TempPrints"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""TypeCode"" TEXT NOT NULL DEFAULT 'IN',
+                ""PaperSize"" TEXT NOT NULL DEFAULT 'A4_Portrait',
+                ""UnitName"" TEXT NOT NULL DEFAULT '',
+                ""UnitAddress"" TEXT NULL,
+                ""UnitPhone"" TEXT NULL,
+                ""UnitEmail"" TEXT NULL,
+                ""HeaderTitle"" TEXT NOT NULL DEFAULT '',
+                ""SubTitle"" TEXT NULL,
+                ""BodyTemplateHtml"" TEXT NOT NULL DEFAULT '',
+                ""NoteFooter"" TEXT NULL,
+                ""IsDefault"" INTEGER NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_Code"" ON ""TempPrints"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_TypeCode"" ON ""TempPrints"" (""OrgId"", ""TypeCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_IsDefault"" ON ""TempPrints"" (""OrgId"", ""IsDefault"");"
         };
         foreach (var s in sql)
         {
