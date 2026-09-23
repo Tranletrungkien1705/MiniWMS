@@ -6,6 +6,7 @@
     var productModels = ViewBag.ProductModels as List<ProductModel> ?? [];
     var partUnits = ViewBag.PartUnits as List<PartUnit> ?? [];
     var materialTypes = ViewBag.MaterialTypes as List<PartMaterialType> ?? [];
+    var productGroups = ViewBag.ProductGroups as List<ProductGroup> ?? [];
 }
 <div class="row g-3">
     <div class="col-lg-4"><div class="card"><div class="card-body">
@@ -49,6 +50,15 @@
                     }
                 </select>
             </div>
+            <div class="mb-2">
+                <select name="productGrpCode" class="form-select">
+                    <option value="">-- Chọn nhóm hàng hóa (Mst_ProductGroup) --</option>
+                    @foreach (var g in productGroups)
+                    {
+                        <option value="@g.Code">@g.Code — @g.Name @(!string.IsNullOrEmpty(g.ParentCode) ? $"(Con của {g.ParentCode})" : "")</option>
+                    }
+                </select>
+            </div>
             <div class="row g-2 mb-2">
                 <div class="col-12">
                     <input list="partUnitList" name="uom" class="form-control" placeholder="Đơn vị tính (Mst_PartUnit)" value="cái" required />
@@ -68,11 +78,18 @@
         </form>
     </div></div></div>
     <div class="col-lg-8"><div class="card"><div class="card-body">
-        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên</th><th>Loại hàng</th><th>Thương hiệu</th><th>Model</th><th>Chất liệu</th><th>ĐVT</th><th class="text-end">Tồn Min</th><th class="text-end">Tồn Max</th></tr></thead><tbody>
+        <table class="table table-hover align-middle"><thead><tr><th>Mã</th><th>Tên</th><th>Nhóm hàng</th><th>Loại hàng</th><th>Thương hiệu</th><th>Model</th><th>Chất liệu</th><th>ĐVT</th><th class="text-end">Tồn Min</th><th class="text-end">Tồn Max</th></tr></thead><tbody>
         @foreach (var p in Model) {
             <tr>
                 <td class="fw-semibold">@p.Code</td>
                 <td>@p.Name</td>
+                <td>
+                    @if (!string.IsNullOrEmpty(p.ProductGrpCode)) {
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace">@p.ProductGrpCode</span>
+                    } else {
+                        <span class="text-muted small">—</span>
+                    }
+                </td>
                 <td>
                     @if (!string.IsNullOrEmpty(p.PartTypeCode)) {
                         <span class="badge bg-info-subtle text-info border border-info-subtle">@p.PartTypeCode</span>
@@ -108,7 +125,7 @@
                 <td class="text-end text-muted">@(p.MaxStock > 0 ? p.MaxStock.ToString() : "—")</td>
             </tr>
         }
-        @if (Model.Count == 0) { <tr><td colspan="9" class="text-center text-muted py-4">Chưa có mặt hàng.</td></tr> }
+        @if (Model.Count == 0) { <tr><td colspan="10" class="text-center text-muted py-4">Chưa có mặt hàng.</td></tr> }
         </tbody></table>
     </div></div></div>
 </div>

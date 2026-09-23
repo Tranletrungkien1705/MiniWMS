@@ -1,0 +1,508 @@
+@model ProductGroupReport
+@{
+    ViewData["Title"] = "Nhóm hàng hóa";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var parentCodeFilter = (string)(ViewBag.ParentCode ?? "");
+    var brandCodeFilter = (string)(ViewBag.BrandCode ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var rootGroups = ViewBag.RootGroups as List<ProductGroup> ?? [];
+    var brands = ViewBag.Brands as List<Brand> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-collection text-primary me-2"></i>Danh mục Nhóm hàng hóa / Phân nhóm sản phẩm kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_ProductGroup</code> & <code>Mst_ProductGroupSub</code> (Skycic) — Quản lý danh mục nhóm hàng hóa theo cây phân cấp cha-con (ProductGrpCode, ProductGrpName, ProductGrpDesc, ProductGrpCodeParent, BrandCode, FlagActive), liên kết thương hiệu và chuẩn hóa phân nhóm mặt hàng, theo dõi số lượng mặt hàng và tổng tồn kho thực tế theo từng nhóm hàng</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/ProductGroup/ExportCsv?q=@keyword&parentCode=@parentCodeFilter&brandCode=@brandCodeFilter&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <a href="/Brand" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-award me-1"></i> Thương hiệu
+        </a>
+        <a href="/Product" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-seam me-1"></i> Mặt hàng
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Nhóm hàng
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ NHÓM HÀNG</span>
+                    <i class="bi bi-collection text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalGroups</div>
+                <div class="small text-muted">Phân nhóm thiết lập trong hệ thống kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">NHÓM GỐC (CẤP 1)</span>
+                    <i class="bi bi-diagram-2 text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.RootGroupsCount</div>
+                <div class="small text-muted">Ngành hàng chính / Nhóm cha gốc</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">PHÂN NHÓM CON (CẤP 2)</span>
+                    <i class="bi bi-diagram-3 text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SubGroupsCount</div>
+                <div class="small text-muted">Tiểu nhóm chi tiết thuộc nhóm cha</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">MẶT HÀNG / TỒN THỰC TẾ</span>
+                    <i class="bi bi-boxes text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.TotalProductsAssigned <span class="fs-6 fw-normal text-muted">sp</span> / @Model.TotalStockQty.ToString("N0") <span class="fs-6 fw-normal text-muted">tồn</span></div>
+                <div class="small text-muted">Đã gắn phân nhóm và tồn kho thực tế</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã nhóm, tên nhóm, mô tả đặc tính..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="parentCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả nhóm hàng cha --</option>
+                    <option value="ROOT" selected="@(parentCodeFilter == "ROOT")">★ Chỉ hiển thị Nhóm gốc (Cấp 1)</option>
+                    @foreach (var rg in rootGroups)
+                    {
+                        <!option value="@rg.Code" @(string.Equals(parentCodeFilter, rg.Code, StringComparison.OrdinalIgnoreCase) ? "selected" : "")>Nhóm con của: @rg.Name (@rg.Code)</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="brandCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả thương hiệu --</option>
+                    @foreach (var b in brands)
+                    {
+                        <!option value="@b.Code" @(string.Equals(brandCodeFilter, b.Code, StringComparison.OrdinalIgnoreCase) ? "selected" : "")>@b.Name (@b.Code)</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="Tìm kiếm"><i class="bi bi-funnel me-1"></i>Lọc</button>
+                @if (!string.IsNullOrWhiteSpace(keyword) || !string.IsNullOrWhiteSpace(parentCodeFilter) || !string.IsNullOrWhiteSpace(brandCodeFilter) || activeOnly.HasValue)
+                {
+                    <a href="/ProductGroup" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc"><i class="bi bi-x"></i></a>
+                }
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu Nhóm hàng hóa -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-uppercase text-secondary">
+                <tr>
+                    <th class="ps-3" style="width: 45px">STT</th>
+                    <th style="width: 110px">Cấp bậc</th>
+                    <th style="width: 150px">Mã nhóm</th>
+                    <th style="min-width: 220px">Tên nhóm hàng</th>
+                    <th style="width: 180px">Nhóm hàng cha</th>
+                    <th style="width: 140px">Thương hiệu</th>
+                    <th>Mô tả đặc tính</th>
+                    <th class="text-center" style="width: 110px">Mặt hàng</th>
+                    <th class="text-end" style="width: 120px">Tổng tồn kho</th>
+                    <th class="text-center" style="width: 120px">Trạng thái</th>
+                    <th class="text-end pe-3" style="width: 140px">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="11" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-1"></i> Không có nhóm hàng hóa nào phù hợp điều kiện lọc.
+                        </td>
+                    </tr>
+                }
+                @{ int stt = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    <tr class="@(!r.IsActive ? "table-light opacity-75" : "")">
+                        <td class="ps-3 text-muted small">@(stt++)</td>
+                        <td>
+                            @if (r.Level == 1)
+                            {
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1"><i class="bi bi-diagram-2 me-1"></i>Cấp 1 (Gốc)</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1"><i class="bi bi-diagram-3 me-1"></i>Cấp 2 (Con)</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border font-monospace px-2 py-1">@r.Code</span>
+                        </td>
+                        <td>
+                            @if (r.Level == 2)
+                            {
+                                <div class="ms-3 d-flex align-items-center">
+                                    <i class="bi bi-arrow-return-right text-muted me-2"></i>
+                                    <span class="fw-semibold text-dark">@r.Name</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="fw-bold text-dark">@r.Name</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.ParentCode))
+                            {
+                                <span class="badge bg-light text-secondary border">
+                                    <i class="bi bi-folder2-open me-1"></i>@(r.ParentName ?? r.ParentCode)
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">— (Gốc)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.BrandCode))
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                    <i class="bi bi-award me-1"></i>@(r.BrandName ?? r.BrandCode)
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">—</span>
+                            }
+                        </td>
+                        <td class="small text-muted text-truncate" style="max-width: 250px" title="@r.Description">
+                            @(string.IsNullOrWhiteSpace(r.Description) ? "—" : r.Description)
+                        </td>
+                        <td class="text-center">
+                            @if (r.ProductCount > 0)
+                            {
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 rounded-pill" onclick="viewProducts(@r.Id)" title="Xem danh sách @r.ProductCount mặt hàng">
+                                    <i class="bi bi-box-seam me-1"></i>@r.ProductCount
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-muted border">0</span>
+                            }
+                        </td>
+                        <td class="text-end fw-semibold">
+                            @if (r.TotalStockQty > 0)
+                            {
+                                <span class="text-success">@r.TotalStockQty.ToString("N0")</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">0</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-check-circle me-1"></i>Áp dụng</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1"><i class="bi bi-pause-circle me-1"></i>Tạm dừng</span>
+                            }
+                        </td>
+                        <td class="text-end pe-3">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="editGroup(@r.Id)" title="Chỉnh sửa thông tin">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-info btn-sm" onclick="viewProducts(@r.Id)" title="Xem danh sách mặt hàng trực thuộc">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <form method="post" action="/ProductGroup/Toggle" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-@(r.IsActive ? "warning" : "success") btn-sm" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                        <i class="bi bi-@(r.IsActive ? "pause" : "play")"></i>
+                                    </button>
+                                </form>
+                                <form method="post" action="/ProductGroup/Delete" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa/ngừng áp dụng nhóm hàng [@r.Code] @r.Name?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Xóa nhóm hàng">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Nhóm hàng hóa -->
+<div class="modal fade" id="createGroupModal" tabindex="-1" aria-labelledby="createGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/ProductGroup/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="createGroupModalLabel"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm mới Nhóm hàng hóa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã nhóm hàng (ProductGrpCode)</label>
+                        <input type="text" name="code" class="form-control form-control-sm text-uppercase font-monospace" placeholder="Tự sinh nếu để trống (vd: GRP_THOI_TRANG, GRP_AO_SM)..." />
+                        <div class="form-text small">Viết hoa không dấu, duy nhất trên toàn hệ thống.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên nhóm hàng <span class="text-danger">*</span></label>
+                        <input type="text" name="name" required class="form-control form-control-sm" placeholder="vd: Áo sơ mi & Áo Polo, Quần Jeans nam nữ..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Nhóm hàng cha (ProductGrpCodeParent)</label>
+                        <select name="parentCode" class="form-select form-select-sm">
+                            <option value="">-- Là Nhóm gốc Cấp 1 (Không có nhóm cha) --</option>
+                            @foreach (var rg in rootGroups)
+                            {
+                                <option value="@rg.Code">@rg.Code — @rg.Name</option>
+                            }
+                        </select>
+                        <div class="form-text small">Chọn nhóm cha để tạo phân nhóm Cấp 2 / Sub-group theo cây danh mục.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Thương hiệu liên kết (Brand)</label>
+                        <select name="brandCode" class="form-select form-select-sm">
+                            <option value="">-- Không cố định thương hiệu (Đa thương hiệu) --</option>
+                            @foreach (var b in brands)
+                            {
+                                <option value="@b.Code">@b.Code — @b.Name (@b.Origin)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả đặc tính nhóm hàng</label>
+                        <textarea name="description" rows="2" class="form-control form-control-sm" placeholder="Quy chuẩn chất liệu, điều kiện bảo quản hoặc đặc điểm phân loại..."></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                        <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>Lưu nhóm hàng</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Nhóm hàng hóa -->
+<div class="modal fade" id="editGroupModal" tabindex="-1" aria-labelledby="editGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/ProductGroup/Update">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editGroupId" />
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="editGroupModalLabel"><i class="bi bi-pencil-square text-primary me-2"></i>Chỉnh sửa Nhóm hàng hóa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mã nhóm hàng</label>
+                        <input type="text" id="editGroupCode" readonly class="form-control form-control-sm bg-light font-monospace" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Tên nhóm hàng <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editGroupName" required class="form-control form-control-sm" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Nhóm hàng cha</label>
+                        <select name="parentCode" id="editGroupParentCode" class="form-select form-select-sm">
+                            <option value="">-- Là Nhóm gốc Cấp 1 (Không có nhóm cha) --</option>
+                            @foreach (var rg in rootGroups)
+                            {
+                                <option value="@rg.Code">@rg.Code — @rg.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Thương hiệu liên kết</label>
+                        <select name="brandCode" id="editGroupBrandCode" class="form-select form-select-sm">
+                            <option value="">-- Không cố định thương hiệu (Đa thương hiệu) --</option>
+                            @foreach (var b in brands)
+                            {
+                                <option value="@b.Code">@b.Code — @b.Name (@b.Origin)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Mô tả đặc tính</label>
+                        <textarea name="description" id="editGroupDescription" rows="2" class="form-control form-control-sm"></textarea>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editGroupIsActive" />
+                        <label class="form-check-label small fw-semibold" for="editGroupIsActive">Đang áp dụng</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem danh sách mặt hàng thuộc nhóm hàng -->
+<div class="modal fade" id="viewProductsModal" tabindex="-1" aria-labelledby="viewProductsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="viewProductsModalLabel"><i class="bi bi-boxes text-primary me-2"></i>Danh sách mặt hàng thuộc nhóm: <span id="vpGroupName" class="text-primary"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small">Mã nhóm:</span> <strong id="vpGroupCode" class="font-monospace text-dark"></strong>
+                        <span class="mx-2 text-muted">|</span>
+                        <span class="text-muted small">Tổng số mặt hàng:</span> <strong id="vpTotalProducts" class="text-primary"></strong>
+                        <span class="mx-2 text-muted">|</span>
+                        <span class="text-muted small">Tổng tồn kho thực tế:</span> <strong id="vpTotalStock" class="text-success"></strong>
+                    </div>
+                    <a href="/Product" class="btn btn-xs btn-outline-secondary"><i class="bi bi-box-seam me-1"></i>Quản lý Mặt hàng</a>
+                </div>
+                <div class="table-responsive" style="max-height: 400px">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light small text-secondary">
+                            <tr>
+                                <th class="ps-3" style="width: 45px">STT</th>
+                                <th style="width: 140px">Mã hàng</th>
+                                <th>Tên hàng hóa</th>
+                                <th style="width: 90px">ĐVT</th>
+                                <th class="text-end pe-3" style="width: 140px">Đơn giá vốn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vpProductsTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">Đang tải dữ liệu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    async function editGroup(id) {
+        try {
+            const res = await fetch('/ProductGroup/Detail?id=' + id);
+            if (!res.ok) throw new Error('Không tải được thông tin nhóm hàng');
+            const data = await res.json();
+            
+            document.getElementById('editGroupId').value = data.id;
+            document.getElementById('editGroupCode').value = data.code;
+            document.getElementById('editGroupName').value = data.name;
+            document.getElementById('editGroupParentCode').value = data.parentCode || '';
+            document.getElementById('editGroupBrandCode').value = data.brandCode || '';
+            document.getElementById('editGroupDescription').value = data.description || '';
+            document.getElementById('editGroupIsActive').checked = data.isActive;
+
+            const modal = new bootstrap.Modal(document.getElementById('editGroupModal'));
+            modal.show();
+        } catch (err) {
+            alert(err.message || 'Có lỗi xảy ra');
+        }
+    }
+
+    async function viewProducts(id) {
+        const tbody = document.getElementById('vpProductsTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu mặt hàng...</td></tr>';
+
+        const modal = new bootstrap.Modal(document.getElementById('viewProductsModal'));
+        modal.show();
+
+        try {
+            const res = await fetch('/ProductGroup/Products?id=' + id);
+            if (!res.ok) throw new Error('Không tải được danh sách mặt hàng');
+            const data = await res.json();
+
+            document.getElementById('vpGroupName').textContent = data.groupName;
+            document.getElementById('vpGroupCode').textContent = data.groupCode;
+            document.getElementById('vpTotalProducts').textContent = data.totalProducts;
+            document.getElementById('vpTotalStock').textContent = Number(data.totalStockQty).toLocaleString('vi-VN');
+
+            if (!data.products || data.products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-inbox fs-4 d-block mb-1"></i>Chưa có mặt hàng nào được gán vào nhóm này.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            data.products.forEach((p, idx) => {
+                const costPrice = Number(p.costPrice || 0).toLocaleString('vi-VN') + ' đ';
+                html += `<tr>
+                    <td class="ps-3 text-muted small">${idx + 1}</td>
+                    <td><span class="badge bg-light text-dark border font-monospace">${p.code}</span></td>
+                    <td class="fw-semibold">${p.name}</td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${p.uom}</span></td>
+                    <td class="text-end pe-3 font-monospace">${costPrice}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3"><i class="bi bi-exclamation-triangle me-1"></i>${err.message || 'Lỗi khi tải dữ liệu'}</td></tr>`;
+        }
+    }
+</script>
+}

@@ -5,7 +5,8 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0, int TotalInventoryLevelTypes = 0, int TotalUserMapInventories = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0, int TotalInventoryLevelTypes = 0, int TotalUserMapInventories = 0, int TotalProductGroups = 0);
+
 
 public interface IWmsService
 {
@@ -215,6 +216,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleUserMapInventoryStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteUserMapInventoryAsync(int id);
     Task<(bool ok, string msg, int count)> BatchMapUsersToWarehouseAsync(int warehouseId, List<BatchMapUserItemDto> users, string assignedBy);
+    Task<ProductGroupReport> ProductGroupsReportAsync(string? q = null, string? parentCode = null, string? brandCode = null, bool? activeOnly = null);
+    Task<List<ProductGroup>> ProductGroupsAsync(string? q = null, bool? activeOnly = null);
+    Task<ProductGroup?> GetProductGroupAsync(int id);
+    Task<ProductGroup?> GetProductGroupByCodeAsync(string code);
+    Task<ProductGroupDetailDto?> GetProductGroupDetailAsync(int id);
+    Task<int> CreateProductGroupAsync(ProductGroup item);
+    Task<(bool ok, string msg)> UpdateProductGroupAsync(int id, ProductGroup item);
+    Task<(bool ok, string msg)> ToggleProductGroupStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteProductGroupAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -1470,6 +1480,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalInventoryTypes = await db.InventoryTypes.CountAsync(t => t.IsActive);
         var totalInventoryLevelTypes = await db.InventoryLevelTypes.CountAsync(t => t.IsActive);
         var totalUserMapInventories = await db.UserMapInventories.CountAsync(m => m.IsActive);
+        var totalProductGroups = await db.ProductGroups.CountAsync(g => g.IsActive);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1495,7 +1506,8 @@ public class WmsService(AppDbContext db) : IWmsService
             totalPartTypes,
             totalInventoryTypes,
             totalInventoryLevelTypes,
-            totalUserMapInventories);
+            totalUserMapInventories,
+            totalProductGroups);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -7198,6 +7210,243 @@ public class WmsService(AppDbContext db) : IWmsService
 
         await db.SaveChangesAsync();
         return (true, $"Đã phân công thành công {addedCount} nhân sự quản lý cho kho '{wh.Name}'.", addedCount);
+    }
+
+    /// <summary>Báo cáo danh mục Nhóm hàng hóa / Phân nhóm sản phẩm kho kèm 4 thẻ KPI (port từ Mst_ProductGroup & Mst_ProductGroupSub Skycic).</summary>
+    public async Task<ProductGroupReport> ProductGroupsReportAsync(string? q = null, string? parentCode = null, string? brandCode = null, bool? activeOnly = null)
+    {
+        var query = db.ProductGroups.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode.Equals("ROOT", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(g => string.IsNullOrEmpty(g.ParentCode));
+            else
+                query = query.Where(g => g.ParentCode != null && g.ParentCode.ToLower() == parentCode.Trim().ToLower());
+        }
+
+        if (!string.IsNullOrWhiteSpace(brandCode))
+            query = query.Where(g => g.BrandCode != null && g.BrandCode.ToLower() == brandCode.Trim().ToLower());
+
+        if (activeOnly.HasValue)
+            query = query.Where(g => g.IsActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(g => g.Code.ToLower().Contains(kw) ||
+                                     g.Name.ToLower().Contains(kw) ||
+                                     (g.Description != null && g.Description.ToLower().Contains(kw)));
+        }
+
+        var allGroups = await db.ProductGroups.ToListAsync();
+        var groups = await query.ToListAsync();
+        var products = await db.Products.ToListAsync();
+        var brands = await db.Brands.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var groupDict = allGroups.ToDictionary(g => g.Code.ToUpperInvariant(), g => g.Name);
+        var brandDict = brands.ToDictionary(b => b.Code.ToUpperInvariant(), b => b.Name);
+
+        var rows = groups.Select(g =>
+        {
+            var codeUpper = g.Code.ToUpperInvariant();
+            var parentUpper = g.ParentCode?.ToUpperInvariant();
+            var brandUpper = g.BrandCode?.ToUpperInvariant();
+
+            int level = string.IsNullOrWhiteSpace(g.ParentCode) ? 1 : 2;
+            string? parentName = (parentUpper != null && groupDict.TryGetValue(parentUpper, out var pName)) ? pName : null;
+            string? brandName = (brandUpper != null && brandDict.TryGetValue(brandUpper, out var bName)) ? bName : null;
+
+            var assignedProducts = products.Where(p => !string.IsNullOrEmpty(p.ProductGrpCode) && p.ProductGrpCode.Equals(g.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+            int productCount = assignedProducts.Count;
+
+            var assignedProductIds = assignedProducts.Select(p => p.Id).ToHashSet();
+            int totalStockQty = balances.Where(bal => assignedProductIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+            return new ProductGroupRow(
+                g.Id,
+                g.Code,
+                g.Name,
+                g.Description,
+                g.ParentCode,
+                parentName,
+                g.BrandCode,
+                brandName,
+                g.IsActive,
+                g.CreatedAt,
+                level,
+                productCount,
+                totalStockQty
+            );
+        }).OrderBy(r => string.IsNullOrWhiteSpace(r.ParentCode) ? r.Code : r.ParentCode)
+          .ThenBy(r => r.Level)
+          .ThenBy(r => r.Code)
+          .ToList();
+
+        int totalGroups = allGroups.Count;
+        int rootGroupsCount = allGroups.Count(g => string.IsNullOrWhiteSpace(g.ParentCode));
+        int subGroupsCount = totalGroups - rootGroupsCount;
+
+        var allAssignedProducts = products.Where(p => !string.IsNullOrEmpty(p.ProductGrpCode)).ToList();
+        int totalProductsAssigned = allAssignedProducts.Count;
+        var allAssignedProductIds = allAssignedProducts.Select(p => p.Id).ToHashSet();
+        int totalStockAssigned = balances.Where(bal => allAssignedProductIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new ProductGroupReport(
+            q,
+            parentCode,
+            brandCode,
+            activeOnly,
+            totalGroups,
+            rootGroupsCount,
+            subGroupsCount,
+            totalProductsAssigned,
+            totalStockAssigned,
+            rows
+        );
+    }
+
+    public Task<List<ProductGroup>> ProductGroupsAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.ProductGroups.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(g => g.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(g => g.Code.ToLower().Contains(kw) || g.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(g => string.IsNullOrWhiteSpace(g.ParentCode) ? g.Code : g.ParentCode)
+                    .ThenBy(g => g.Code)
+                    .ToListAsync();
+    }
+
+    public Task<ProductGroup?> GetProductGroupAsync(int id) =>
+        db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
+
+    public Task<ProductGroup?> GetProductGroupByCodeAsync(string code) =>
+        db.ProductGroups.FirstOrDefaultAsync(g => g.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<ProductGroupDetailDto?> GetProductGroupDetailAsync(int id)
+    {
+        var item = await db.ProductGroups.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.ProductGroups.FirstOrDefaultAsync(g => g.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subGroups = await db.ProductGroups
+            .Where(g => g.ParentCode != null && g.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(g => g.Code)
+            .ToListAsync();
+
+        var products = await db.Products
+            .Where(p => p.ProductGrpCode != null && p.ProductGrpCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(p => p.Code)
+            .ToListAsync();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(bal => pIds.Contains(bal.ProductId)).Sum(bal => bal.Qty);
+
+        return new ProductGroupDetailDto(item, parent, subGroups, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateProductGroupAsync(ProductGroup item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên nhóm hàng không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"GRP_{await db.ProductGroups.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Nhóm hàng cha không thể là chính nhóm hàng này.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.BrandCode))
+        {
+            item.BrandCode = item.BrandCode.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.ProductGroups.AnyAsync(g => g.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã nhóm hàng '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.ProductGroups.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateProductGroupAsync(int id, ProductGroup item)
+    {
+        var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên nhóm hàng không được để trống.");
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            var pCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+                return (false, "Nhóm hàng cha không thể là chính nhóm hàng này.");
+            existing.ParentCode = pCode;
+        }
+        else
+        {
+            existing.ParentCode = null;
+        }
+
+        existing.Name = item.Name.Trim();
+        existing.Description = item.Description?.Trim();
+        existing.BrandCode = string.IsNullOrWhiteSpace(item.BrandCode) ? null : item.BrandCode.Trim().ToUpperInvariant();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin nhóm hàng '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleProductGroupStatusAsync(int id)
+    {
+        var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng nhóm hàng '{existing.Code}'." : $"Đã chuyển nhóm hàng '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteProductGroupAsync(int id)
+    {
+        var existing = await db.ProductGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (existing == null) return (false, "Không tìm thấy nhóm hàng.");
+
+        bool hasProducts = await db.Products.AnyAsync(p => p.ProductGrpCode != null && p.ProductGrpCode.ToUpper() == existing.Code.ToUpper());
+        bool hasSubGroups = await db.ProductGroups.AnyAsync(g => g.ParentCode != null && g.ParentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasProducts || hasSubGroups)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            string reason = hasProducts && hasSubGroups ? "đã có mặt hàng trực thuộc và nhóm hàng con" : hasProducts ? "đã có mặt hàng trực thuộc" : "đã có nhóm hàng con trực thuộc";
+            return (true, $"Nhóm hàng '{existing.Code}' {reason} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.ProductGroups.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa nhóm hàng '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

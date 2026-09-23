@@ -47,11 +47,19 @@ public class AppDbContext : DbContext
     public DbSet<InventoryInType> InventoryInTypes => Set<InventoryInType>();
     public DbSet<InventoryOutType> InventoryOutTypes => Set<InventoryOutType>();
     public DbSet<UserMapInventory> UserMapInventories => Set<UserMapInventory>();
+    public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<ProductGroup>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
+            e.HasIndex(x => new { x.OrgId, x.BrandCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
         b.Entity<UserMapInventory>(e =>
         {
             e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.UserCode }).IsUnique();

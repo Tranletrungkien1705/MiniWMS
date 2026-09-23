@@ -38,6 +38,7 @@ public class Product : IOrgOwned
     public string? BrandCode { get; set; }    // Thương hiệu / Nhãn hiệu hàng hóa (port từ Mst_Brand: MAY10, VIETTIEN, ANPHUOC, LEVI...)
     public string? ModelCode { get; set; }    // Dòng sản phẩm / Model hàng hóa (port từ Mst_Model / OS_PrdCenter_Mst_Model: MD-M10-SLIM, MD-LV-501...)
     public string? PMType { get; set; }       // Nhóm chất liệu / Loại vật liệu hàng hóa (port từ Mst_PartMaterialType Skycic: COTTON, KAKI, LEATHER...)
+    public string? ProductGrpCode { get; set; } // Phân nhóm hàng hóa / Nhóm sản phẩm (port từ Mst_ProductGroup Skycic: GRP_THOI_TRANG, GRP_AO_SM, GRP_QUAN_JEAN...)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
@@ -2174,6 +2175,62 @@ public record BatchMapUserItemDto(
     string? Phone,
     string? Remark
 );
+
+/// <summary>Danh mục Nhóm hàng hóa / Phân nhóm sản phẩm kho (port từ Mst_ProductGroup & Mst_ProductGroupSub Skycic: ProductGrpCode, ProductGrpName, ProductGrpDesc, ProductGrpCodeParent, BrandCode, FlagActive).</summary>
+public class ProductGroup : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã nhóm hàng (ProductGrpCode, vd: GRP_THOI_TRANG, GRP_AO_SM, GRP_QUAN_JEAN...)
+    public string Name { get; set; } = "";             // Tên nhóm hàng (ProductGrpName, vd: Áo sơ mi & Polo, Quần Jeans & Kaki...)
+    public string? Description { get; set; }          // Mô tả đặc tính nhóm hàng (ProductGrpDesc)
+    public string? ParentCode { get; set; }           // Mã nhóm cha (ProductGrpCodeParent) - phân cấp cây danh mục Cấp 1 / Cấp 2
+    public string? BrandCode { get; set; }            // Thương hiệu liên kết (BrandCode, vd: MAY10, LEVI, NEM...)
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị nhóm hàng hóa kèm thông tin nhóm cha, thương hiệu, số lượng mặt hàng và tổng tồn kho thực tế.</summary>
+public record ProductGroupRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Description,
+    string? ParentCode,
+    string? ParentName,
+    string? BrandCode,
+    string? BrandName,
+    bool IsActive,
+    DateTime CreatedAt,
+    int Level, // 1 = Nhóm gốc (Root), 2 = Phân nhóm con (Sub-group)
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách nhóm hàng hóa tổng hợp kèm 4 thẻ KPI.</summary>
+public record ProductGroupReport(
+    string? Keyword,
+    string? ParentFilter,
+    string? BrandFilter,
+    bool? ActiveFilter,
+    int TotalGroups,
+    int RootGroupsCount,
+    int SubGroupsCount,
+    int TotalProductsAssigned,
+    int TotalStockQty,
+    List<ProductGroupRow> Rows
+);
+
+/// <summary>Chi tiết Nhóm hàng kèm danh sách các phân nhóm con và danh sách mặt hàng trực thuộc.</summary>
+public record ProductGroupDetailDto(
+    ProductGroup Group,
+    ProductGroup? ParentGroup,
+    List<ProductGroup> SubGroups,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
 
 
 

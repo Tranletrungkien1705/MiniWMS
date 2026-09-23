@@ -2362,6 +2362,98 @@ app.MapPost("/api/user-map-inventories/batch-map", async (BatchMapUserDto dto, I
     return ok ? Results.Ok(new { success = true, message = msg, count }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Nhóm hàng hóa / Phân nhóm sản phẩm kho (port từ Mst_ProductGroup & Mst_ProductGroupSub Skycic)
+app.MapGet("/api/product-groups", async (string? q, string? parentCode, string? brandCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.ProductGroupsReportAsync(q, parentCode, brandCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/product-groups/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetProductGroupAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy nhóm hàng." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/product-groups/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetProductGroupByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy nhóm hàng." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/product-groups/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetProductGroupDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy nhóm hàng." });
+    return Results.Ok(detail);
+});
+
+app.MapGet("/api/product-groups/{id:int}/products", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetProductGroupDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy nhóm hàng." });
+    return Results.Ok(new
+    {
+        groupCode = detail.Group.Code,
+        groupName = detail.Group.Name,
+        totalProducts = detail.TotalProducts,
+        totalStockQty = detail.TotalStockQty,
+        products = detail.Products.Select(p => new { p.Id, p.Code, p.Name, p.Uom, p.CostPrice })
+    });
+});
+
+app.MapPost("/api/product-groups", async (CreateProductGroupDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhóm hàng." });
+    try
+    {
+        var item = new ProductGroup
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Description = dto.Description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+            BrandCode = string.IsNullOrWhiteSpace(dto.BrandCode) ? null : dto.BrandCode.Trim().ToUpperInvariant(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateProductGroupAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/product-groups/{id:int}", async (int id, UpdateProductGroupDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên nhóm hàng." });
+    var item = new ProductGroup
+    {
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        BrandCode = string.IsNullOrWhiteSpace(dto.BrandCode) ? null : dto.BrandCode.Trim().ToUpperInvariant(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateProductGroupAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/product-groups/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleProductGroupStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/product-groups/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteProductGroupAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2427,3 +2519,5 @@ record UpdateInventoryOutTypeDto(string Name, bool? FlagStatistic, string? Remar
 record CreateUserMapInventoryDto(int WarehouseId, string UserCode, string UserName, string? UserRole, string? Email, string? Phone, string? Remark, bool? IsActive, string? AssignedBy);
 record UpdateUserMapInventoryDto(string UserName, string? UserRole, string? Email, string? Phone, string? Remark, bool IsActive);
 record BatchMapUserDto(int WarehouseId, List<BatchMapUserItemDto> Users, string? AssignedBy);
+record CreateProductGroupDto(string? Code, string Name, string? Description, string? ParentCode, string? BrandCode, bool? IsActive);
+record UpdateProductGroupDto(string Name, string? Description, string? ParentCode, string? BrandCode, bool? IsActive);

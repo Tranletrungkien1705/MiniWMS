@@ -47,11 +47,12 @@ public class ProductController(IWmsService svc) : Controller
         ViewBag.ProductModels = await svc.ProductModelsAsync(activeOnly: true);
         ViewBag.PartUnits = await svc.PartUnitsAsync(activeOnly: true);
         ViewBag.MaterialTypes = await svc.PartMaterialTypesAsync(activeOnly: true);
+        ViewBag.ProductGroups = await svc.ProductGroupsAsync(activeOnly: true);
         return View(await svc.ProductsAsync());
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string? brandCode, string? modelCode, string? pmType, string uom, int minStock, int maxStock = 0)
+    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string? brandCode, string? modelCode, string? pmType, string? productGrpCode, string uom, int minStock, int maxStock = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên hàng."; return RedirectToAction(nameof(Index)); }
         await svc.CreateProductAsync(new Product
@@ -62,6 +63,7 @@ public class ProductController(IWmsService svc) : Controller
             BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
             ModelCode = string.IsNullOrWhiteSpace(modelCode) ? null : modelCode.Trim().ToUpperInvariant(),
             PMType = string.IsNullOrWhiteSpace(pmType) ? null : pmType.Trim().ToUpperInvariant(),
+            ProductGrpCode = string.IsNullOrWhiteSpace(productGrpCode) ? null : productGrpCode.Trim().ToUpperInvariant(),
             Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom,
             MinStock = minStock,
             MaxStock = maxStock
@@ -3972,6 +3974,167 @@ public class UserMapInventoryController(IWmsService svc) : Controller
         return File(bytes, "text/csv; charset=utf-8", $"PhanQuyenKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
+
+public class ProductGroupController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? parentCode, string? brandCode, bool? activeOnly, string? q)
+    {
+        var allGroups = await svc.ProductGroupsAsync();
+        ViewBag.RootGroups = allGroups.Where(g => string.IsNullOrWhiteSpace(g.ParentCode)).ToList();
+        ViewBag.Brands = await svc.BrandsAsync(activeOnly: true);
+        ViewBag.ParentCode = parentCode ?? "";
+        ViewBag.BrandCode = brandCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.ProductGroupsReportAsync(q, parentCode, brandCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetProductGroupDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy nhóm hàng." });
+
+        return Json(new
+        {
+            id = detail.Group.Id,
+            code = detail.Group.Code,
+            name = detail.Group.Name,
+            description = detail.Group.Description,
+            parentCode = detail.Group.ParentCode,
+            parentName = detail.ParentGroup?.Name,
+            brandCode = detail.Group.BrandCode,
+            isActive = detail.Group.IsActive,
+            createdAt = detail.Group.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            subGroups = detail.SubGroups.Select(s => new { s.Id, s.Code, s.Name, s.IsActive }),
+            products = detail.Products.Select(p => new { p.Id, p.Code, p.Name, p.Uom, p.CostPrice })
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Products(int id)
+    {
+        var detail = await svc.GetProductGroupDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy nhóm hàng." });
+
+        return Json(new
+        {
+            groupCode = detail.Group.Code,
+            groupName = detail.Group.Name,
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new { p.Id, p.Code, p.Name, p.Uom, p.CostPrice })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? description, string? parentCode, string? brandCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nhóm hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new ProductGroup
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateProductGroupAsync(item);
+            TempData["Success"] = $"Đã tạo mới nhóm hàng '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? description, string? parentCode, string? brandCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên nhóm hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new ProductGroup
+        {
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            BrandCode = string.IsNullOrWhiteSpace(brandCode) ? null : brandCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateProductGroupAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleProductGroupStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteProductGroupAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, string? brandCode, bool? activeOnly, string? q)
+    {
+        var report = await svc.ProductGroupsReportAsync(q, parentCode, brandCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC PHÂN NHÓM HÀNG HÓA KHO (MST_PRODUCTGROUP & MST_PRODUCTGROUPSUB)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc nhóm cha:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc thương hiệu:;{(string.IsNullOrWhiteSpace(brandCode) ? "Tất cả" : brandCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã nhóm;Tên nhóm hàng;Cấp bậc;Nhóm cha;Thương hiệu;Mô tả đặc tính;Số mặt hàng;Tổng tồn kho thực tế;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var levelStr = r.Level == 1 ? "Cấp 1 (Gốc)" : "Cấp 2 (Con)";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{levelStr}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.BrandName ?? r.BrandCode ?? ""}\";\"{r.Description?.Replace("\"", "\"\"")}\";{r.ProductCount};{r.TotalStockQty};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ NHÓM HÀNG:;{report.TotalGroups};;;;;;;");
+        sb.AppendLine($";;NHÓM HÀNG GỐC (ROOT):;{report.RootGroupsCount};;;;;;;");
+        sb.AppendLine($";;PHÂN NHÓM CON (SUB):;{report.SubGroupsCount};;;;;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG PHÂN LOẠI:;{report.TotalProductsAssigned};;;;;;;");
+        sb.AppendLine($";;TỔNG TỒN KHO THEO NHÓM:;{report.TotalStockQty};;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"NhomHangHoa_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 
 
 

@@ -288,13 +288,29 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.ProductGroups.AnyAsync())
+        {
+            db.ProductGroups.AddRange(
+                // Nhóm gốc Cấp 1 (Root Categories)
+                new ProductGroup { Code = "GRP_THOI_TRANG", Name = "Thời trang may mặc", Description = "Trang phục quần áo may mặc nam nữ, sơ mi, âu phục và váy đầm", ParentCode = null, BrandCode = null, IsActive = true },
+                new ProductGroup { Code = "GRP_PHU_KIEN", Name = "Phụ kiện thời trang & Đồ da", Description = "Phụ kiện thời trang như thắt lưng da, ví da, cà vạt và phụ kiện hoàn thiện", ParentCode = null, BrandCode = null, IsActive = true },
+                new ProductGroup { Code = "GRP_NVL_DET", Name = "Nguyên phụ liệu may mặc", Description = "Vải dệt thoi, da tấm, sợi dệt tự nhiên và phụ liệu may", ParentCode = null, BrandCode = null, IsActive = true },
+                // Phân nhóm con Cấp 2 (Sub-groups)
+                new ProductGroup { Code = "GRP_AO_SM", Name = "Áo sơ mi & Áo Polo công sở", Description = "Các dòng sơ mi slimfit, classic và áo polo chất liệu cotton", ParentCode = "GRP_THOI_TRANG", BrandCode = "MAY10", IsActive = true },
+                new ProductGroup { Code = "GRP_QUAN_JEAN", Name = "Quần Jeans & Kaki denim", Description = "Dòng quần jeans denim bền chắc và quần kaki dệt thoi", ParentCode = "GRP_THOI_TRANG", BrandCode = "LEVI", IsActive = true },
+                new ProductGroup { Code = "GRP_VAY_DAM", Name = "Váy đầm dạ hội & Công sở", Description = "Thời trang thiết kế váy đầm nữ lụa tơ tằm thanh lịch", ParentCode = "GRP_THOI_TRANG", BrandCode = "NEM", IsActive = true },
+                new ProductGroup { Code = "GRP_THAT_LUNG", Name = "Thắt lưng da & Ví da thủ công", Description = "Phụ kiện thắt lưng da bò cao cấp và ví da mill grain", ParentCode = "GRP_PHU_KIEN", BrandCode = "ANPHUOC", IsActive = true },
+                new ProductGroup { Code = "GRP_VAI_TAM", Name = "Vải dệt cuộn & Vải tấm", Description = "Vải cotton, kaki, denim dạng cây cuộn phục vụ cắt may", ParentCode = "GRP_NVL_DET", BrandCode = null, IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
-                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", ModelCode = "MD-M10-SLIM", PMType = "COTTON", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
-                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", ModelCode = "MD-LV-501", PMType = "DENIM", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
-                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", ModelCode = "MD-AP-LEATHER", PMType = "LEATHER", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
-                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", ModelCode = "MD-NEM-LUX", PMType = "SILK", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
+                new Product { Code = "AO-001", Name = "Áo sơ mi trắng", PartTypeCode = "TP", BrandCode = "MAY10", ModelCode = "MD-M10-SLIM", PMType = "COTTON", ProductGrpCode = "GRP_AO_SM", Uom = "cái", MinStock = 20, MaxStock = 200, CostPrice = 150000m },
+                new Product { Code = "QUAN-001", Name = "Quần jeans slim", PartTypeCode = "TP", BrandCode = "LEVI", ModelCode = "MD-LV-501", PMType = "DENIM", ProductGrpCode = "GRP_QUAN_JEAN", Uom = "cái", MinStock = 15, MaxStock = 150, CostPrice = 280000m },
+                new Product { Code = "PK-001", Name = "Thắt lưng da", PartTypeCode = "PTLK", BrandCode = "ANPHUOC", ModelCode = "MD-AP-LEATHER", PMType = "LEATHER", ProductGrpCode = "GRP_THAT_LUNG", Uom = "cái", MinStock = 10, MaxStock = 80, CostPrice = 120000m },
+                new Product { Code = "VAY-001", Name = "Váy đầm công sở", PartTypeCode = "TP", BrandCode = "NEM", ModelCode = "MD-NEM-LUX", PMType = "SILK", ProductGrpCode = "GRP_VAY_DAM", Uom = "cái", MinStock = 12, MaxStock = 100, CostPrice = 320000m });
             await db.SaveChangesAsync();
         }
         else
@@ -360,6 +376,18 @@ public static class Seeder
                         "QUAN-001" => "MD-LV-501",
                         "PK-001" => "MD-AP-LEATHER",
                         "VAY-001" => "MD-NEM-LUX",
+                        _ => null
+                    };
+                    hasChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(p.ProductGrpCode))
+                {
+                    p.ProductGrpCode = p.Code switch
+                    {
+                        "AO-001" => "GRP_AO_SM",
+                        "QUAN-001" => "GRP_QUAN_JEAN",
+                        "PK-001" => "GRP_THAT_LUNG",
+                        "VAY-001" => "GRP_VAY_DAM",
                         _ => null
                     };
                     hasChanged = true;
@@ -2345,6 +2373,10 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"UserMapInventories\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"WarehouseId\" integer NOT NULL, \"UserCode\" text NOT NULL, \"UserName\" text NOT NULL, \"UserRole\" text NOT NULL DEFAULT 'Thủ kho chính', \"Email\" text NULL, \"Phone\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"AssignedBy\" text NOT NULL DEFAULT 'admin', \"AssignedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_UserMapInventories_OrgId_WarehouseId_UserCode\" ON miniwms.\"UserMapInventories\" (\"OrgId\", \"WarehouseId\", \"UserCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_UserMapInventories_OrgId_UserCode\" ON miniwms.\"UserMapInventories\" (\"OrgId\", \"UserCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"ProductGroups\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"ParentCode\" text NULL, \"BrandCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_Code\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_ParentCode\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"ParentCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_BrandCode\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"BrandCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
@@ -2356,6 +2388,7 @@ public static class Seeder
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"BrandCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PMType\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"ModelCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"ProductGrpCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"SupplierName\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Docs\" ADD COLUMN IF NOT EXISTS \"CustomerCode\" text NULL");
@@ -2893,7 +2926,22 @@ public static class Seeder
                 CONSTRAINT ""FK_UserMapInventories_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE CASCADE
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserMapInventories_OrgId_WarehouseId_UserCode"" ON ""UserMapInventories"" (""OrgId"", ""WarehouseId"", ""UserCode"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_UserMapInventories_OrgId_UserCode"" ON ""UserMapInventories"" (""OrgId"", ""UserCode"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_UserMapInventories_OrgId_UserCode"" ON ""UserMapInventories"" (""OrgId"", ""UserCode"");",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""ProductGrpCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""ProductGroups"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""Description"" TEXT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""BrandCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_Code"" ON ""ProductGroups"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_ParentCode"" ON ""ProductGroups"" (""OrgId"", ""ParentCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_BrandCode"" ON ""ProductGroups"" (""OrgId"", ""BrandCode"");"
         };
         foreach (var s in sql)
         {
