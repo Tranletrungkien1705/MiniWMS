@@ -315,6 +315,14 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item);
     Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteProductSpecAsync(int id);
+    Task<SpecPriceReport> SpecPricesReportAsync(string? q = null, string? specCode = null, string? unitCode = null, string? currencyCode = null, bool? activeOnly = null);
+    Task<List<SpecPrice>> SpecPricesAsync(bool? activeOnly = null);
+    Task<SpecPrice?> GetSpecPriceAsync(int id);
+    Task<SpecPriceDetailDto?> GetSpecPriceDetailAsync(int id);
+    Task<int> CreateSpecPriceAsync(SpecPrice item);
+    Task<(bool ok, string msg)> UpdateSpecPriceAsync(int id, SpecPrice item);
+    Task<(bool ok, string msg)> ToggleSpecPriceStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteSpecPriceAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -10669,6 +10677,243 @@ public class WmsService(AppDbContext db) : IWmsService
         db.ProductSpecs.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa quy cách '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    // ==================== BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+    public async Task<SpecPriceReport> SpecPricesReportAsync(string? q = null, string? specCode = null, string? unitCode = null, string? currencyCode = null, bool? activeOnly = null)
+    {
+        var query = db.SpecPrices.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(specCode))
+        {
+            query = query.Where(s => s.SpecCode == specCode.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(unitCode))
+        {
+            query = query.Where(s => s.UnitCode == unitCode.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(currencyCode))
+        {
+            query = query.Where(s => s.CurrencyCode == currencyCode.Trim().ToUpperInvariant());
+        }
+        if (activeOnly == true)
+        {
+            query = query.Where(s => s.IsActive);
+        }
+        else if (activeOnly == false)
+        {
+            query = query.Where(s => !s.IsActive);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(s => s.SpecCode.ToLower().Contains(kw) ||
+                                     s.UnitCode.ToLower().Contains(kw) ||
+                                     s.CurrencyCode.ToLower().Contains(kw) ||
+                                     (s.VATRateCode != null && s.VATRateCode.ToLower().Contains(kw)) ||
+                                     (s.Remark != null && s.Remark.ToLower().Contains(kw)));
+        }
+
+        var items = await query.OrderBy(s => s.SpecCode).ThenBy(s => s.UnitCode).ToListAsync();
+        var allPrices = await db.SpecPrices.ToListAsync();
+        var allSpecs = await db.ProductSpecs.ToListAsync();
+        var allModels = await db.ProductModels.ToListAsync();
+        var allCurrencies = await db.CurrencyExchanges.ToListAsync();
+
+        var specDict = allSpecs.ToDictionary(s => s.Code, s => s, StringComparer.OrdinalIgnoreCase);
+        var modelDict = allModels.ToDictionary(m => m.Code, m => m.Name, StringComparer.OrdinalIgnoreCase);
+        var currDict = allCurrencies.ToDictionary(c => c.Code, c => c, StringComparer.OrdinalIgnoreCase);
+
+        int totalPrices = allPrices.Count;
+        int activeCount = allPrices.Count(p => p.IsActive);
+        int foreignCurrencyCount = allPrices.Count(p => !p.CurrencyCode.Equals("VND", StringComparison.OrdinalIgnoreCase));
+
+        var vndActivePrices = allPrices.Where(p => p.IsActive && p.CurrencyCode.Equals("VND", StringComparison.OrdinalIgnoreCase)).ToList();
+        decimal avgSellPrice = vndActivePrices.Count > 0 ? Math.Round(vndActivePrices.Average(p => p.SellPrice), 0) : (allPrices.Count > 0 ? Math.Round(allPrices.Average(p => p.SellPrice), 0) : 0m);
+
+        var rows = new List<SpecPriceRow>();
+        foreach (var p in items)
+        {
+            string? specName = null;
+            string? modelCode = null;
+            string? modelName = null;
+            string? color = null;
+            string? symbol = null;
+
+            if (specDict.TryGetValue(p.SpecCode, out var sp))
+            {
+                specName = sp.Name;
+                modelCode = sp.ModelCode;
+                color = sp.Color;
+                if (!string.IsNullOrEmpty(modelCode) && modelDict.TryGetValue(modelCode, out var mName))
+                {
+                    modelName = mName;
+                }
+            }
+
+            if (currDict.TryGetValue(p.CurrencyCode, out var cur))
+            {
+                symbol = cur.Symbol;
+            }
+
+            rows.Add(new SpecPriceRow(
+                p.Id,
+                p.SpecCode,
+                specName,
+                modelCode,
+                modelName,
+                color,
+                p.UnitCode,
+                p.BuyPrice,
+                p.SellPrice,
+                p.DiscountVND,
+                p.NetSellPrice,
+                p.GrossProfit,
+                p.GrossMarginPercent,
+                p.CurrencyCode,
+                symbol,
+                p.VATRateCode,
+                p.EffectDTimeStart,
+                p.EffectDTimeEnd,
+                p.IsActive,
+                p.Remark,
+                p.CreatedAt,
+                p.UpdatedAt
+            ));
+        }
+
+        return new SpecPriceReport(
+            q,
+            specCode,
+            unitCode,
+            currencyCode,
+            activeOnly,
+            totalPrices,
+            activeCount,
+            foreignCurrencyCount,
+            avgSellPrice,
+            rows
+        );
+    }
+
+    public Task<List<SpecPrice>> SpecPricesAsync(bool? activeOnly = null)
+    {
+        var q = db.SpecPrices.AsQueryable();
+        if (activeOnly == true) q = q.Where(s => s.IsActive);
+        return q.OrderBy(s => s.SpecCode).ThenBy(s => s.UnitCode).ToListAsync();
+    }
+
+    public Task<SpecPrice?> GetSpecPriceAsync(int id) =>
+        db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
+
+    public async Task<SpecPriceDetailDto?> GetSpecPriceDetailAsync(int id)
+    {
+        var item = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
+        if (item == null) return null;
+
+        var spec = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Code == item.SpecCode);
+        var curr = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Code == item.CurrencyCode);
+        var allCurrencies = await db.CurrencyExchanges.Where(c => c.IsActive).ToListAsync();
+
+        // Định giá quy đổi sang các ngoại tệ
+        var valuations = new List<CurrencyValuationRow>();
+        decimal baseBuyVnd = item.BuyPrice;
+        decimal baseSellVnd = item.SellPrice;
+        decimal baseNetVnd = item.NetSellPrice;
+
+        // Nếu bảng giá không phải VND, quy đổi về VND trước
+        if (!item.CurrencyCode.Equals("VND", StringComparison.OrdinalIgnoreCase) && curr != null && curr.BuyRate > 0)
+        {
+            baseBuyVnd = item.BuyPrice * curr.BuyRate;
+            baseSellVnd = item.SellPrice * curr.SellRate;
+            baseNetVnd = item.NetSellPrice * curr.SellRate;
+        }
+
+        foreach (var c in allCurrencies)
+        {
+            decimal rate = c.SellRate > 0 ? c.SellRate : 1m;
+            decimal buyInCur = c.IsBase ? baseBuyVnd : Math.Round(baseBuyVnd / (c.BuyRate > 0 ? c.BuyRate : 1m), 2);
+            decimal sellInCur = c.IsBase ? baseSellVnd : Math.Round(baseSellVnd / rate, 2);
+            decimal netInCur = c.IsBase ? baseNetVnd : Math.Round(baseNetVnd / rate, 2);
+
+            valuations.Add(new CurrencyValuationRow(
+                c.Code,
+                c.Name,
+                c.Symbol ?? c.Code,
+                buyInCur,
+                sellInCur,
+                netInCur,
+                rate
+            ));
+        }
+
+        return new SpecPriceDetailDto(item, spec, curr, valuations);
+    }
+
+    public async Task<int> CreateSpecPriceAsync(SpecPrice item)
+    {
+        item.SpecCode = item.SpecCode.Trim().ToUpper();
+        item.UnitCode = item.UnitCode.Trim().ToLower();
+        item.CurrencyCode = string.IsNullOrWhiteSpace(item.CurrencyCode) ? "VND" : item.CurrencyCode.Trim().ToUpper();
+        item.VATRateCode = string.IsNullOrWhiteSpace(item.VATRateCode) ? "VAT10" : item.VATRateCode.Trim().ToUpper();
+        item.BuyPrice = item.BuyPrice >= 0 ? item.BuyPrice : 0m;
+        item.SellPrice = item.SellPrice >= 0 ? item.SellPrice : 0m;
+        item.DiscountVND = item.DiscountVND >= 0 ? item.DiscountVND : 0m;
+
+        bool exists = await db.SpecPrices.AnyAsync(s => s.SpecCode == item.SpecCode && s.UnitCode == item.UnitCode);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Bảng giá cho quy cách '{item.SpecCode}' với đơn vị tính '{item.UnitCode}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.SpecPrices.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateSpecPriceAsync(int id, SpecPrice item)
+    {
+        var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+
+        existing.BuyPrice = item.BuyPrice >= 0 ? item.BuyPrice : 0m;
+        existing.SellPrice = item.SellPrice >= 0 ? item.SellPrice : 0m;
+        existing.DiscountVND = item.DiscountVND >= 0 ? item.DiscountVND : 0m;
+        existing.CurrencyCode = string.IsNullOrWhiteSpace(item.CurrencyCode) ? "VND" : item.CurrencyCode.Trim().ToUpper();
+        existing.VATRateCode = string.IsNullOrWhiteSpace(item.VATRateCode) ? "VAT10" : item.VATRateCode.Trim().ToUpper();
+        existing.EffectDTimeStart = item.EffectDTimeStart;
+        existing.EffectDTimeEnd = item.EffectDTimeEnd;
+        existing.IsActive = item.IsActive;
+        existing.Remark = item.Remark?.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleSpecPriceStatusAsync(int id)
+    {
+        var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
+        return (true, $"Đã {status} bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}).");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteSpecPriceAsync(int id)
+    {
+        var existing = await db.SpecPrices.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy bảng giá quy cách sản phẩm.");
+
+        db.SpecPrices.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}) thành công.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

@@ -3452,6 +3452,87 @@ app.MapDelete("/api/product-specs/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+app.MapGet("/api/spec-prices", async (string? q, string? specCode, string? unitCode, string? currencyCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.SpecPricesReportAsync(q, specCode, unitCode, currencyCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/spec-prices/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetSpecPriceAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy bảng giá quy cách." });
+});
+
+app.MapGet("/api/spec-prices/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetSpecPriceDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy bảng giá quy cách." });
+});
+
+app.MapPost("/api/spec-prices", async (CreateSpecPriceDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SpecCode) || string.IsNullOrWhiteSpace(dto.UnitCode))
+        return Results.BadRequest(new { error = "Mã quy cách và đơn vị tính không được để trống." });
+
+    var item = new SpecPrice
+    {
+        SpecCode = dto.SpecCode.Trim().ToUpper(),
+        UnitCode = dto.UnitCode.Trim().ToLower(),
+        BuyPrice = dto.BuyPrice >= 0 ? dto.BuyPrice : 0m,
+        SellPrice = dto.SellPrice >= 0 ? dto.SellPrice : 0m,
+        DiscountVND = dto.DiscountVND.HasValue && dto.DiscountVND.Value >= 0 ? dto.DiscountVND.Value : 0m,
+        CurrencyCode = string.IsNullOrWhiteSpace(dto.CurrencyCode) ? "VND" : dto.CurrencyCode.Trim().ToUpper(),
+        VATRateCode = string.IsNullOrWhiteSpace(dto.VATRateCode) ? "VAT10" : dto.VATRateCode.Trim().ToUpper(),
+        EffectDTimeStart = dto.EffectDTimeStart ?? DateTime.Now,
+        EffectDTimeEnd = dto.EffectDTimeEnd,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateSpecPriceAsync(item);
+        return Results.Created($"/api/spec-prices/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/spec-prices/{id:int}", async (int id, UpdateSpecPriceDto dto, IWmsService svc) =>
+{
+    var item = new SpecPrice
+    {
+        BuyPrice = dto.BuyPrice >= 0 ? dto.BuyPrice : 0m,
+        SellPrice = dto.SellPrice >= 0 ? dto.SellPrice : 0m,
+        DiscountVND = dto.DiscountVND.HasValue && dto.DiscountVND.Value >= 0 ? dto.DiscountVND.Value : 0m,
+        CurrencyCode = string.IsNullOrWhiteSpace(dto.CurrencyCode) ? "VND" : dto.CurrencyCode.Trim().ToUpper(),
+        VATRateCode = string.IsNullOrWhiteSpace(dto.VATRateCode) ? "VAT10" : dto.VATRateCode.Trim().ToUpper(),
+        EffectDTimeStart = dto.EffectDTimeStart ?? DateTime.Now,
+        EffectDTimeEnd = dto.EffectDTimeEnd,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    var (ok, msg) = await svc.UpdateSpecPriceAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/spec-prices/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleSpecPriceStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/spec-prices/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteSpecPriceAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3539,4 +3620,6 @@ record CreateCurrencyExchangeDto(string Code, string Name, string? Symbol, decim
 record UpdateCurrencyExchangeDto(string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
 record CreateProductSpecDto(string Code, string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
 record UpdateProductSpecDto(string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
+record CreateSpecPriceDto(string SpecCode, string UnitCode, decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
+record UpdateSpecPriceDto(decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
 

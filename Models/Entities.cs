@@ -3011,3 +3011,93 @@ public record ProductSpecDetailDto(
     int TotalStockQty
 );
 
+
+// ==================== QUẢN LÝ BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+
+/// <summary>Bảng giá quy cách sản phẩm kho (port từ OS_PrdCenter_Mst_SpecPrice & Mst_SpecPrice Skycic: SpecCode, UnitCode, BuyPrice, SellPrice, CurrencyCode, VATRateCode, DiscountVND, EffectDTimeStart, EffectDTimeEnd, FlagActive, Remark).</summary>
+public class SpecPrice : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SpecCode { get; set; } = "";             // Mã quy cách sản phẩm (SpecCode, vd: SPC-AO-SM-TRANG-L, SPC-QUAN-JN-DEN-32...)
+    public string UnitCode { get; set; } = "cái";          // Đơn vị tính (UnitCode, vd: cái, chiếc, hộp, thùng...)
+    public decimal BuyPrice { get; set; } = 0m;            // Giá mua / nhập kho dự kiến (BuyPrice)
+    public decimal SellPrice { get; set; } = 0m;           // Giá bán niêm yết / xuất kho (SellPrice)
+    public string CurrencyCode { get; set; } = "VND";      // Mã loại tiền tệ (CurrencyCode: VND, USD, EUR... FK liên kết CurrencyExchange)
+    public string? VATRateCode { get; set; } = "VAT10";    // Mã thuế suất VAT (VATRateCode: VAT0, VAT5, VAT8, VAT10, KCT)
+    public decimal DiscountVND { get; set; } = 0m;         // Mức chiết khấu định mức (DiscountVND)
+    public DateTime EffectDTimeStart { get; set; } = DateTime.Now; // Thời điểm bắt đầu hiệu lực giá
+    public DateTime? EffectDTimeEnd { get; set; }          // Thời điểm kết thúc hiệu lực giá (nếu có)
+    public bool IsActive { get; set; } = true;             // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public string? Remark { get; set; }                    // Ghi chú chính sách giá / phân khúc áp dụng (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Giá bán ròng sau chiết khấu (Net Price) = SellPrice - DiscountVND</summary>
+    public decimal NetSellPrice => Math.Max(0m, SellPrice - DiscountVND);
+
+    /// <summary>Mức chênh lệch lợi nhuận gộp định mức = NetSellPrice - BuyPrice</summary>
+    public decimal GrossProfit => NetSellPrice - BuyPrice;
+
+    /// <summary>Tỷ suất biên lợi nhuận % định mức = (GrossProfit / NetSellPrice) * 100</summary>
+    public double GrossMarginPercent => NetSellPrice > 0 ? Math.Round((double)(GrossProfit / NetSellPrice * 100m), 1) : 0.0;
+}
+
+/// <summary>Dòng thông tin hiển thị bảng giá quy cách sản phẩm kèm thông số quy cách và đơn giá sau chiết khấu.</summary>
+public record SpecPriceRow(
+    int Id,
+    string SpecCode,
+    string? SpecName,
+    string? ModelCode,
+    string? ModelName,
+    string? Color,
+    string UnitCode,
+    decimal BuyPrice,
+    decimal SellPrice,
+    decimal DiscountVND,
+    decimal NetSellPrice,
+    decimal GrossProfit,
+    double GrossMarginPercent,
+    string CurrencyCode,
+    string? CurrencySymbol,
+    string? VATRateCode,
+    DateTime EffectDTimeStart,
+    DateTime? EffectDTimeEnd,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);
+
+/// <summary>Báo cáo / Danh sách bảng giá quy cách sản phẩm tổng hợp kèm 4 thẻ KPI.</summary>
+public record SpecPriceReport(
+    string? Keyword,
+    string? SpecCodeFilter,
+    string? UnitCodeFilter,
+    string? CurrencyCodeFilter,
+    bool? ActiveFilter,
+    int TotalPrices,
+    int ActiveCount,
+    int ForeignCurrencyCount,
+    decimal AverageSellPrice,
+    List<SpecPriceRow> Rows
+);
+
+/// <summary>Chi tiết Bảng giá quy cách sản phẩm kèm thông tin quy cách và định giá quy đổi ngoại tệ.</summary>
+public record SpecPriceDetailDto(
+    SpecPrice Item,
+    ProductSpec? Spec,
+    CurrencyExchange? Currency,
+    List<CurrencyValuationRow> Valuations
+);
+
+/// <summary>Dòng định giá quy đổi theo loại tiền tệ kho.</summary>
+public record CurrencyValuationRow(
+    string CurrencyCode,
+    string CurrencyName,
+    string Symbol,
+    decimal BuyPriceInCurrency,
+    decimal SellPriceInCurrency,
+    decimal NetPriceInCurrency,
+    decimal AppliedRate
+);

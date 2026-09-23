@@ -58,6 +58,7 @@ public class AppDbContext : DbContext
     public DbSet<TempPrint> TempPrints => Set<TempPrint>();
     public DbSet<CurrencyExchange> CurrencyExchanges => Set<CurrencyExchange>();
     public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
+    public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -367,6 +368,17 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ModelCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<SpecPrice>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.SpecCode, x.UnitCode }).IsUnique();
+            e.Property(x => x.BuyPrice).HasPrecision(18, 2);
+            e.Property(x => x.SellPrice).HasPrecision(18, 2);
+            e.Property(x => x.DiscountVND).HasPrecision(18, 2);
+            e.Ignore(x => x.NetSellPrice);
+            e.Ignore(x => x.GrossProfit);
+            e.Ignore(x => x.GrossMarginPercent);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

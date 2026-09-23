@@ -5711,6 +5711,146 @@ public class ProductSpecController(IWmsService svc) : Controller
     }
 }
 
+// ==================== QUẢN LÝ BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+public class SpecPriceController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? specCode, string? unitCode, string? currencyCode, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.SpecCode = specCode;
+        ViewBag.UnitCode = unitCode;
+        ViewBag.CurrencyCode = currencyCode;
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Specs = await svc.ProductSpecsAsync();
+        ViewBag.Units = await svc.PartUnitsAsync();
+        ViewBag.Currencies = await svc.CurrencyExchangesAsync();
+
+        var report = await svc.SpecPricesReportAsync(q, specCode, unitCode, currencyCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetSpecPriceDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy bảng giá quy cách." });
+        return Json(detail);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string specCode, string unitCode, decimal buyPrice, decimal sellPrice, decimal discountVND, string? currencyCode, string? vatRateCode, DateTime? effectDTimeStart, DateTime? effectDTimeEnd, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(specCode) || string.IsNullOrWhiteSpace(unitCode))
+        {
+            TempData["Error"] = "Vui lòng chọn quy cách và nhập đơn vị tính.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new SpecPrice
+            {
+                SpecCode = specCode.Trim().ToUpper(),
+                UnitCode = unitCode.Trim().ToLower(),
+                BuyPrice = buyPrice >= 0 ? buyPrice : 0m,
+                SellPrice = sellPrice >= 0 ? sellPrice : 0m,
+                DiscountVND = discountVND >= 0 ? discountVND : 0m,
+                CurrencyCode = string.IsNullOrWhiteSpace(currencyCode) ? "VND" : currencyCode.Trim().ToUpper(),
+                VATRateCode = string.IsNullOrWhiteSpace(vatRateCode) ? "VAT10" : vatRateCode.Trim().ToUpper(),
+                EffectDTimeStart = effectDTimeStart ?? DateTime.Now,
+                EffectDTimeEnd = effectDTimeEnd,
+                IsActive = isActive,
+                Remark = remark?.Trim()
+            };
+            await svc.CreateSpecPriceAsync(item);
+            TempData["Success"] = $"Đã tạo mới bảng giá cho quy cách '{item.SpecCode}' ({item.UnitCode}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, decimal buyPrice, decimal sellPrice, decimal discountVND, string? currencyCode, string? vatRateCode, DateTime? effectDTimeStart, DateTime? effectDTimeEnd, bool isActive, string? remark)
+    {
+        var item = new SpecPrice
+        {
+            BuyPrice = buyPrice >= 0 ? buyPrice : 0m,
+            SellPrice = sellPrice >= 0 ? sellPrice : 0m,
+            DiscountVND = discountVND >= 0 ? discountVND : 0m,
+            CurrencyCode = string.IsNullOrWhiteSpace(currencyCode) ? "VND" : currencyCode.Trim().ToUpper(),
+            VATRateCode = string.IsNullOrWhiteSpace(vatRateCode) ? "VAT10" : vatRateCode.Trim().ToUpper(),
+            EffectDTimeStart = effectDTimeStart ?? DateTime.Now,
+            EffectDTimeEnd = effectDTimeEnd,
+            IsActive = isActive,
+            Remark = remark?.Trim()
+        };
+
+        var (ok, msg) = await svc.UpdateSpecPriceAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleSpecPriceStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteSpecPriceAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? specCode, string? unitCode, string? currencyCode, bool? activeOnly)
+    {
+        var report = await svc.SpecPricesReportAsync(q, specCode, unitCode, currencyCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC BẢNG GIÁ QUY CÁCH SẢN PHẨM KHO (OS_PRDCENTER_MST_SPECPRICE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số bảng giá:;{report.TotalPrices};Đang áp dụng:;{report.ActiveCount};Ngoại tệ:;{report.ForeignCurrencyCount};Giá bán TB (VND):;{report.AverageSellPrice:N0}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã quy cách;Tên quy cách;Dòng Model;Màu sắc;ĐVT;Giá mua / Giá vốn;Giá bán niêm yết;Chiết khấu định mức;Giá bán ròng (Net);Chênh lệch LN gộp;Biên LN (%);Loại tiền;Thuế suất VAT;Hiệu lực từ;Hiệu lực đến;Trạng thái;Ghi chú / Phân khúc");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            var startDateStr = r.EffectDTimeStart.ToString("dd/MM/yyyy");
+            var endDateStr = r.EffectDTimeEnd.HasValue ? r.EffectDTimeEnd.Value.ToString("dd/MM/yyyy") : "Vô thời hạn";
+
+            sb.AppendLine($"{stt++};\"{r.SpecCode}\";\"{r.SpecName?.Replace("\"", "\"\"") ?? ""}\";\"{r.ModelName ?? r.ModelCode ?? ""}\";\"{r.Color ?? ""}\";\"{r.UnitCode}\";{r.BuyPrice:F2};{r.SellPrice:F2};{r.DiscountVND:F2};{r.NetSellPrice:F2};{r.GrossProfit:F2};{r.GrossMarginPercent:F1}%;\"{r.CurrencyCode}\";\"{r.VATRateCode ?? ""}\";\"{startDateStr}\";\"{endDateStr}\";\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG BẢNG GIÁ:;{report.TotalPrices};;;;;;;;;;;;;");
+        sb.AppendLine($";;ĐANG HIỆU LỰC:;{report.ActiveCount};;;;;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"BangGiaQuyCach_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+
 
 
 

@@ -3566,13 +3566,176 @@ public static class Seeder
             if (p3 != null) { p3.SpecCode = "SPC-AO-POLO-TRANG-L"; p3.ModelCode = "MD-VT-POLO"; }
             await db.SaveChangesAsync();
         }
+
+        // ==================== SEED BẢNG GIÁ QUY CÁCH SẢN PHẨM (OS_PrdCenter_Mst_SpecPrice / Mst_SpecPrice Skycic) ====================
+        if (!await db.SpecPrices.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.SpecPrices.AddRange(
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-L",
+                    UnitCode = "cái",
+                    BuyPrice = 180000m,
+                    SellPrice = 280000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 15000m,
+                    EffectDTimeStart = now.AddMonths(-3),
+                    IsActive = true,
+                    Remark = "Giá bán buôn đại lý cấp 1 toàn quốc - Dáng Slimfit Trắng L",
+                    CreatedAt = now.AddMonths(-3)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-L",
+                    UnitCode = "hộp",
+                    BuyPrice = 880000m,
+                    SellPrice = 1350000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 80000m,
+                    EffectDTimeStart = now.AddMonths(-3),
+                    IsActive = true,
+                    Remark = "Quy cách đóng hộp combo 5 áo công sở cao cấp - Quà tặng doanh nghiệp",
+                    CreatedAt = now.AddMonths(-3)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-SM-TRANG-M",
+                    UnitCode = "cái",
+                    BuyPrice = 175000m,
+                    SellPrice = 275000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 15000m,
+                    EffectDTimeStart = now.AddMonths(-2),
+                    IsActive = true,
+                    Remark = "Size M bán chạy kênh showroom và sàn TMĐT",
+                    CreatedAt = now.AddMonths(-2)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-SM-XANH-L",
+                    UnitCode = "cái",
+                    BuyPrice = 220000m,
+                    SellPrice = 340000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 20000m,
+                    EffectDTimeStart = now.AddMonths(-2),
+                    IsActive = true,
+                    Remark = "Dòng cao cấp vải Bamboo chống nhăn sợi tre tự nhiên",
+                    CreatedAt = now.AddMonths(-2)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-QUAN-JN-DEN-32",
+                    UnitCode = "cái",
+                    BuyPrice = 350000m,
+                    SellPrice = 550000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT8",
+                    DiscountVND = 30000m,
+                    EffectDTimeStart = now.AddMonths(-3),
+                    IsActive = true,
+                    Remark = "Jeans nam cao cấp dáng chuẩn Levi xuất khẩu",
+                    CreatedAt = now.AddMonths(-3)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-QUAN-JN-DEN-32",
+                    UnitCode = "thùng",
+                    BuyPrice = 6800000m,
+                    SellPrice = 10500000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT8",
+                    DiscountVND = 600000m,
+                    EffectDTimeStart = now.AddMonths(-3),
+                    IsActive = true,
+                    Remark = "Thùng carton Master đóng 20 chiếc giao đại lý tỉnh",
+                    CreatedAt = now.AddMonths(-3)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-POLO-TRANG-L",
+                    UnitCode = "cái",
+                    BuyPrice = 150000m,
+                    SellPrice = 240000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 10000m,
+                    EffectDTimeStart = now.AddMonths(-1),
+                    IsActive = true,
+                    Remark = "Áo Polo thể thao dệt tổ ong co giãn 4 chiều",
+                    CreatedAt = now.AddMonths(-1)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-KHOAC-GIO-XL",
+                    UnitCode = "cái",
+                    BuyPrice = 420000m,
+                    SellPrice = 690000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 40000m,
+                    EffectDTimeStart = now.AddMonths(-2),
+                    IsActive = true,
+                    Remark = "Áo khoác gió 2 lớp trượt nước chống gió lạnh mùa đông",
+                    CreatedAt = now.AddMonths(-2)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-AO-KHOAC-GIO-XL",
+                    UnitCode = "cái",
+                    BuyPrice = 18m,
+                    SellPrice = 30m,
+                    CurrencyCode = "USD",
+                    VATRateCode = "VAT0",
+                    DiscountVND = 1.5m,
+                    EffectDTimeStart = now.AddMonths(-2),
+                    IsActive = true,
+                    Remark = "Bảng giá FOB xuất khẩu đối tác thị trường Bắc Mỹ (USD)",
+                    CreatedAt = now.AddMonths(-2)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-VAY-DA-HOI-DEN-S",
+                    UnitCode = "bộ",
+                    BuyPrice = 750000m,
+                    SellPrice = 1280000m,
+                    CurrencyCode = "VND",
+                    VATRateCode = "VAT10",
+                    DiscountVND = 80000m,
+                    EffectDTimeStart = now.AddMonths(-1),
+                    IsActive = true,
+                    Remark = "Đầm dạ hội đính pha lê cao cấp, quản lý serial từng bộ",
+                    CreatedAt = now.AddMonths(-1)
+                },
+                new SpecPrice
+                {
+                    SpecCode = "SPC-VAY-DA-HOI-DEN-S",
+                    UnitCode = "bộ",
+                    BuyPrice = 32m,
+                    SellPrice = 55m,
+                    CurrencyCode = "USD",
+                    VATRateCode = "VAT0",
+                    DiscountVND = 2.5m,
+                    EffectDTimeStart = now.AddMonths(-1),
+                    IsActive = true,
+                    Remark = "Bảng giá xuất khẩu đối tác chuỗi thời trang quốc tế (USD)",
+                    CreatedAt = now.AddMonths(-1)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -3638,6 +3801,8 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"ProductSpecs\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"SpecDesc\" text NULL, \"ModelCode\" text NULL, \"SpecType1\" text NULL, \"Color\" text NULL, \"StandardUnitCode\" text NULL, \"FlagHasSerial\" boolean NOT NULL DEFAULT false, \"FlagHasLOT\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_Code\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_ModelCode\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"ModelCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"SpecPrices\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"SpecCode\" text NOT NULL, \"UnitCode\" text NOT NULL, \"BuyPrice\" numeric NOT NULL DEFAULT 0, \"SellPrice\" numeric NOT NULL DEFAULT 0, \"CurrencyCode\" text NOT NULL DEFAULT 'VND', \"VATRateCode\" text NULL, \"DiscountVND\" numeric NOT NULL DEFAULT 0, \"EffectDTimeStart\" timestamp NOT NULL DEFAULT now(), \"EffectDTimeEnd\" timestamp NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SpecPrices_OrgId_SpecCode_UnitCode\" ON miniwms.\"SpecPrices\" (\"OrgId\", \"SpecCode\", \"UnitCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -4383,7 +4548,25 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProductSpecs_OrgId_Code"" ON ""ProductSpecs"" (""OrgId"", ""Code"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_ProductSpecs_OrgId_ModelCode"" ON ""ProductSpecs"" (""OrgId"", ""ModelCode"");",
-            @"ALTER TABLE ""Products"" ADD COLUMN ""SpecCode"" TEXT NULL;"
+            @"ALTER TABLE ""Products"" ADD COLUMN ""SpecCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""SpecPrices"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""SpecCode"" TEXT NOT NULL,
+                ""UnitCode"" TEXT NOT NULL,
+                ""BuyPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""SellPrice"" NUMERIC NOT NULL DEFAULT 0,
+                ""CurrencyCode"" TEXT NOT NULL DEFAULT 'VND',
+                ""VATRateCode"" TEXT NULL,
+                ""DiscountVND"" NUMERIC NOT NULL DEFAULT 0,
+                ""EffectDTimeStart"" TEXT NOT NULL,
+                ""EffectDTimeEnd"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SpecPrices_OrgId_SpecCode_UnitCode"" ON ""SpecPrices"" (""OrgId"", ""SpecCode"", ""UnitCode"");"
         };
         foreach (var s in sql)
         {
