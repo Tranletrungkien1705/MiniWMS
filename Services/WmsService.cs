@@ -454,6 +454,17 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleSSCCTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteSSCCTypeAsync(int id);
 
+    // Danh mục Phương thức thanh toán kho (Mst_PaymentMethods Skycic)
+    Task<PaymentMethodReport> PaymentMethodsReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<PaymentMethod>> PaymentMethodsAsync(bool? activeOnly = null);
+    Task<PaymentMethod?> GetPaymentMethodAsync(int id);
+    Task<PaymentMethod?> GetPaymentMethodByCodeAsync(string code);
+    Task<PaymentMethodDetailDto?> GetPaymentMethodDetailAsync(int id);
+    Task<int> CreatePaymentMethodAsync(PaymentMethod item);
+    Task<(bool ok, string msg)> UpdatePaymentMethodAsync(int id, PaymentMethod item);
+    Task<(bool ok, string msg)> TogglePaymentMethodStatusAsync(int id);
+    Task<(bool ok, string msg)> DeletePaymentMethodAsync(int id);
+
     Task<WmsDash> DashboardAsync();
 }
 
@@ -13572,8 +13583,6 @@ public class WmsService(AppDbContext db) : IWmsService
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại hóa đơn '{existing.Code}' thành công.");
     }
-        return (true, $"ÄÃ£ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' thÃ nh cÃ´ng.");
-    }
 
     // ==================== QUẢN LÝ DANH MỤC LOẠI MÃ ĐỊNH DANH CONTAINER VẬN CHUYỂN SSCC (Mst_SSCCType Skycic) ====================
     public async Task<SSCCTypeReport> SSCCTypesReportAsync(string? q = null, bool? activeOnly = null)
@@ -13712,6 +13721,145 @@ public class WmsService(AppDbContext db) : IWmsService
         db.SSCCTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại SSCC '{existing.Code}' thành công.");
+    }
+
+    // ==================== QUẢN LÝ DANH MỤC PHƯƠNG THỨC THANH TOÁN KHO (Mst_PaymentMethods Skycic) ====================
+    public async Task<PaymentMethodReport> PaymentMethodsReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PaymentMethods.AsNoTracking().AsQueryable();
+
+        if (activeOnly.HasValue)
+            query = query.Where(t => t.FlagActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.NetworkID != null && t.NetworkID.ToLower().Contains(kw)) ||
+                                     (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(t => t.Code).ToListAsync();
+
+        // Đếm số phiếu nhập kho mua hàng tham chiếu từng phương thức thanh toán (PaymentMethodCode).
+        var mappedReceipts = await db.PurchaseReceipts.AsNoTracking()
+            .Where(p => p.PaymentMethodCode != null)
+            .GroupBy(p => p.PaymentMethodCode!)
+            .Select(g => new { Code = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Code, x => x.Count, StringComparer.OrdinalIgnoreCase);
+
+        var rows = list.Select(t => new PaymentMethodRow(
+            t.Id,
+            t.Code,
+            t.Name,
+            t.NetworkID,
+            t.FlagActive,
+            t.Remark,
+            t.CreatedAt,
+            t.UpdatedAt,
+            mappedReceipts.TryGetValue(t.Code, out var c) ? c : 0
+        )).ToList();
+
+        var totalMethods = await db.PaymentMethods.CountAsync();
+        var activeCount = await db.PaymentMethods.CountAsync(t => t.FlagActive);
+
+        return new PaymentMethodReport(
+            q,
+            activeOnly,
+            totalMethods,
+            activeCount,
+            totalMethods - activeCount,
+            rows.Sum(r => r.MappedReceiptCount),
+            rows);
+    }
+
+    public Task<List<PaymentMethod>> PaymentMethodsAsync(bool? activeOnly = null)
+    {
+        var query = db.PaymentMethods.AsNoTracking().AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.FlagActive == activeOnly.Value);
+        return query.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<PaymentMethod?> GetPaymentMethodAsync(int id) => db.PaymentMethods.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<PaymentMethod?> GetPaymentMethodByCodeAsync(string code) =>
+        db.PaymentMethods.FirstOrDefaultAsync(t => t.Code.ToUpper() == code.Trim().ToUpper());
+
+    public async Task<PaymentMethodDetailDto?> GetPaymentMethodDetailAsync(int id)
+    {
+        var item = await db.PaymentMethods.FirstOrDefaultAsync(t => t.Id == id);
+        if (item == null) return null;
+
+        var receipts = await db.PurchaseReceipts.AsNoTracking()
+            .Include(p => p.Warehouse)
+            .Include(p => p.Lines).ThenInclude(l => l.Product)
+            .Where(p => p.PaymentMethodCode == item.Code)
+            .OrderByDescending(p => p.Date)
+            .Take(50)
+            .ToListAsync();
+
+        return new PaymentMethodDetailDto(item, receipts, receipts.Count);
+    }
+
+    public async Task<int> CreatePaymentMethodAsync(PaymentMethod item)
+    {
+        item.Code = item.Code.Trim().ToUpper();
+        item.Name = item.Name.Trim();
+
+        bool exists = await db.PaymentMethods.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã phương thức thanh toán '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.PaymentMethods.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdatePaymentMethodAsync(int id, PaymentMethod item)
+    {
+        var existing = await db.PaymentMethods.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phương thức thanh toán.");
+
+        existing.Name = item.Name.Trim();
+        existing.NetworkID = item.NetworkID?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.FlagActive = item.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật phương thức thanh toán '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> TogglePaymentMethodStatusAsync(int id)
+    {
+        var existing = await db.PaymentMethods.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phương thức thanh toán.");
+
+        existing.FlagActive = !existing.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.FlagActive ? "kích hoạt áp dụng" : "ngưng áp dụng";
+        return (true, $"Đã {status} phương thức thanh toán '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeletePaymentMethodAsync(int id)
+    {
+        var existing = await db.PaymentMethods.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phương thức thanh toán.");
+
+        int inUse = await db.PurchaseReceipts.CountAsync(p => p.PaymentMethodCode == existing.Code);
+        if (inUse > 0)
+        {
+            return (false, $"Không thể xóa phương thức thanh toán '{existing.Code}' vì đang được {inUse} phiếu nhập kho mua hàng tham chiếu.");
+        }
+
+        db.PaymentMethods.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa phương thức thanh toán '{existing.Code}' thành công.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

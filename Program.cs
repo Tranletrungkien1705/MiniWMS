@@ -4745,6 +4745,99 @@ app.MapDelete("/api/invoice-types/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Danh mục Phương thức thanh toán kho (Payment Method - port từ Mst_PaymentMethods Skycic)
+app.MapGet("/api/payment-methods", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.PaymentMethodsReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/payment-methods/{id:int}", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetPaymentMethodDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy phương thức thanh toán." });
+    return Results.Ok(new
+    {
+        detail.Item.Id,
+        detail.Item.Code,
+        detail.Item.Name,
+        detail.Item.NetworkID,
+        detail.Item.FlagActive,
+        detail.Item.Remark,
+        detail.Item.CreatedAt,
+        detail.Item.UpdatedAt,
+        totalMappedReceipts = detail.TotalMappedReceipts,
+        mappedReceipts = detail.MappedReceipts.Select(p => new
+        {
+            p.Id,
+            p.Code,
+            Warehouse = p.Warehouse.Name,
+            p.SupplierName,
+            p.InvoiceNo,
+            p.Date,
+            Status = p.Status.ToString(),
+            p.TotalQty,
+            p.TotalAmountAfterVAT
+        })
+    });
+});
+
+app.MapGet("/api/payment-methods/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetPaymentMethodByCodeAsync(code);
+    return item == null ? Results.NotFound(new { error = "Không tìm thấy phương thức thanh toán." }) : Results.Ok(item);
+});
+
+app.MapPost("/api/payment-methods", async (CreatePaymentMethodDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code)) return Results.BadRequest(new { error = "Cần Code." });
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
+
+    try
+    {
+        var item = new PaymentMethod
+        {
+            Code = dto.Code.Trim().ToUpper(),
+            Name = dto.Name.Trim(),
+            NetworkID = dto.NetworkID?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            FlagActive = dto.FlagActive ?? true,
+            CreatedBy = "api"
+        };
+        var id = await svc.CreatePaymentMethodAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/payment-methods/{id:int}", async (int id, UpdatePaymentMethodDto dto, IWmsService svc) =>
+{
+    var item = new PaymentMethod
+    {
+        Name = dto.Name ?? "",
+        NetworkID = dto.NetworkID,
+        Remark = dto.Remark,
+        FlagActive = dto.FlagActive ?? true
+    };
+    var (ok, msg) = await svc.UpdatePaymentMethodAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/payment-methods/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.TogglePaymentMethodStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/payment-methods/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeletePaymentMethodAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -4863,4 +4956,6 @@ record CreateGovTaxOfficeDto(string? Code, string Name, string? ParentCode, stri
 record UpdateGovTaxOfficeDto(string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
 record CreateInvoiceTypeDto(string Code, string Name, string? NetworkID, string? TTType, string? Remark, bool? FlagActive);
 record UpdateInvoiceTypeDto(string Name, string? NetworkID, string? TTType, string? Remark, bool? FlagActive);
+record CreatePaymentMethodDto(string Code, string Name, string? NetworkID, string? Remark, bool? FlagActive);
+record UpdatePaymentMethodDto(string Name, string? NetworkID, string? Remark, bool? FlagActive);
 

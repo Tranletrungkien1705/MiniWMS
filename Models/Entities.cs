@@ -3980,6 +3980,8 @@ public class PurchaseReceipt : IOrgOwned
     public DateTime? InvoiceDate { get; set; }                             // Ngày hóa đơn (InvoiceDate)
     public string? InvoiceTypeCode { get; set; }                           // Loại hóa đơn (InvoiceType, port từ Mst_InvoiceType)
     public string? InvoiceTypeName { get; set; }                           // Tên loại hóa đơn (InvoiceTypeName)
+    public string? PaymentMethodCode { get; set; }                         // Phương thức thanh toán (PaymentMethodCode, port từ Mst_PaymentMethods)
+    public string? PaymentMethodName { get; set; }                         // Tên phương thức thanh toán (PaymentMethodName)
     public string? OrderNo { get; set; }                                   // Số đơn hàng / hợp đồng mua (OrderNo)
     public string? UserDeliver { get; set; }                               // Người giao hàng (UserDeliver)
     public string? VehicleNo { get; set; }                                 // Biển số xe vận chuyển (InvFCFInCode03)
@@ -4447,4 +4449,54 @@ public record SSCCTypeDetailDto(
     SSCCType Item,
     List<InventoryCarton> MappedCartons,
     int TotalMappedCartons
+);
+
+// ==================== QUẢN LÝ DANH MỤC PHƯƠNG THỨC THANH TOÁN KHO (Mst_PaymentMethods Skycic) ====================
+
+/// <summary>Danh mục Phương thức thanh toán kho (port từ Mst_PaymentMethods Skycic).
+/// Chuẩn hóa hình thức thanh toán gắn với chứng từ mua bán hàng hóa (Tiền mặt, Chuyển khoản,
+/// Bù trừ công nợ, Ví điện tử, Thẻ tín dụng...), phục vụ hạch toán và đối chiếu công nợ NCC/khách hàng.</summary>
+public class PaymentMethod : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã phương thức thanh toán (PaymentMethodCode, vd: TM, CK, BU_TRU)
+    public string Name { get; set; } = "";             // Tên phương thức thanh toán (PaymentMethodName)
+    public string? NetworkID { get; set; }              // Mạng / đại lý sở hữu danh mục (NetworkID)
+    public bool FlagActive { get; set; } = true;        // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngưng)
+    public string? Remark { get; set; }                 // Ghi chú / diễn giải (Remark)
+    public string? CreatedBy { get; set; }              // Người tạo (LogLUBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }            // Thời điểm cập nhật cuối (LogLUDTimeUTC)
+}
+
+/// <summary>Dòng hiển thị danh mục Phương thức thanh toán kèm số phiếu nhập kho đang tham chiếu phương thức này.</summary>
+public record PaymentMethodRow(
+    int Id,
+    string Code,                 // Mã phương thức thanh toán (PaymentMethodCode)
+    string Name,                 // Tên phương thức thanh toán (PaymentMethodName)
+    string? NetworkID,           // Mạng / đại lý (NetworkID)
+    bool FlagActive,             // Trạng thái áp dụng (FlagActive)
+    string? Remark,              // Ghi chú
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    int MappedReceiptCount       // Số phiếu nhập kho mua hàng đang dùng phương thức thanh toán này
+);
+
+/// <summary>Báo cáo / Danh sách Phương thức thanh toán tổng hợp kèm 4 thẻ KPI (port từ Mst_PaymentMethods Skycic).</summary>
+public record PaymentMethodReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalMethods,            // Tổng số phương thức thanh toán
+    int ActiveCount,             // Số phương thức đang áp dụng
+    int InactiveCount,           // Số phương thức ngưng áp dụng
+    int TotalMappedReceipts,     // Tổng số phiếu nhập kho tham chiếu
+    List<PaymentMethodRow> Rows
+);
+
+/// <summary>Chi tiết Phương thức thanh toán kèm danh sách phiếu nhập kho mua hàng đang sử dụng phương thức này.</summary>
+public record PaymentMethodDetailDto(
+    PaymentMethod Item,
+    List<PurchaseReceipt> MappedReceipts,
+    int TotalMappedReceipts
 );

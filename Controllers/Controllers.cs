@@ -8186,4 +8186,151 @@ public class SSCCTypeController(IWmsService svc) : Controller
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"DanhMucLoaiSSCC_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
+}// ==================== QUẢN LÝ DANH MỤC PHƯƠNG THỨC THANH TOÁN KHO (Mst_PaymentMethods Skycic) ====================
+public class PaymentMethodController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.PaymentMethodsReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetPaymentMethodDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy phương thức thanh toán." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            networkId = detail.Item.NetworkID,
+            remark = detail.Item.Remark,
+            flagActive = detail.Item.FlagActive,
+            totalMappedReceipts = detail.TotalMappedReceipts,
+            receipts = detail.MappedReceipts.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                WarehouseName = p.Warehouse != null ? p.Warehouse.Name : "",
+                p.SupplierName,
+                p.InvoiceNo,
+                p.Date,
+                Status = p.Status.ToString(),
+                p.TotalQty,
+                p.TotalAmountAfterVAT
+            })
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? networkId, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã và tên phương thức thanh toán.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new PaymentMethod
+            {
+                Code = code.Trim().ToUpper(),
+                Name = name.Trim(),
+                NetworkID = networkId?.Trim(),
+                Remark = remark?.Trim(),
+                FlagActive = flagActive,
+                CreatedBy = "web"
+            };
+            await svc.CreatePaymentMethodAsync(item);
+            TempData["Success"] = $"Đã thêm phương thức thanh toán '{item.Code}' thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? networkId, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên phương thức thanh toán.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new PaymentMethod
+        {
+            Name = name.Trim(),
+            NetworkID = networkId?.Trim(),
+            Remark = remark?.Trim(),
+            FlagActive = flagActive
+        };
+
+        var (ok, msg) = await svc.UpdatePaymentMethodAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.TogglePaymentMethodStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeletePaymentMethodAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.PaymentMethodsReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC PHƯƠNG THỨC THANH TOÁN KHO (MST_PAYMENTMETHODS)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số phương thức:;{report.TotalMethods};Đang áp dụng:;{report.ActiveCount};Ngưng áp dụng:;{report.InactiveCount};Tổng phiếu nhập tham chiếu:;{report.TotalMappedReceipts}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phương thức;Tên phương thức thanh toán;Mạng/Đại lý;Số phiếu nhập tham chiếu;Trạng thái;Ghi chú;Ngày tạo;Cập nhật lần cuối");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.FlagActive ? "Đang áp dụng" : "Ngưng áp dụng";
+            var updatedStr = r.UpdatedAt.HasValue ? r.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm") : "-";
+
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.NetworkID ?? ""}\";{r.MappedReceiptCount};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";{r.CreatedAt:dd/MM/yyyy HH:mm};{updatedStr}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG PHƯƠNG THỨC:;{report.TotalMethods};;;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;;");
+        sb.AppendLine($";;TỔNG PHIẾU NHẬP THAM CHIẾU:;{report.TotalMappedReceipts};;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DanhMucPhuongThucThanhToan_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
 }

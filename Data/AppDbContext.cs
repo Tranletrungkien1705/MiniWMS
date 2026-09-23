@@ -81,6 +81,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryOutHistSerial> InventoryOutHistSerials => Set<InventoryOutHistSerial>();
     public DbSet<InvoiceType> InvoiceTypes => Set<InvoiceType>();
     public DbSet<SSCCType> SSCCTypes => Set<SSCCType>();
+    public DbSet<PaymentMethod> PaymentMethods => Set<PaymentMethod>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -538,6 +539,11 @@ public class AppDbContext : DbContext
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<SSCCType>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<PaymentMethod>(e =>
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasQueryFilter(x => x.OrgId == _orgId);
