@@ -1786,6 +1786,77 @@ app.MapDelete("/api/part-colors/map/{mapId:int}", async (int mapId, IWmsService 
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý cấp số in tem / Serial niêm phong (Print/Seal Serial Number Issuance - port từ Inv_InventorySecret Skycic)
+app.MapGet("/api/inventory-secrets", async (string? genTimesNo, SecretStatus? status, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventorySecretsReportAsync(genTimesNo, status, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-secrets/license", async (IWmsService svc) =>
+{
+    var license = await svc.GetSecretLicenseAsync();
+    if (license == null) return Results.NotFound(new { error = "Chưa có hạn mức số in tem." });
+    return Results.Ok(new
+    {
+        license.Id,
+        license.Mst,
+        license.TotalQty,
+        license.TotalQtyIssued,
+        license.TotalQtyUsed,
+        license.RemainingQty,
+        license.IsActive,
+        license.Remark,
+        license.CreatedAt,
+        license.UpdatedAt
+    });
+});
+
+app.MapGet("/api/inventory-secrets/{id:int}", async (int id, IWmsService svc) =>
+{
+    var s = await svc.GetInventorySecretAsync(id);
+    if (s == null) return Results.NotFound(new { error = "Không tìm thấy số in tem." });
+    return Results.Ok(new
+    {
+        s.Id,
+        s.SerialNo,
+        s.QrSerialNo,
+        s.GenTimesNo,
+        s.FlagMap,
+        s.FlagUsed,
+        Status = s.Status.ToString(),
+        s.Remark,
+        s.LogLUBy,
+        s.CreatedAt,
+        s.UpdatedAt
+    });
+});
+
+app.MapPost("/api/inventory-secrets/generate", async (GenerateSecretsDto dto, IWmsService svc) =>
+{
+    if (dto.Qty <= 0) return Results.BadRequest(new { error = "Số lượng cấp phát phải lớn hơn 0." });
+    var (ok, msg, count) = await svc.GenerateSecretsAsync(dto.Qty, dto.Prefix);
+    return ok ? Results.Ok(new { success = true, message = msg, count }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-secrets/{id:int}/mark-used", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.MarkSecretUsedAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-secrets/{id:int}/mark-mapped", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.MarkSecretMappedAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-secrets/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInventorySecretAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Quản lý Đơn vị tính hàng hóa / vật tư kho (port từ Mst_PartUnit Skycic)
 app.MapGet("/api/part-units", async (string? q, bool? activeOnly, bool? standardOnly, IWmsService svc) =>
 {
@@ -3800,6 +3871,7 @@ record UpdateBrandDto(string Name, string? Origin, string? Remark, bool? IsActiv
 record CreatePartColorDto(string? Code, string Name, string? NameVN, string? Remark, bool? IsActive);
 record UpdatePartColorDto(string Name, string? NameVN, string? Remark, bool? IsActive);
 record MapPartColorDto(int ProductId, string? PartColorCode, bool? IsDefault);
+record GenerateSecretsDto(int Qty, string? Prefix);
 record CreatePartUnitDto(string? Code, string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record UpdatePartUnitDto(string Name, bool? IsStandard, string? Remark, bool? IsActive);
 record CreatePartMaterialTypeDto(string? Code, string Name, string? Remark, bool? IsActive);

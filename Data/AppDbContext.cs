@@ -63,6 +63,8 @@ public class AppDbContext : DbContext
     public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
     public DbSet<VATRate> VATRates => Set<VATRate>();
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
+    public DbSet<InventorySecret> InventorySecrets => Set<InventorySecret>();
+    public DbSet<SecretLicense> SecretLicenses => Set<SecretLicense>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -407,6 +409,20 @@ public class AppDbContext : DbContext
             e.Ignore(x => x.QtyChangeAvail);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventorySecret>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.SerialNo }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.GenTimesNo });
+            e.HasIndex(x => new { x.OrgId, x.FlagUsed });
+            e.Ignore(x => x.Status);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<SecretLicense>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Mst }).IsUnique();
+            e.Ignore(x => x.RemainingQty);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

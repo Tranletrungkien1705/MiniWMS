@@ -651,6 +651,48 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+        if (!await db.SecretLicenses.AnyAsync())
+        {
+            db.SecretLicenses.Add(new SecretLicense
+            {
+                Mst = "0101234567",
+                TotalQty = 5000,
+                TotalQtyIssued = 0,
+                TotalQtyUsed = 0,
+                IsActive = true,
+                Remark = "Hạn mức số in tem mua từ cơ quan thuế (đơn vị demo)"
+            });
+            await db.SaveChangesAsync();
+        }
+        if (!await db.InventorySecrets.AnyAsync())
+        {
+            var license = await db.SecretLicenses.FirstOrDefaultAsync();
+            var genTimesNo = $"GEN-{DateTime.Now:yyyyMMdd}-001";
+            var secrets = new List<InventorySecret>();
+            for (int i = 1; i <= 20; i++)
+            {
+                var serialNo = $"{genTimesNo}-{i:D6}";
+                secrets.Add(new InventorySecret
+                {
+                    SerialNo = serialNo,
+                    QrSerialNo = serialNo,
+                    GenTimesNo = genTimesNo,
+                    FlagMap = i <= 5,
+                    FlagUsed = i <= 3,
+                    LogLUBy = "seed",
+                    Remark = i <= 3 ? "Đã in tem & xuất kho" : (i <= 5 ? "Đã gán vào kiện hàng" : "Sẵn sàng cấp phát"),
+                    CreatedAt = DateTime.Now.AddDays(-7)
+                });
+            }
+            db.InventorySecrets.AddRange(secrets);
+            if (license != null)
+            {
+                license.TotalQtyIssued = secrets.Count;
+                license.TotalQtyUsed = secrets.Count(s => s.FlagUsed);
+                license.UpdatedAt = DateTime.Now;
+            }
+            await db.SaveChangesAsync();
+        }
         else
         {
             // Cập nhật giá vốn, loại mặt hàng và thương hiệu cho dữ liệu cũ nếu chưa có
@@ -3952,7 +3994,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4027,6 +4069,12 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"PartColorMaps\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"ProductId\" integer NOT NULL, \"PartColorCode\" text NOT NULL, \"IsDefault\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_PartColorMaps_OrgId_ProductId_PartColorCode\" ON miniwms.\"PartColorMaps\" (\"OrgId\", \"ProductId\", \"PartColorCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_PartColorMaps_OrgId_PartColorCode\" ON miniwms.\"PartColorMaps\" (\"OrgId\", \"PartColorCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventorySecrets\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"SerialNo\" text NOT NULL, \"QrSerialNo\" text NOT NULL DEFAULT '', \"GenTimesNo\" text NULL, \"FlagMap\" boolean NOT NULL DEFAULT false, \"FlagUsed\" boolean NOT NULL DEFAULT false, \"Remark\" text NULL, \"LogLUBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventorySecrets_OrgId_SerialNo\" ON miniwms.\"InventorySecrets\" (\"OrgId\", \"SerialNo\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_InventorySecrets_OrgId_GenTimesNo\" ON miniwms.\"InventorySecrets\" (\"OrgId\", \"GenTimesNo\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_InventorySecrets_OrgId_FlagUsed\" ON miniwms.\"InventorySecrets\" (\"OrgId\", \"FlagUsed\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"SecretLicenses\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Mst\" text NOT NULL DEFAULT '', \"TotalQty\" integer NOT NULL DEFAULT 0, \"TotalQtyIssued\" integer NOT NULL DEFAULT 0, \"TotalQtyUsed\" integer NOT NULL DEFAULT 0, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SecretLicenses_OrgId_Mst\" ON miniwms.\"SecretLicenses\" (\"OrgId\", \"Mst\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");

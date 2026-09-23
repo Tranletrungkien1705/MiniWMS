@@ -349,6 +349,14 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateVATRateAsync(int id, VATRate item);
     Task<(bool ok, string msg)> ToggleVATRateStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteVATRateAsync(int id);
+    Task<InventorySecretReport> InventorySecretsReportAsync(string? genTimesNo = null, SecretStatus? status = null, string? q = null);
+    Task<List<InventorySecret>> InventorySecretsAsync(string? genTimesNo = null, SecretStatus? status = null, string? q = null);
+    Task<InventorySecret?> GetInventorySecretAsync(int id);
+    Task<SecretLicense?> GetSecretLicenseAsync();
+    Task<(bool ok, string msg, int count)> GenerateSecretsAsync(int qty, string? prefix = null);
+    Task<(bool ok, string msg)> MarkSecretUsedAsync(int id);
+    Task<(bool ok, string msg)> MarkSecretMappedAsync(int id);
+    Task<(bool ok, string msg)> DeleteInventorySecretAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -11776,5 +11784,179 @@ public class WmsService(AppDbContext db) : IWmsService
         InventoryTxnType.OutFG => ("Xuáº¥t thÃ nh pháº©m", "bg-danger"),
         _ => ("Äiá»u chá»‰nh tá»“n", "bg-dark")
     };
+
+    // ===== Quản lý cấp số in tem / Serial niêm phong (port từ Inv_InventorySecret Skycic) =====
+
+    private static (string label, string badge) SecretStatusMeta(SecretStatus s) => s switch
+    {
+        SecretStatus.Available => ("Chưa dùng", "bg-success"),
+        SecretStatus.Mapped => ("Đã gán kiện", "bg-info text-dark"),
+        _ => ("Đã dùng", "bg-secondary")
+    };
+
+    public async Task<InventorySecretReport> InventorySecretsReportAsync(string? genTimesNo = null, SecretStatus? status = null, string? q = null)
+    {
+        var query = db.InventorySecrets.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(genTimesNo)) query = query.Where(s => s.GenTimesNo == genTimesNo);
+        if (status.HasValue)
+        {
+            query = status.Value switch
+            {
+                SecretStatus.Available => query.Where(s => !s.FlagUsed && !s.FlagMap),
+                SecretStatus.Mapped => query.Where(s => !s.FlagUsed && s.FlagMap),
+                _ => query.Where(s => s.FlagUsed)
+            };
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(s => s.SerialNo.ToLower().Contains(kw)
+                || s.QrSerialNo.ToLower().Contains(kw)
+                || (s.GenTimesNo != null && s.GenTimesNo.ToLower().Contains(kw)));
+        }
+
+        var secrets = await query.OrderBy(s => s.SerialNo).ToListAsync();
+        var rows = secrets.Select(s =>
+        {
+            var (label, badge) = SecretStatusMeta(s.Status);
+            return new InventorySecretRow(s.Id, s.SerialNo, s.QrSerialNo, s.GenTimesNo, s.FlagMap, s.FlagUsed,
+                s.Status, label, badge, s.Remark, s.LogLUBy, s.CreatedAt, s.UpdatedAt);
+        }).ToList();
+
+        var license = await db.SecretLicenses.FirstOrDefaultAsync();
+        int totalQty = license?.TotalQty ?? 0;
+        int totalIssued = license?.TotalQtyIssued ?? 0;
+        int totalUsed = license?.TotalQtyUsed ?? 0;
+        int remaining = license?.RemainingQty ?? 0;
+
+        int totalSecrets = await db.InventorySecrets.CountAsync();
+        int availableCount = await db.InventorySecrets.CountAsync(s => !s.FlagUsed && !s.FlagMap);
+        int usedCount = await db.InventorySecrets.CountAsync(s => s.FlagUsed);
+        int mappedCount = await db.InventorySecrets.CountAsync(s => !s.FlagUsed && s.FlagMap);
+
+        return new InventorySecretReport(genTimesNo, status, q, totalQty, totalIssued, totalUsed, remaining,
+            totalSecrets, availableCount, usedCount, mappedCount, rows);
+    }
+
+    public async Task<List<InventorySecret>> InventorySecretsAsync(string? genTimesNo = null, SecretStatus? status = null, string? q = null)
+    {
+        var query = db.InventorySecrets.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(genTimesNo)) query = query.Where(s => s.GenTimesNo == genTimesNo);
+        if (status.HasValue)
+        {
+            query = status.Value switch
+            {
+                SecretStatus.Available => query.Where(s => !s.FlagUsed && !s.FlagMap),
+                SecretStatus.Mapped => query.Where(s => !s.FlagUsed && s.FlagMap),
+                _ => query.Where(s => s.FlagUsed)
+            };
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(s => s.SerialNo.ToLower().Contains(kw)
+                || s.QrSerialNo.ToLower().Contains(kw)
+                || (s.GenTimesNo != null && s.GenTimesNo.ToLower().Contains(kw)));
+        }
+        return await query.OrderBy(s => s.SerialNo).ToListAsync();
+    }
+
+    public Task<InventorySecret?> GetInventorySecretAsync(int id) =>
+        db.InventorySecrets.FirstOrDefaultAsync(s => s.Id == id);
+
+    public Task<SecretLicense?> GetSecretLicenseAsync() =>
+        db.SecretLicenses.FirstOrDefaultAsync();
+
+    public async Task<(bool ok, string msg, int count)> GenerateSecretsAsync(int qty, string? prefix = null)
+    {
+        if (qty <= 0) return (false, "Số lượng cấp phát phải lớn hơn 0.", 0);
+        if (qty > 100000) return (false, "Số lượng cấp phát tối đa 100.000 số/lần.", 0);
+
+        var license = await db.SecretLicenses.FirstOrDefaultAsync();
+        if (license == null)
+        {
+            license = new SecretLicense { Mst = "0000000000", TotalQty = 0, TotalQtyIssued = 0, TotalQtyUsed = 0, IsActive = true, Remark = "Hạn mức số in tem khởi tạo" };
+            db.SecretLicenses.Add(license);
+            await db.SaveChangesAsync();
+        }
+
+        if (qty > license.RemainingQty)
+            return (false, $"Số lượng cấp phát ({qty:N0}) vượt quá số còn lại ({license.RemainingQty:N0}).", 0);
+
+        var genTimesNo = string.IsNullOrWhiteSpace(prefix)
+            ? $"GEN-{DateTime.Now:yyyyMMdd-HHmmss}"
+            : prefix.Trim().ToUpperInvariant();
+
+        var existing = await db.InventorySecrets.Select(s => s.SerialNo).ToListAsync();
+        var existingSet = existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var created = new List<InventorySecret>();
+        int seq = 1;
+        while (created.Count < qty)
+        {
+            var serialNo = $"{genTimesNo}-{seq:D6}";
+            seq++;
+            if (existingSet.Contains(serialNo)) continue;
+            existingSet.Add(serialNo);
+            created.Add(new InventorySecret
+            {
+                SerialNo = serialNo,
+                QrSerialNo = serialNo,
+                GenTimesNo = genTimesNo,
+                FlagMap = false,
+                FlagUsed = false,
+                LogLUBy = "api",
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        db.InventorySecrets.AddRange(created);
+        license.TotalQtyIssued += created.Count;
+        license.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        return (true, $"Đã cấp phát {created.Count:N0} số in tem cho lô '{genTimesNo}'.", created.Count);
+    }
+
+    public async Task<(bool ok, string msg)> MarkSecretUsedAsync(int id)
+    {
+        var s = await db.InventorySecrets.FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return (false, "Không tìm thấy số in tem.");
+        if (s.FlagUsed) return (false, $"Số in tem '{s.SerialNo}' đã được dùng trước đó.");
+
+        s.FlagUsed = true;
+        s.UpdatedAt = DateTime.Now;
+        s.LogLUBy = "api";
+
+        var license = await db.SecretLicenses.FirstOrDefaultAsync();
+        if (license != null) { license.TotalQtyUsed += 1; license.UpdatedAt = DateTime.Now; }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã đánh dấu số in tem '{s.SerialNo}' là đã dùng.");
+    }
+
+    public async Task<(bool ok, string msg)> MarkSecretMappedAsync(int id)
+    {
+        var s = await db.InventorySecrets.FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return (false, "Không tìm thấy số in tem.");
+        if (s.FlagUsed) return (false, $"Số in tem '{s.SerialNo}' đã dùng, không thể gán kiện.");
+
+        s.FlagMap = true;
+        s.UpdatedAt = DateTime.Now;
+        s.LogLUBy = "api";
+        await db.SaveChangesAsync();
+        return (true, $"Đã gán số in tem '{s.SerialNo}' vào kiện hàng hóa.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteInventorySecretAsync(int id)
+    {
+        var s = await db.InventorySecrets.FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return (false, "Không tìm thấy số in tem.");
+        if (s.FlagUsed) return (false, $"Số in tem '{s.SerialNo}' đã dùng, không thể xóa.");
+
+        db.InventorySecrets.Remove(s);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa số in tem '{s.SerialNo}'.");
+    }
 
 }

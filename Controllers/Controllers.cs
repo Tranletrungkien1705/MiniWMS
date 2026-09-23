@@ -2965,6 +2965,78 @@ public class PartColorController(IWmsService svc) : Controller
     }
 }
 
+public class InventorySecretController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? genTimesNo, SecretStatus? status, string? q)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.GenTimesNo = genTimesNo ?? "";
+        ViewBag.Status = status;
+        var report = await svc.InventorySecretsReportAsync(genTimesNo, status, q);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Generate(int qty, string? prefix)
+    {
+        var (ok, msg, _) = await svc.GenerateSecretsAsync(qty, prefix);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkUsed(int id)
+    {
+        var (ok, msg) = await svc.MarkSecretUsedAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkMapped(int id)
+    {
+        var (ok, msg) = await svc.MarkSecretMappedAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteInventorySecretAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? genTimesNo, SecretStatus? status, string? q)
+    {
+        var report = await svc.InventorySecretsReportAsync(genTimesNo, status, q);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH SÁCH SỐ IN TEM / SERIAL NIÊM PHONG (INV_INVENTORYSECRET)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Lô sinh:;{(string.IsNullOrWhiteSpace(genTimesNo) ? "Tất cả" : genTimesNo)}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Số serial;Số QR tem;Mã lần sinh;Trạng thái;Đã gán kiện;Đã dùng;Ghi chú;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.SerialNo}\";\"{r.QrSerialNo}\";\"{r.GenTimesNo ?? "—"}\";\"{r.StatusLabel}\";{(r.FlagMap ? "Có" : "Không")};{(r.FlagUsed ? "Có" : "Không")};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ ĐÃ MUA:;{report.TotalQty};;;;");
+        sb.AppendLine($";;ĐÃ PHÁT HÀNH:;{report.TotalQtyIssued};;;;");
+        sb.AppendLine($";;ĐÃ DÙNG:;{report.TotalQtyUsed};;;;");
+        sb.AppendLine($";;CÒN LẠI:;{report.RemainingQty};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"SoInTem_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class PartUnitController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? standardOnly)

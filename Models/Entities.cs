@@ -3421,3 +3421,82 @@ public record InventoryTransactionReport(
     int NgCount,             // Số bút toán liên quan hàng NG
     List<InventoryTransactionRow> Rows
 );
+/// <summary>Trạng thái vòng đời của Số in tem / Serial niêm phong (port từ Inv_InventorySecret Skycic).</summary>
+public enum SecretStatus
+{
+    Available = 0, // Chưa dùng / Sẵn sàng cấp phát để in tem (FlagUsed = '0')
+    Used = 1,      // Đã dùng / Đã in tem & xuất kho (FlagUsed = '1')
+    Mapped = 2     // Đã gán vào kiện/thùng hàng hóa (FlagMap = '1')
+}
+
+/// <summary>Số in tem / Serial niêm phong hàng hóa (Print/Seal Serial Number - port từ Inv_InventorySecret Skycic).
+/// Quản lý kho số serial đã mua từ cơ quan thuế, cấp phát theo lô để in tem nhãn/niêm phong kiện hàng.</summary>
+public class InventorySecret : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SerialNo { get; set; } = "";             // Số serial gốc (SerialNo)
+    public string QrSerialNo { get; set; } = "";           // Số serial in trên tem / mã QR (QR_SerialNo)
+    public string? GenTimesNo { get; set; }                // Mã lần sinh lô số (GenTimesNo, vd: GEN-2026-0001)
+    public bool FlagMap { get; set; } = false;             // Đã gán vào kiện/thùng hàng hóa (FlagMap: 1 - Đã gán, 0 - Chưa)
+    public bool FlagUsed { get; set; } = false;            // Đã dùng / đã in tem & xuất kho (FlagUsed: 1 - Đã dùng, 0 - Chưa)
+    public string? Remark { get; set; }                    // Ghi chú
+    public string? LogLUBy { get; set; }                   // Người cập nhật cuối (LogLUBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }               // Thời điểm cập nhật cuối (LogLUDTimeUTC)
+
+    /// <summary>Trạng thái suy diễn từ FlagUsed / FlagMap.</summary>
+    public SecretStatus Status => FlagUsed ? SecretStatus.Used : (FlagMap ? SecretStatus.Mapped : SecretStatus.Available);
+}
+
+/// <summary>Hạn mức (license) số in tem đã mua từ cơ quan thuế (port từ Invoice_license Skycic).
+/// Theo dõi tổng số đã mua, đã phát hành (cấp phát) và đã dùng để tính số còn lại.</summary>
+public class SecretLicense : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Mst { get; set; } = "";                  // Mã số thuế đơn vị (MST)
+    public int TotalQty { get; set; } = 0;                 // Tổng số in tem đã mua (TotalQty)
+    public int TotalQtyIssued { get; set; } = 0;           // Tổng số đã phát hành / cấp phát (TotalQtyIssued)
+    public int TotalQtyUsed { get; set; } = 0;             // Tổng số đã dùng / đã in (TotalQtyUsed)
+    public bool IsActive { get; set; } = true;             // Trạng thái hiệu lực (FlagActive)
+    public string? Remark { get; set; }                    // Ghi chú
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Số lượng còn lại có thể phát hành = TotalQty - TotalQtyIssued.</summary>
+    public int RemainingQty => TotalQty - TotalQtyIssued;
+}
+
+/// <summary>Dòng hiển thị Số in tem / Serial niêm phong (port từ Inv_InventorySecret Skycic).</summary>
+public record InventorySecretRow(
+    int Id,
+    string SerialNo,
+    string QrSerialNo,
+    string? GenTimesNo,
+    bool FlagMap,
+    bool FlagUsed,
+    SecretStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    string? Remark,
+    string? LogLUBy,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);
+
+/// <summary>Báo cáo & Danh sách Quản lý cấp số in tem tổng hợp kèm 4 thẻ KPI (port từ Inv_InventorySecret Skycic).</summary>
+public record InventorySecretReport(
+    string? GenTimesNo,
+    SecretStatus? StatusFilter,
+    string? Keyword,
+    int TotalQty,             // Tổng số in tem đã mua (license)
+    int TotalQtyIssued,       // Tổng số đã phát hành
+    int TotalQtyUsed,         // Tổng số đã dùng
+    int RemainingQty,         // Số còn lại có thể phát hành
+    int TotalSecrets,         // Tổng số serial trong kho số
+    int AvailableCount,       // Số serial chưa dùng
+    int UsedCount,            // Số serial đã dùng
+    int MappedCount,          // Số serial đã gán kiện
+    List<InventorySecretRow> Rows
+);
