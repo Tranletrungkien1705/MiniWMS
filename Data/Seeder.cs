@@ -54,6 +54,19 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.InventoryInTypes.AnyAsync())
+        {
+            db.InventoryInTypes.AddRange(
+                new InventoryInType { Code = "IN_BUY", Name = "Nhập mua hàng Nhà cung cấp", FlagStatistic = true, IsActive = true, Remark = "Tiếp nhận hàng mua mới từ NCC theo đơn đặt hàng PO và hóa đơn mua hàng" },
+                new InventoryInType { Code = "IN_PROD", Name = "Nhập thành phẩm sản xuất KCS", FlagStatistic = true, IsActive = true, Remark = "Tiếp nhận thành phẩm từ xưởng sản xuất hoàn thành kiểm định KCS nhập kho" },
+                new InventoryInType { Code = "IN_RETURN", Name = "Nhập hàng khách trả lại", FlagStatistic = false, IsActive = true, Remark = "Tiếp nhận hàng đổi trả, bảo hành hoặc khách hàng hoàn đơn bán" },
+                new InventoryInType { Code = "IN_TRANSFER", Name = "Nhập điều chuyển kho đến", FlagStatistic = false, IsActive = true, Remark = "Tiếp nhận hàng luân chuyển từ kho nội bộ khác theo lệnh điều chuyển" },
+                new InventoryInType { Code = "IN_AUDIT", Name = "Nhập cân bằng kiểm kê thừa", FlagStatistic = false, IsActive = true, Remark = "Phiếu nhập điều chỉnh tăng số dư khi thực tế kiểm đếm lớn hơn tồn sổ sách" },
+                new InventoryInType { Code = "IN_SAMPLE", Name = "Nhập hàng mẫu / Triển lãm", FlagStatistic = false, IsActive = true, Remark = "Nhập hàng mẫu trưng bày, thử nghiệm chất lượng hoặc hàng tài trợ không tính giá" },
+                new InventoryInType { Code = "IN_OTHER", Name = "Nhập kho điều chỉnh khác", FlagStatistic = false, IsActive = true, Remark = "Các giao dịch nhập kho phát sinh ngoài danh mục tiêu chuẩn" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.PartTypes.AnyAsync())
         {
             db.PartTypes.AddRange(
@@ -2148,7 +2161,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryInTypes" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2170,6 +2183,8 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_ProductModels_OrgId_BrandCode\" ON miniwms.\"ProductModels\" (\"OrgId\", \"BrandCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryTypes_OrgId_Code\" ON miniwms.\"InventoryTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryInTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"FlagStatistic\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryInTypes_OrgId_Code\" ON miniwms.\"InventoryInTypes\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
@@ -2667,7 +2682,18 @@ public static class Seeder
                 ""Remark"" TEXT NULL,
                 ""CreatedAt"" TEXT NOT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryTypes_OrgId_Code"" ON ""InventoryTypes"" (""OrgId"", ""Code"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryTypes_OrgId_Code"" ON ""InventoryTypes"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""InventoryInTypes"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""FlagStatistic"" INTEGER NOT NULL DEFAULT 1,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_InventoryInTypes_OrgId_Code"" ON ""InventoryInTypes"" (""OrgId"", ""Code"");"
         };
         foreach (var s in sql)
         {

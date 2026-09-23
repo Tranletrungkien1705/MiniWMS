@@ -43,11 +43,13 @@ public class AppDbContext : DbContext
     public DbSet<PartMaterialType> PartMaterialTypes => Set<PartMaterialType>();
     public DbSet<ProductModel> ProductModels => Set<ProductModel>();
     public DbSet<InventoryType> InventoryTypes => Set<InventoryType>();
+    public DbSet<InventoryInType> InventoryInTypes => Set<InventoryInType>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<InventoryInType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<InventoryType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<PartMaterialType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<ProductModel>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasIndex(x => new { x.OrgId, x.BrandCode }); e.HasQueryFilter(x => x.OrgId == _orgId); });

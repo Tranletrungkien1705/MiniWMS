@@ -1967,6 +1967,54 @@ public record InventoryTypeDetailDto(
     int TotalStockQty
 );
 
+/// <summary>Danh mục Loại hình / Lý do Nhập kho (Inbound Type - port từ Mst_InvInType Skycic: InvInType, InvInTypeName, FlagActive, FlagStatistic, Remark).</summary>
+public class InventoryInType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã loại nhập kho (InvInType, vd: IN_BUY, IN_PROD, IN_RETURN, IN_TRANSFER, IN_AUDIT, IN_SAMPLE, IN_OTHER)
+    public string Name { get; set; } = "";          // Tên loại nhập kho (InvInTypeName, vd: Nhập mua NCC, Nhập thành phẩm SX...)
+    public bool FlagStatistic { get; set; } = true; // Cờ tính vào thống kê phân tích mua hàng / sản lượng (FlagStatistic: 1 - Tính, 0 - Không tính)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Quy trình chứng từ nhập kho (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị loại nhập kho kèm số lượng chứng từ phát sinh và tổng số lượng nhập.</summary>
+public record InventoryInTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    bool FlagStatistic,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int TotalDocsCount,
+    int TotalQtyIn
+);
+
+/// <summary>Báo cáo / Danh sách loại nhập kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record InventoryInTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    bool? StatisticFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int StatisticCount,
+    int InactiveCount,
+    int TotalInDocsCount,
+    List<InventoryInTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại nhập kho kèm thông tin và chứng từ nhập kho liên quan.</summary>
+public record InventoryInTypeDetailDto(
+    InventoryInType Item,
+    List<StockDoc> Docs,
+    int TotalDocs,
+    int TotalQtyIn
+);
+
+
 
 
 

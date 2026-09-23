@@ -175,6 +175,16 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateInventoryTypeAsync(int id, InventoryType item);
     Task<(bool ok, string msg)> ToggleInventoryTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteInventoryTypeAsync(int id);
+    Task<InventoryInTypeReport> InventoryInTypesReportAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null);
+    Task<List<InventoryInType>> InventoryInTypesAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null);
+    Task<InventoryInType?> GetInventoryInTypeAsync(int id);
+    Task<InventoryInType?> GetInventoryInTypeByCodeAsync(string code);
+    Task<InventoryInTypeDetailDto?> GetInventoryInTypeDetailAsync(int id);
+    Task<int> CreateInventoryInTypeAsync(InventoryInType item);
+    Task<(bool ok, string msg)> UpdateInventoryInTypeAsync(int id, InventoryInType item);
+    Task<(bool ok, string msg)> ToggleInventoryInTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> ToggleInventoryInTypeStatisticAsync(int id);
+    Task<(bool ok, string msg)> DeleteInventoryInTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -6444,6 +6454,187 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại kho '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Loại hình / Lý do Nhập kho tổng hợp kèm 4 thẻ KPI (port từ Mst_InvInType Skycic: InvInType, InvInTypeName, FlagActive, FlagStatistic, Remark).</summary>
+    public async Task<InventoryInTypeReport> InventoryInTypesReportAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null)
+    {
+        var query = db.InventoryInTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (statisticOnly.HasValue) query = query.Where(t => t.FlagStatistic == statisticOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var types = await query.OrderBy(t => t.Code).ToListAsync();
+        var allInDocs = await db.Docs.Include(d => d.Lines).Where(d => d.Type == DocType.In).ToListAsync();
+
+        var rows = types.Select(t =>
+        {
+            var matchedDocs = allInDocs.Where(d =>
+            {
+                var codeUpper = t.Code.ToUpperInvariant();
+                if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
+                if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
+
+                if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
+                if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khách trả") == true || d.Note?.Contains("đổi trả") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
+                if (codeUpper == "IN_PROD" && (d.Note?.Contains("thành phẩm") == true || d.Note?.Contains("sản xuất") == true)) return true;
+                if (codeUpper == "IN_BUY" && (!string.IsNullOrEmpty(d.SupplierCode) || !string.IsNullOrEmpty(d.SupplierName)) &&
+                    d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("khách trả") != true && d.Note?.Contains("thành phẩm") != true) return true;
+                if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+
+                return false;
+            }).ToList();
+
+            int docsCount = matchedDocs.Count;
+            int qtyIn = matchedDocs.Sum(d => d.TotalQty);
+
+            return new InventoryInTypeRow(t.Id, t.Code, t.Name, t.FlagStatistic, t.IsActive, t.Remark, t.CreatedAt, docsCount, qtyIn);
+        }).ToList();
+
+        int totalTypes = await db.InventoryInTypes.CountAsync();
+        int activeCount = await db.InventoryInTypes.CountAsync(t => t.IsActive);
+        int statisticCount = await db.InventoryInTypes.CountAsync(t => t.FlagStatistic && t.IsActive);
+        int inactiveCount = totalTypes - activeCount;
+        int totalInDocsCount = allInDocs.Count;
+
+        return new InventoryInTypeReport(q, activeOnly, statisticOnly, totalTypes, activeCount, statisticCount, inactiveCount, totalInDocsCount, rows);
+    }
+
+    public Task<List<InventoryInType>> InventoryInTypesAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null)
+    {
+        var query = db.InventoryInTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (statisticOnly.HasValue) query = query.Where(t => t.FlagStatistic == statisticOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) || t.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<InventoryInType?> GetInventoryInTypeAsync(int id) =>
+        db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<InventoryInType?> GetInventoryInTypeByCodeAsync(string code) =>
+        db.InventoryInTypes.FirstOrDefaultAsync(t => t.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<InventoryInTypeDetailDto?> GetInventoryInTypeDetailAsync(int id)
+    {
+        var item = await db.InventoryInTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var allInDocs = await db.Docs.Include(d => d.Lines).ThenInclude(l => l.Product)
+                                     .Include(d => d.ToWarehouse)
+                                     .Where(d => d.Type == DocType.In)
+                                     .OrderByDescending(d => d.Date)
+                                     .ToListAsync();
+
+        var codeUpper = item.Code.ToUpperInvariant();
+        var matchedDocs = allInDocs.Where(d =>
+        {
+            if (!string.IsNullOrEmpty(d.Note) && d.Note.ToUpperInvariant().Contains(codeUpper)) return true;
+            if (!string.IsNullOrEmpty(d.RefNo) && d.RefNo.ToUpperInvariant().Contains(codeUpper)) return true;
+
+            if (codeUpper == "IN_AUDIT" && (d.Note?.Contains("kiểm kê") == true || d.Note?.Contains("cân bằng") == true)) return true;
+            if (codeUpper == "IN_RETURN" && (d.Note?.Contains("khách trả") == true || d.Note?.Contains("đổi trả") == true || !string.IsNullOrEmpty(d.CustomerCode))) return true;
+            if (codeUpper == "IN_PROD" && (d.Note?.Contains("thành phẩm") == true || d.Note?.Contains("sản xuất") == true)) return true;
+            if (codeUpper == "IN_BUY" && (!string.IsNullOrEmpty(d.SupplierCode) || !string.IsNullOrEmpty(d.SupplierName)) &&
+                d.Note?.Contains("kiểm kê") != true && d.Note?.Contains("khách trả") != true && d.Note?.Contains("thành phẩm") != true) return true;
+            if (codeUpper == "IN_TRANSFER" && d.Note?.Contains("chuyển kho") == true) return true;
+
+            return false;
+        }).ToList();
+
+        int totalDocs = matchedDocs.Count;
+        int totalQtyIn = matchedDocs.Sum(d => d.TotalQty);
+
+        return new InventoryInTypeDetailDto(item, matchedDocs, totalDocs, totalQtyIn);
+    }
+
+    public async Task<int> CreateInventoryInTypeAsync(InventoryInType item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên loại nhập kho không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"IN_TYPE{await db.InventoryInTypes.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.InventoryInTypes.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã loại nhập kho '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.InventoryInTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateInventoryInTypeAsync(int id, InventoryInType item)
+    {
+        var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên loại nhập kho không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.FlagStatistic = item.FlagStatistic;
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin loại nhập kho '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleInventoryInTypeStatusAsync(int id)
+    {
+        var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại nhập kho '{existing.Code}'." : $"Đã chuyển loại nhập kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleInventoryInTypeStatisticAsync(int id)
+    {
+        var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+
+        existing.FlagStatistic = !existing.FlagStatistic;
+        await db.SaveChangesAsync();
+        return (true, existing.FlagStatistic ? $"Đã bật cờ tính vào thống kê phân tích mua hàng/sản lượng cho loại '{existing.Code}'." : $"Đã tắt cờ tính vào thống kê mua hàng/sản lượng cho loại '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteInventoryInTypeAsync(int id)
+    {
+        var existing = await db.InventoryInTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại nhập kho.");
+
+        bool isUsed = await db.Docs.AnyAsync(d => d.Type == DocType.In && ((d.Note != null && d.Note.Contains(existing.Code)) || (d.RefNo != null && d.RefNo.Contains(existing.Code))));
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Loại nhập kho '{existing.Code}' đã phát sinh giao dịch nhập kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.InventoryInTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại nhập kho '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

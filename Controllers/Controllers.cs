@@ -3329,6 +3329,157 @@ public class InventoryTypeController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryInTypeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly, bool? statisticOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.StatisticOnly = statisticOnly;
+        var report = await svc.InventoryInTypesReportAsync(q, activeOnly, statisticOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetInventoryInTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy loại nhập kho." });
+        return Json(new
+        {
+            item = new
+            {
+                detail.Item.Id,
+                detail.Item.Code,
+                detail.Item.Name,
+                detail.Item.FlagStatistic,
+                detail.Item.Remark,
+                detail.Item.IsActive,
+                CreatedAt = detail.Item.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            totalDocs = detail.TotalDocs,
+            totalQtyIn = detail.TotalQtyIn,
+            docs = detail.Docs.Take(15).Select(d => new
+            {
+                d.Id,
+                d.Code,
+                Date = d.Date.ToString("dd/MM/yyyy"),
+                WarehouseName = d.ToWarehouse?.Name ?? "",
+                d.TotalQty,
+                d.Note,
+                d.RefNo
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, bool flagStatistic = true, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên loại nhập kho.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new InventoryInType
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            FlagStatistic = flagStatistic,
+            Remark = remark?.Trim(),
+            IsActive = isActive,
+            CreatedAt = DateTime.Now
+        };
+
+        try
+        {
+            await svc.CreateInventoryInTypeAsync(item);
+            TempData["Success"] = $"Đã tạo loại nhập kho '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, bool flagStatistic = true, string? remark = null, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên loại nhập kho.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new InventoryInType
+        {
+            Name = name.Trim(),
+            FlagStatistic = flagStatistic,
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateInventoryInTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleInventoryInTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatistic(int id)
+    {
+        var (ok, msg) = await svc.ToggleInventoryInTypeStatisticAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteInventoryInTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly, bool? statisticOnly)
+    {
+        var report = await svc.InventoryInTypesReportAsync(q, activeOnly, statisticOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC LOẠI HÌNH & LÝ DO NHẬP KHO (MST_INVIN_TYPE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc thống kê:;{(statisticOnly == true ? "Có tính thống kê" : statisticOnly == false ? "Không tính thống kê" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã loại nhập kho;Tên loại nhập kho;Tính thống kê mua/SL;Trạng thái;Số phiếu nhập;Tổng SL nhập;Ghi chú / Quy trình;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statStr = r.FlagStatistic ? "Có tính thống kê" : "Không tính";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{statStr}\";\"{statusStr}\";{r.TotalDocsCount};{r.TotalQtyIn};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ LOẠI NHẬP:;{report.TotalTypes};;;;;");
+        sb.AppendLine($";;TỔNG PHIẾU NHẬP LIÊN QUAN:;{report.TotalInDocsCount};;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"LoaiNhapKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+
 
 
 
