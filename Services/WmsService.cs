@@ -43,6 +43,7 @@ public interface IWmsService
     Task<List<BalanceRow>> BalancesAsync(int? warehouseId);
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<InventoryInOutReport> InventoryInOutReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<InventoryBalanceMonthReport> InventoryBalanceMonthReportAsync(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? keyword);
     Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
     Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
     Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null);
@@ -908,6 +909,164 @@ public class WmsService(AppDbContext db) : IWmsService
             whName,
             start,
             end.Date,
+            keyword,
+            rows.Sum(r => r.OpeningQty),
+            rows.Sum(r => r.InQty),
+            rows.Sum(r => r.OutQty),
+            rows.Sum(r => r.ClosingQty),
+            rows
+        );
+    }
+
+    /// <summary>Báo cáo Tồn kho theo tháng (Monthly Inventory Balance - port từ Rpt_InvInventoryBalanceMonth Skycic).
+    /// Tồn đầu kỳ = tồn cuối kỳ của tháng liền trước; Nhập/Xuất = phát sinh trong kỳ; Tồn cuối kỳ = Đầu + Nhập - Xuất.</summary>
+    public async Task<InventoryBalanceMonthReport> InventoryBalanceMonthReportAsync(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? keyword)
+    {
+        // Chuẩn hóa kỳ về đầu tháng
+        var from = new DateTime((fromMonth ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Year,
+                                (fromMonth ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Month, 1);
+        var toM = new DateTime((toMonth ?? DateTime.Today).Year, (toMonth ?? DateTime.Today).Month, 1);
+        if (toM < from) (from, toM) = (toM, from);
+
+        var periodStart = from;                                  // Đầu kỳ (00:00 ngày 1 tháng From)
+        var periodEnd = toM.AddMonths(1).AddTicks(-1);           // Cuối kỳ (cuối ngày cuối tháng To)
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var whDict = allWarehouses.ToDictionary(w => w.Id, w => w.Name);
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.ToListAsync();
+        var prodDict = products.ToDictionary(p => p.Id, p => p);
+        var productIds = prodDict.Keys.ToHashSet();
+
+        // Lấy tất cả phiếu đã ghi sổ liên quan đến các sản phẩm cần báo cáo (từ trước kỳ đến hết kỳ)
+        var docs = await db.Docs
+            .Where(d => d.Status == DocStatus.Posted && d.Date <= periodEnd && d.Lines.Any(l => productIds.Contains(l.ProductId)))
+            .Include(d => d.Lines)
+            .OrderBy(d => d.Date)
+            .ThenBy(d => d.Id)
+            .ToListAsync();
+
+        // Bảng tổng hợp theo (WarehouseId, ProductId): (OpeningQty, InQty, OutQty)
+        var statMap = new Dictionary<(int whId, int prodId), (int opening, int inQty, int outQty)>();
+
+        void AddOpening(int wId, int pId, int delta)
+        {
+            if (!whDict.ContainsKey(wId) || !productIds.Contains(pId)) return;
+            statMap.TryGetValue((wId, pId), out var cur);
+            statMap[(wId, pId)] = (cur.opening + delta, cur.inQty, cur.outQty);
+        }
+
+        void AddIn(int wId, int pId, int qty)
+        {
+            if (!whDict.ContainsKey(wId) || !productIds.Contains(pId)) return;
+            statMap.TryGetValue((wId, pId), out var cur);
+            statMap[(wId, pId)] = (cur.opening, cur.inQty + qty, cur.outQty);
+        }
+
+        void AddOut(int wId, int pId, int qty)
+        {
+            if (!whDict.ContainsKey(wId) || !productIds.Contains(pId)) return;
+            statMap.TryGetValue((wId, pId), out var cur);
+            statMap[(wId, pId)] = (cur.opening, cur.inQty, cur.outQty + qty);
+        }
+
+        foreach (var d in docs)
+        {
+            bool isBefore = d.Date < periodStart;
+            bool isInPeriod = d.Date >= periodStart && d.Date <= periodEnd;
+            if (!isBefore && !isInPeriod) continue;
+
+            foreach (var line in d.Lines)
+            {
+                if (!productIds.Contains(line.ProductId) || line.Quantity == 0) continue;
+
+                if (d.Type == DocType.In && d.ToWarehouseId is { } toWh)
+                {
+                    if (warehouseId.HasValue && toWh != warehouseId.Value) continue;
+                    if (isBefore) AddOpening(toWh, line.ProductId, line.Quantity);
+                    else if (isInPeriod) AddIn(toWh, line.ProductId, line.Quantity);
+                }
+                else if (d.Type == DocType.Out && d.FromWarehouseId is { } fromWh)
+                {
+                    if (warehouseId.HasValue && fromWh != warehouseId.Value) continue;
+                    if (isBefore) AddOpening(fromWh, line.ProductId, -line.Quantity);
+                    else if (isInPeriod) AddOut(fromWh, line.ProductId, line.Quantity);
+                }
+                else if (d.Type == DocType.Transfer)
+                {
+                    if (d.FromWarehouseId is { } fr)
+                    {
+                        if (!warehouseId.HasValue || fr == warehouseId.Value)
+                        {
+                            if (isBefore) AddOpening(fr, line.ProductId, -line.Quantity);
+                            else if (isInPeriod) AddOut(fr, line.ProductId, line.Quantity);
+                        }
+                    }
+                    if (d.ToWarehouseId is { } to)
+                    {
+                        if (!warehouseId.HasValue || to == warehouseId.Value)
+                        {
+                            if (isBefore) AddOpening(to, line.ProductId, line.Quantity);
+                            else if (isInPeriod) AddIn(to, line.ProductId, line.Quantity);
+                        }
+                    }
+                }
+            }
+        }
+
+        var rows = new List<InventoryBalanceMonthRow>();
+        var whTargetList = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        foreach (var w in whTargetList)
+        {
+            foreach (var p in products)
+            {
+                statMap.TryGetValue((w.Id, p.Id), out var stat);
+                int closing = stat.opening + stat.inQty - stat.outQty;
+
+                // Chỉ hiển thị dòng có phát sinh hoặc tồn khác 0 (hoặc khi tìm kiếm theo từ khóa)
+                if (stat.opening != 0 || stat.inQty != 0 || stat.outQty != 0 || closing != 0 || !string.IsNullOrWhiteSpace(keyword))
+                {
+                    rows.Add(new InventoryBalanceMonthRow(
+                        p.Id,
+                        p.Code,
+                        p.Name,
+                        p.Uom,
+                        p.PartTypeCode,
+                        null,
+                        w.Id,
+                        w.Name,
+                        stat.opening,
+                        stat.inQty,
+                        stat.outQty,
+                        closing
+                    ));
+                }
+            }
+        }
+
+        rows = rows.OrderBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
+
+        return new InventoryBalanceMonthReport(
+            warehouseId,
+            whName,
+            from,
+            toM,
             keyword,
             rows.Sum(r => r.OpeningQty),
             rows.Sum(r => r.InQty),

@@ -446,6 +446,53 @@ public class InventoryInOutController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryBalanceMonthController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+
+        var defFrom = fromMonth ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var defTo = toMonth ?? DateTime.Today;
+        ViewBag.FromMonth = defFrom.ToString("yyyy-MM");
+        ViewBag.ToMonth = defTo.ToString("yyyy-MM");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryBalanceMonthReportAsync(warehouseId, defFrom, defTo, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? q)
+    {
+        var defFrom = fromMonth ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var defTo = toMonth ?? DateTime.Today;
+        var report = await svc.InventoryBalanceMonthReportAsync(warehouseId, defFrom, defTo, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị đúng tiếng Việt
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO THEO THÁNG");
+        sb.AppendLine($"Kho:;{report.WarehouseName}");
+        sb.AppendLine($"Từ kỳ:;{report.FromMonth:MM/yyyy};Đến kỳ:;{report.ToMonth:MM/yyyy}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho hàng;Tồn đầu kỳ;Nhập trong kỳ;Xuất trong kỳ;Tồn cuối kỳ");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.OpeningQty};{r.InQty};{r.OutQty};{r.ClosingQty}");
+        }
+
+        sb.AppendLine($";;;;TỔNG CỘNG;{report.TotalOpeningQty};{report.TotalInQty};{report.TotalOutQty};{report.TotalClosingQty}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoTheoThang_{report.FromMonth:yyyyMM}_{report.ToMonth:yyyyMM}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 public class OrgController(AppDbContext db) : Controller
 {
     public async Task<IActionResult> Index()

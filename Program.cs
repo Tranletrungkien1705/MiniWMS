@@ -84,6 +84,15 @@ app.MapGet("/api/reports/in-out-inventory", async (int? warehouseId, DateTime? f
     return Results.Ok(report);
 });
 
+// API Báo cáo Tồn kho theo tháng (Monthly Inventory Balance - port từ Rpt_InvInventoryBalanceMonth Skycic)
+app.MapGet("/api/reports/inventory-balance-month", async (int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? q, IWmsService svc) =>
+{
+    var defFrom = fromMonth ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    var defTo = toMonth ?? DateTime.Today;
+    var report = await svc.InventoryBalanceMonthReportAsync(warehouseId, defFrom, defTo, q);
+    return Results.Ok(report);
+});
+
 // API Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (Stock Minimum Alert - port từ Rpt_Inv_InventoryBalance_Minimum Skycic)
 app.MapGet("/api/reports/min-stock-alert", async (int? warehouseId, bool? onlyBelowMin, string? q, IWmsService svc) =>
 {

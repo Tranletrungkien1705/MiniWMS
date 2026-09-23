@@ -358,6 +358,37 @@ public record InventoryInOutReport(
     List<InventoryInOutRow> Rows
 );
 
+/// <summary>Dòng chi tiết Báo cáo Tồn kho theo tháng (port từ Rpt_InvInventoryBalanceMonth Skycic).</summary>
+public record InventoryBalanceMonthRow(
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string? PartTypeCode,      // Phân loại loại mặt hàng (PartType)
+    string? PartTypeName,      // Tên phân loại loại mặt hàng (PartTypeName)
+    int WarehouseId,
+    string WarehouseName,
+    int OpeningQty,            // Tồn đầu kỳ (TotalQtyInvBegin)
+    int InQty,                 // Nhập trong kỳ (TotalQtyIn)
+    int OutQty,                // Xuất trong kỳ (TotalQtyOut)
+    int ClosingQty             // Tồn cuối kỳ (TotalQtyInvEnd = Begin + In - Out)
+);
+
+/// <summary>Báo cáo Tồn kho theo tháng (Monthly Inventory Balance - port từ Rpt_InvInventoryBalanceMonth Skycic).
+/// Tồn đầu kỳ = tồn cuối kỳ của tháng liền trước; Nhập/Xuất = phát sinh trong kỳ; Tồn cuối kỳ = Đầu + Nhập - Xuất.</summary>
+public record InventoryBalanceMonthReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime FromMonth,
+    DateTime ToMonth,
+    string? Keyword,
+    int TotalOpeningQty,
+    int TotalInQty,
+    int TotalOutQty,
+    int TotalClosingQty,
+    List<InventoryBalanceMonthRow> Rows
+);
+
 /// <summary>Dòng chi tiết Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
 public record SummaryInReturnSupRow(
     string SupplierCode,
