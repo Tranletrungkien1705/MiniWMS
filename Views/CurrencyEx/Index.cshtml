@@ -1,0 +1,585 @@
+@model CurrencyExchangeReport
+@{
+    ViewData["Title"] = "Loại tiền & Tỷ giá ngoại tệ kho";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1">
+            <i class="bi bi-currency-exchange text-primary me-2"></i>Quản lý Danh mục Loại tiền & Tỷ giá quy đổi ngoại tệ kho
+        </h5>
+        <div class="text-muted small">
+            Port từ <code>OS_PrdCenter_Mst_CurrencyEx</code> (Skycic) — Quản lý danh mục loại tiền tệ, tỷ giá hối đoái mua vào / bán ra / liên ngân hàng (VND đối chiếu), phục vụ tính giá vốn nhập kho ngoại thương (UPIn), quy đổi đa tiền tệ và định giá tài sản tồn kho WMS
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/CurrencyEx/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createCurrencyModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Loại tiền mới
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ LOẠI TIỀN</span>
+                    <i class="bi bi-cash-stack text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalCurrencies</div>
+                <div class="small text-muted">Bao gồm đồng cơ sở VND & ngoại tệ</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">@Model.InactiveCount ngoại tệ tạm dừng áp dụng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỶ GIÁ USD THAM CHIẾU</span>
+                    <i class="bi bi-currency-dollar text-primary fs-5"></i>
+                </div>
+                <div class="fs-5 fw-bold text-primary font-monospace">
+                    @Model.UsdBuyRate.ToString("N0") <span class="text-muted fw-normal fs-6">/</span> @Model.UsdSellRate.ToString("N0") <span class="fs-6 fw-normal text-muted">đ</span>
+                </div>
+                <div class="small text-muted">Mua vào / Bán ra (VCB tham chiếu)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CẬP NHẬT GẦN NHẤT</span>
+                    <i class="bi bi-clock-history text-info fs-5"></i>
+                </div>
+                <div class="fs-5 fw-bold text-info">@Model.LastUpdated.ToString("dd/MM/yyyy HH:mm")</div>
+                <div class="small text-muted">Đồng bộ theo biên độ tỷ giá kho</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Công cụ Tính nhanh Quy đổi Ngoại tệ (Quick Currency Converter) -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-3">
+        <div class="d-flex align-items-center gap-2 mb-2">
+            <i class="bi bi-calculator text-primary fs-5"></i>
+            <h6 class="fw-bold mb-0">Công cụ Quy đổi Ngoại tệ nhanh (Currency Converter Live)</h6>
+            <span class="badge bg-light text-muted border">Áp dụng tức thì tỷ giá kho</span>
+        </div>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Số tiền cần đổi:</label>
+                <div class="input-group input-group-sm">
+                    <input type="number" id="calcAmount" class="form-control" value="100" min="0" step="any" placeholder="Nhập số tiền...">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Tiền nguồn:</label>
+                <select id="calcFrom" class="form-select form-select-sm">
+                    @foreach (var c in Model.Rows)
+                    {
+                        if (c.Code == "USD") {
+                            <option value="@c.Code" selected>@c.Code - @c.Name</option>
+                        } else {
+                            <option value="@c.Code">@c.Code - @c.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-1 text-center">
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100" title="Đảo chiều quy đổi" onclick="swapCurrency()">
+                    <i class="bi bi-arrow-left-right"></i>
+                </button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Tiền đích:</label>
+                <select id="calcTo" class="form-select form-select-sm">
+                    @foreach (var c in Model.Rows)
+                    {
+                        if (c.Code == "VND") {
+                            <option value="@c.Code" selected>@c.Code - @c.Name</option>
+                        } else {
+                            <option value="@c.Code">@c.Code - @c.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold mb-1">Loại tỷ giá:</label>
+                <select id="calcRateType" class="form-select form-select-sm">
+                    <option value="buy" selected>Tỷ giá Mua vào</option>
+                    <option value="sell">Tỷ giá Bán ra</option>
+                    <option value="inter">Tỷ giá Liên NH</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-sm btn-primary w-100" onclick="performConvert()">
+                    <i class="bi bi-lightning-charge-fill me-1"></i> Tính quy đổi
+                </button>
+            </div>
+        </div>
+        <div id="convertResultBox" class="mt-2 p-2 bg-light rounded border d-none">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <span class="text-muted small">Kết quả quy đổi:</span>
+                    <span class="fs-5 fw-bold text-success ms-2 font-monospace" id="resultConvertedText">0</span>
+                </div>
+                <div class="text-muted small" id="resultFormulaText">
+                    Công thức: —
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm & Trạng thái -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" action="/CurrencyEx" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" class="form-control border-start-0" placeholder="Tìm theo mã ngoại tệ (USD, EUR, CNY...), tên tiền tệ, nguồn tham chiếu..." value="@keyword">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    @if (activeOnly == true) {
+                        <option value="true" selected>Đang áp dụng</option>
+                        <option value="false">Tạm dừng áp dụng</option>
+                    } else if (activeOnly == false) {
+                        <option value="true">Đang áp dụng</option>
+                        <option value="false" selected>Tạm dừng áp dụng</option>
+                    } else {
+                        <option value="true">Đang áp dụng</option>
+                        <option value="false">Tạm dừng áp dụng</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc danh sách
+                </button>
+                <a href="/CurrencyEx" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh mục loại tiền & tỷ giá -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="currencyTable">
+                <thead class="table-light text-uppercase small text-muted">
+                    <tr>
+                        <th class="text-center" style="width:50px">STT</th>
+                        <th style="width:110px">Mã loại tiền</th>
+                        <th>Tên loại tiền</th>
+                        <th class="text-center" style="width:70px">Ký hiệu</th>
+                        <th style="width:110px">Tiền cơ sở</th>
+                        <th class="text-end" style="width:140px">Tỷ giá Mua (VND)</th>
+                        <th class="text-end" style="width:140px">Tỷ giá Bán (VND)</th>
+                        <th class="text-end" style="width:140px">Tỷ giá Liên NH</th>
+                        <th style="width:160px">Nguồn tỷ giá</th>
+                        <th style="width:140px">Cập nhật cuối</th>
+                        <th class="text-center" style="width:110px">Trạng thái</th>
+                        <th class="text-center" style="width:120px">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="12" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                Không tìm thấy loại tiền nào phù hợp với bộ lọc.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr class="@(r.IsBase ? "table-light fw-semibold" : "")">
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    @if (r.IsBase)
+                                    {
+                                        <span class="badge bg-primary fs-6 px-2 py-1">@r.Code</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-dark fs-6 px-2 py-1">@r.Code</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="fw-bold">@r.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(r.Remark))
+                                    {
+                                        <div class="text-muted small" style="font-size:11px">@r.Remark</div>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-light text-dark border font-monospace fs-6">@(r.Symbol ?? "—")</span>
+                                </td>
+                                <td>
+                                    <span class="text-secondary small font-monospace">@r.BaseCurrencyCode</span>
+                                    @if (r.IsBase)
+                                    {
+                                        <span class="badge bg-success-subtle text-success ms-1" style="font-size:10px">Cơ sở</span>
+                                    }
+                                </td>
+                                <td class="text-end font-monospace text-primary fw-bold">
+                                    @if (r.IsBase) {
+                                        <span>1.0000</span>
+                                    } else {
+                                        <span>@r.BuyRate.ToString("N2")</span>
+                                    }
+                                </td>
+                                <td class="text-end font-monospace text-danger fw-bold">
+                                    @if (r.IsBase) {
+                                        <span>1.0000</span>
+                                    } else {
+                                        <span>@r.SellRate.ToString("N2")</span>
+                                    }
+                                </td>
+                                <td class="text-end font-monospace text-success">
+                                    @if (r.IsBase) {
+                                        <span>1.0000</span>
+                                    } else {
+                                        <span>@r.InterExRate.ToString("N2")</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="small text-truncate" style="max-width:150px" title="@r.InterExSource">
+                                        <i class="bi bi-bank me-1 text-muted"></i>@(r.InterExSource ?? "Vietcombank")
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="small text-muted font-monospace">@r.UpdatedTimeDisplay</span>
+                                </td>
+                                <td class="text-center">
+                                    @if (r.IsActive)
+                                    {
+                                        <span class="badge bg-success"><i class="bi bi-check me-1"></i>Áp dụng</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary"><i class="bi bi-pause me-1"></i>Tạm dừng</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-primary" title="Sửa tỷ giá" onclick="openEditModal(@r.Id)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        @if (!r.IsBase)
+                                        {
+                                            <form method="post" action="/CurrencyEx/Toggle" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái của ngoại tệ @r.Code?');">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@r.Id">
+                                                <button type="submit" class="btn btn-outline-warning" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                                    <i class="bi @(r.IsActive ? "bi-eye-slash" : "bi-eye")"></i>
+                                                </button>
+                                            </form>
+                                            <form method="post" action="/CurrencyEx/Delete" class="d-inline" onsubmit="return confirm('Xác nhận xóa loại ngoại tệ @r.Code khỏi danh mục?');">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="id" value="@r.Id">
+                                                <button type="submit" class="btn btn-outline-danger" title="Xóa">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Loại tiền -->
+<div class="modal fade" id="createCurrencyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/CurrencyEx/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm Loại tiền & Tỷ giá mới</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Chọn nhanh mã ngoại tệ phổ biến:</label>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('USD', 'Đô la Mỹ', '$', 25420, 25480, 25450)">USD ($)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('EUR', 'Euro', '€', 27530, 28980, 28250)">EUR (€)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('JPY', 'Yên Nhật', '¥', 167.2, 177.1, 172.15)">JPY (¥)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('CNY', 'Nhân dân tệ', '¥', 3490, 3640, 3565)">CNY (¥)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('GBP', 'Bảng Anh', '£', 32650, 34040, 33340)">GBP (£)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('KRW', 'Won Hàn Quốc', '₩', 18.25, 19.95, 19.1)">KRW (₩)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('SGD', 'Đô la Singapore', 'S$', 18850, 19650, 19250)">SGD (S$)</button>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="fillPreset('THB', 'Baht Thái Lan', '฿', 710, 790, 750)">THB (฿)</button>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Mã loại tiền (CurrencyCode) <span class="text-danger">*</span></label>
+                            <input type="text" name="code" id="newCode" class="form-control text-uppercase" placeholder="vd: USD, EUR, AUD..." required maxlength="10">
+                            <div class="form-text small">Chuẩn ISO 4217 (3 chữ cái in hoa).</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Tên loại tiền (CurrencyName) <span class="text-danger">*</span></label>
+                            <input type="text" name="name" id="newName" class="form-control" placeholder="vd: Đô la Mỹ, Euro..." required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">Ký hiệu</label>
+                            <input type="text" name="symbol" id="newSymbol" class="form-control text-center" placeholder="$, €, ¥..." maxlength="5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-primary">Tỷ giá Mua vào (BuyRate) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="buyRate" id="newBuyRate" class="form-control text-end font-monospace" placeholder="0.00" required>
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-danger">Tỷ giá Bán ra (SellRate) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="sellRate" id="newSellRate" class="form-control text-end font-monospace" placeholder="0.00" required>
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-success">Tỷ giá Liên NH (InterEx)</label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="interExRate" id="newInterExRate" class="form-control text-end font-monospace" placeholder="0.00">
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Nguồn tham chiếu tỷ giá</label>
+                            <input type="text" name="interExSource" id="newSource" class="form-control" placeholder="vd: Vietcombank Hội sở, Ngân hàng Nhà nước..." value="Vietcombank Hội sở">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Trạng thái ban đầu</label>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="isActive" value="true" id="newActive" checked>
+                                <label class="form-check-label" for="newActive">Kích hoạt áp dụng ngay</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">Ghi chú / Quy ước quy đổi kho</label>
+                            <textarea name="remark" id="newRemark" class="form-control" rows="2" placeholder="Ghi chú điều kiện áp dụng, hợp đồng ngoại thương..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>Lưu Loại tiền</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Loại tiền & Cập nhật Tỷ giá -->
+<div class="modal fade" id="editCurrencyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/CurrencyEx/Update">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Cập nhật Tỷ giá & Thông tin Loại tiền</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Mã loại tiền</label>
+                            <input type="text" id="editCode" class="form-control bg-light font-monospace fw-bold" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Tên loại tiền <span class="text-danger">*</span></label>
+                            <input type="text" name="name" id="editName" class="form-control" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">Ký hiệu</label>
+                            <input type="text" name="symbol" id="editSymbol" class="form-control text-center" maxlength="5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-primary">Tỷ giá Mua vào (BuyRate) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="buyRate" id="editBuyRate" class="form-control text-end font-monospace" required>
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-danger">Tỷ giá Bán ra (SellRate) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="sellRate" id="editSellRate" class="form-control text-end font-monospace" required>
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-success">Tỷ giá Liên NH (InterEx)</label>
+                            <div class="input-group">
+                                <input type="number" step="any" min="0" name="interExRate" id="editInterExRate" class="form-control text-end font-monospace">
+                                <span class="input-group-text small">VND</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Nguồn tham chiếu tỷ giá</label>
+                            <input type="text" name="interExSource" id="editSource" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Trạng thái áp dụng</label>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editActive">
+                                <label class="form-check-label" for="editActive">Đang áp dụng trong hệ thống kho</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">Ghi chú</label>
+                            <textarea name="remark" id="editRemark" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function fillPreset(code, name, symbol, buy, sell, inter) {
+        document.getElementById('newCode').value = code;
+        document.getElementById('newName').value = name;
+        document.getElementById('newSymbol').value = symbol;
+        document.getElementById('newBuyRate').value = buy;
+        document.getElementById('newSellRate').value = sell;
+        document.getElementById('newInterExRate').value = inter;
+    }
+
+    async function openEditModal(id) {
+        try {
+            const res = await fetch(`/CurrencyEx/Detail/${id}`);
+            if (!res.ok) {
+                alert('Không thể tải thông tin ngoại tệ.');
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('editId').value = data.id;
+            document.getElementById('editCode').value = data.code;
+            document.getElementById('editName').value = data.name;
+            document.getElementById('editSymbol').value = data.symbol || '';
+            document.getElementById('editBuyRate').value = data.buyRate;
+            document.getElementById('editSellRate').value = data.sellRate;
+            document.getElementById('editInterExRate').value = data.interExRate;
+            document.getElementById('editSource').value = data.interExSource || '';
+            document.getElementById('editActive').checked = data.isActive;
+            document.getElementById('editRemark').value = data.remark || '';
+
+            // Nếu là đồng cơ sở VND thì khóa chỉnh sửa tỷ giá
+            if (data.isBase) {
+                document.getElementById('editBuyRate').readOnly = true;
+                document.getElementById('editSellRate').readOnly = true;
+                document.getElementById('editInterExRate').readOnly = true;
+                document.getElementById('editActive').disabled = true;
+            } else {
+                document.getElementById('editBuyRate').readOnly = false;
+                document.getElementById('editSellRate').readOnly = false;
+                document.getElementById('editInterExRate').readOnly = false;
+                document.getElementById('editActive').disabled = false;
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById('editCurrencyModal'));
+            modal.show();
+        } catch (e) {
+            console.error(e);
+            alert('Đã xảy ra lỗi khi kết nối máy chủ.');
+        }
+    }
+
+    function swapCurrency() {
+        const fromElem = document.getElementById('calcFrom');
+        const toElem = document.getElementById('calcTo');
+        const temp = fromElem.value;
+        fromElem.value = toElem.value;
+        toElem.value = temp;
+        performConvert();
+    }
+
+    async function performConvert() {
+        const amount = parseFloat(document.getElementById('calcAmount').value) || 0;
+        const from = document.getElementById('calcFrom').value;
+        const to = document.getElementById('calcTo').value;
+        const rateType = document.getElementById('calcRateType').value;
+
+        if (amount <= 0) {
+            alert('Vui lòng nhập số tiền > 0.');
+            return;
+        }
+
+        try {
+            const res = await fetch(`/CurrencyEx/Convert?amount=${amount}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&rateType=${encodeURIComponent(rateType)}`);
+            if (!res.ok) {
+                alert('Lỗi khi tính quy đổi tỷ giá.');
+                return;
+            }
+            const data = await res.json();
+            const box = document.getElementById('convertResultBox');
+            box.classList.remove('d-none');
+
+            // Format kết quả
+            const formatted = Number(data.convertedAmount).toLocaleString('vi-VN', { maximumFractionDigits: 4 });
+            document.getElementById('resultConvertedText').innerText = `${formatted} ${data.targetCurrency}`;
+            document.getElementById('resultFormulaText').innerText = `Công thức: ${data.formula}`;
+        } catch (e) {
+            console.error(e);
+            alert('Lỗi tính toán quy đổi.');
+        }
+    }
+
+    // Tự động tính quy đổi mặc định khi mở trang
+    document.addEventListener('DOMContentLoaded', function () {
+        performConvert();
+    });
+</script>
+}

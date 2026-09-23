@@ -3274,6 +3274,93 @@ app.MapGet("/api/reports/summary-in-out-partner-pivot/kpis", async (
     });
 });
 
+// ==================== QUẢN LÝ LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
+app.MapGet("/api/currency-exchanges", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.CurrencyExchangesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/currency-exchanges/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetCurrencyExchangeAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy loại ngoại tệ." });
+});
+
+app.MapGet("/api/currency-exchanges/code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetCurrencyExchangeByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy loại ngoại tệ." });
+});
+
+app.MapGet("/api/currency-exchanges/convert", async (decimal amount, string from, string to, string? rateType, IWmsService svc) =>
+{
+    var result = await svc.ConvertCurrencyAsync(amount, from, to, rateType ?? "buy");
+    return Results.Ok(result);
+});
+
+app.MapPost("/api/currency-exchanges", async (CreateCurrencyExchangeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập đầy đủ mã và tên loại ngoại tệ." });
+
+    var item = new CurrencyExchange
+    {
+        Code = dto.Code.Trim().ToUpperInvariant(),
+        Name = dto.Name.Trim(),
+        Symbol = dto.Symbol?.Trim(),
+        BuyRate = dto.BuyRate > 0 ? dto.BuyRate : 1m,
+        SellRate = dto.SellRate > 0 ? dto.SellRate : dto.BuyRate,
+        InterExRate = (dto.InterExRate.HasValue && dto.InterExRate.Value > 0) ? dto.InterExRate.Value : (dto.BuyRate + dto.SellRate) / 2m,
+        InterExSource = dto.InterExSource?.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+
+    try
+    {
+        var id = await svc.CreateCurrencyExchangeAsync(item);
+        return Results.Created($"/api/currency-exchanges/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/currency-exchanges/{id:int}", async (int id, UpdateCurrencyExchangeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Vui lòng nhập tên loại ngoại tệ." });
+
+    var item = new CurrencyExchange
+    {
+        Name = dto.Name.Trim(),
+        Symbol = dto.Symbol?.Trim(),
+        BuyRate = dto.BuyRate > 0 ? dto.BuyRate : 1m,
+        SellRate = dto.SellRate > 0 ? dto.SellRate : dto.BuyRate,
+        InterExRate = (dto.InterExRate.HasValue && dto.InterExRate.Value > 0) ? dto.InterExRate.Value : (dto.BuyRate + dto.SellRate) / 2m,
+        InterExSource = dto.InterExSource?.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+
+    var (ok, msg) = await svc.UpdateCurrencyExchangeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/currency-exchanges/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleCurrencyExchangeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/currency-exchanges/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteCurrencyExchangeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3357,4 +3444,6 @@ record CreateTempPrintDto(string? Code, string Name, string TypeCode, string? Pa
 record UpdateTempPrintDto(string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
 record CreateTempPrintTypeDto(string? Code, string Name, string? GroupCode, string? Description, bool? IsActive);
 record UpdateTempPrintTypeDto(string Name, string? GroupCode, string? Description, bool? IsActive);
+record CreateCurrencyExchangeDto(string Code, string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
+record UpdateCurrencyExchangeDto(string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
 

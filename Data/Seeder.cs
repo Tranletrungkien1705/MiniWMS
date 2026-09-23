@@ -3284,13 +3284,157 @@ public static class Seeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed Danh mục Loại tiền & Tỷ giá quy đổi ngoại tệ kho (port từ OS_PrdCenter_Mst_CurrencyEx Skycic)
+        if (!await db.CurrencyExchanges.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.CurrencyExchanges.AddRange(
+                new CurrencyExchange
+                {
+                    Code = "VND",
+                    Name = "Đồng Việt Nam",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 1.0000m,
+                    SellRate = 1.0000m,
+                    InterExRate = 1.0000m,
+                    InterExSource = "Ngân hàng Nhà nước Việt Nam",
+                    Symbol = "₫",
+                    IsBase = true,
+                    IsActive = true,
+                    Remark = "Đồng tiền kế toán & định giá tồn kho cơ sở của hệ thống MiniWMS",
+                    UpdatedTime = now
+                },
+                new CurrencyExchange
+                {
+                    Code = "USD",
+                    Name = "Đô la Mỹ",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 25420.0000m,
+                    SellRate = 25480.0000m,
+                    InterExRate = 25450.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "$",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ thanh toán chính cho các lô nhập khẩu phụ tùng & nguyên phụ liệu may",
+                    UpdatedTime = now
+                },
+                new CurrencyExchange
+                {
+                    Code = "EUR",
+                    Name = "Đồng tiền chung Châu Âu",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 27530.0000m,
+                    SellRate = 28980.0000m,
+                    InterExRate = 28250.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "€",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ nhập khẩu máy may công nghiệp và thiết bị tự động hóa từ Đức/Ý",
+                    UpdatedTime = now.AddHours(-1)
+                },
+                new CurrencyExchange
+                {
+                    Code = "JPY",
+                    Name = "Yên Nhật",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 167.2000m,
+                    SellRate = 177.1000m,
+                    InterExRate = 172.1500m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "¥",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ đối soát nhập linh kiện chính xác và khóa kéo kỹ thuật cao Nhật Bản",
+                    UpdatedTime = now.AddHours(-2)
+                },
+                new CurrencyExchange
+                {
+                    Code = "CNY",
+                    Name = "Nhân dân tệ",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 3490.0000m,
+                    SellRate = 3640.0000m,
+                    InterExRate = 3565.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "¥",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ nhập khẩu vải tấm cotton cuộn, chỉ may công nghiệp và phụ liệu bao bì",
+                    UpdatedTime = now.AddHours(-3)
+                },
+                new CurrencyExchange
+                {
+                    Code = "GBP",
+                    Name = "Bảng Anh",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 32650.0000m,
+                    SellRate = 34040.0000m,
+                    InterExRate = 33340.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "£",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Hợp đồng gia công OEM thời trang xuất khẩu sang Vương quốc Anh",
+                    UpdatedTime = now.AddHours(-4)
+                },
+                new CurrencyExchange
+                {
+                    Code = "KRW",
+                    Name = "Won Hàn Quốc",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 18.2500m,
+                    SellRate = 19.9500m,
+                    InterExRate = 19.1000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "₩",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ nhập khẩu phụ kiện da may mặc thời trang Hàn Quốc",
+                    UpdatedTime = now.AddHours(-5)
+                },
+                new CurrencyExchange
+                {
+                    Code = "SGD",
+                    Name = "Đô la Singapore",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 18850.0000m,
+                    SellRate = 19650.0000m,
+                    InterExRate = 19250.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "S$",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Thanh toán cước vận tải biển trung chuyển logistics khu vực Đông Nam Á",
+                    UpdatedTime = now.AddHours(-6)
+                },
+                new CurrencyExchange
+                {
+                    Code = "THB",
+                    Name = "Baht Thái Lan",
+                    BaseCurrencyCode = "VND",
+                    BuyRate = 710.0000m,
+                    SellRate = 790.0000m,
+                    InterExRate = 750.0000m,
+                    InterExSource = "Vietcombank Hội sở",
+                    Symbol = "฿",
+                    IsBase = false,
+                    IsActive = true,
+                    Remark = "Ngoại tệ nhập hạt nhựa PE và bao bì thùng carton từ Thái Lan",
+                    UpdatedTime = now.AddHours(-8)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -3351,6 +3495,8 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_Code\" ON miniwms.\"TempPrints\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_TypeCode\" ON miniwms.\"TempPrints\" (\"OrgId\", \"TypeCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_IsDefault\" ON miniwms.\"TempPrints\" (\"OrgId\", \"IsDefault\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"CurrencyExchanges\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"BaseCurrencyCode\" text NOT NULL DEFAULT 'VND', \"BuyRate\" numeric NOT NULL DEFAULT 1, \"SellRate\" numeric NOT NULL DEFAULT 1, \"InterExRate\" numeric NOT NULL DEFAULT 1, \"InterExSource\" text NULL, \"Symbol\" text NULL, \"IsBase\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"UpdatedTime\" timestamp NOT NULL DEFAULT now(), \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CurrencyExchanges_OrgId_Code\" ON miniwms.\"CurrencyExchanges\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeCode\" text NULL");
@@ -4057,7 +4203,25 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_Code"" ON ""TempPrints"" (""OrgId"", ""Code"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_TypeCode"" ON ""TempPrints"" (""OrgId"", ""TypeCode"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_IsDefault"" ON ""TempPrints"" (""OrgId"", ""IsDefault"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_TempPrints_OrgId_IsDefault"" ON ""TempPrints"" (""OrgId"", ""IsDefault"");",
+            @"CREATE TABLE IF NOT EXISTS ""CurrencyExchanges"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""BaseCurrencyCode"" TEXT NOT NULL DEFAULT 'VND',
+                ""BuyRate"" NUMERIC NOT NULL DEFAULT 1,
+                ""SellRate"" NUMERIC NOT NULL DEFAULT 1,
+                ""InterExRate"" NUMERIC NOT NULL DEFAULT 1,
+                ""InterExSource"" TEXT NULL,
+                ""Symbol"" TEXT NULL,
+                ""IsBase"" INTEGER NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""UpdatedTime"" TEXT NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CurrencyExchanges_OrgId_Code"" ON ""CurrencyExchanges"" (""OrgId"", ""Code"");"
         };
         foreach (var s in sql)
         {

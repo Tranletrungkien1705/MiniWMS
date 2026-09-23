@@ -297,6 +297,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateTempPrintTypeAsync(int id, TempPrintType item);
     Task<(bool ok, string msg)> DeleteTempPrintTypeAsync(int id);
     Task<SummaryInOutPartnerPivotReport> SummaryInOutPartnerPivotReportAsync(int? warehouseId, string? partnerCode, string? productGrpCode, int? productId, string? actionType, DateTime? fromDate, DateTime? toDate, string? keyword);
+    Task<CurrencyExchangeReport> CurrencyExchangesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<CurrencyExchange>> CurrencyExchangesAsync(bool? activeOnly = null);
+    Task<CurrencyExchange?> GetCurrencyExchangeAsync(int id);
+    Task<CurrencyExchange?> GetCurrencyExchangeByCodeAsync(string code);
+    Task<int> CreateCurrencyExchangeAsync(CurrencyExchange item);
+    Task<(bool ok, string msg)> UpdateCurrencyExchangeAsync(int id, CurrencyExchange item);
+    Task<(bool ok, string msg)> ToggleCurrencyExchangeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteCurrencyExchangeAsync(int id);
+    Task<CurrencyConvertResultDto> ConvertCurrencyAsync(decimal amount, string sourceCode, string targetCode, string rateType = "buy");
     Task<WmsDash> DashboardAsync();
 }
 
@@ -10209,6 +10218,208 @@ public class WmsService(AppDbContext db) : IWmsService
             pivotRows,
             detailList
         );
+    }
+
+    // ==================== QUẢN LÝ LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
+    public async Task<CurrencyExchangeReport> CurrencyExchangesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.CurrencyExchanges.AsQueryable();
+        if (activeOnly == true) query = query.Where(c => c.IsActive);
+        else if (activeOnly == false) query = query.Where(c => !c.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Code.ToLower().Contains(kw) ||
+                                     c.Name.ToLower().Contains(kw) ||
+                                     (c.InterExSource != null && c.InterExSource.ToLower().Contains(kw)) ||
+                                     (c.Remark != null && c.Remark.ToLower().Contains(kw)));
+        }
+
+        var items = await query.OrderByDescending(c => c.IsBase)
+                               .ThenBy(c => c.Code)
+                               .ToListAsync();
+
+        var allCurrencies = await db.CurrencyExchanges.ToListAsync();
+        int totalCurrencies = allCurrencies.Count;
+        int activeCount = allCurrencies.Count(c => c.IsActive);
+        int inactiveCount = totalCurrencies - activeCount;
+
+        var usd = allCurrencies.FirstOrDefault(c => c.Code.Equals("USD", StringComparison.OrdinalIgnoreCase));
+        decimal usdBuyRate = usd?.BuyRate ?? 25420m;
+        decimal usdSellRate = usd?.SellRate ?? 25480m;
+        DateTime lastUpdated = allCurrencies.Count > 0 ? allCurrencies.Max(c => c.UpdatedTime) : DateTime.Now;
+
+        var rows = items.Select(c => new CurrencyExchangeRow(
+            c.Id,
+            c.Code,
+            c.Name,
+            c.BaseCurrencyCode,
+            c.BuyRate,
+            c.SellRate,
+            c.InterExRate,
+            c.InterExSource ?? "Vietcombank",
+            c.Symbol,
+            c.IsBase,
+            c.IsActive,
+            c.Remark,
+            c.UpdatedTime,
+            c.UpdatedTime.ToString("dd/MM/yyyy HH:mm"),
+            c.CreatedAt
+        )).ToList();
+
+        return new CurrencyExchangeReport(
+            q,
+            activeOnly,
+            totalCurrencies,
+            activeCount,
+            inactiveCount,
+            usdBuyRate,
+            usdSellRate,
+            lastUpdated,
+            rows
+        );
+    }
+
+    public Task<List<CurrencyExchange>> CurrencyExchangesAsync(bool? activeOnly = null)
+    {
+        var query = db.CurrencyExchanges.AsQueryable();
+        if (activeOnly == true) query = query.Where(c => c.IsActive);
+        return query.OrderByDescending(c => c.IsBase).ThenBy(c => c.Code).ToListAsync();
+    }
+
+    public Task<CurrencyExchange?> GetCurrencyExchangeAsync(int id) =>
+        db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
+
+    public Task<CurrencyExchange?> GetCurrencyExchangeByCodeAsync(string code) =>
+        db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<int> CreateCurrencyExchangeAsync(CurrencyExchange item)
+    {
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        item.BaseCurrencyCode = string.IsNullOrWhiteSpace(item.BaseCurrencyCode) ? "VND" : item.BaseCurrencyCode.Trim().ToUpperInvariant();
+        item.BuyRate = item.BuyRate > 0 ? item.BuyRate : 1m;
+        item.SellRate = item.SellRate > 0 ? item.SellRate : item.BuyRate;
+        item.InterExRate = item.InterExRate > 0 ? item.InterExRate : (item.BuyRate + item.SellRate) / 2m;
+        item.UpdatedTime = DateTime.Now;
+        item.CreatedAt = DateTime.Now;
+
+        bool exists = await db.CurrencyExchanges.AnyAsync(c => c.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã ngoại tệ '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        db.CurrencyExchanges.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateCurrencyExchangeAsync(int id, CurrencyExchange item)
+    {
+        var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+
+        existing.Name = item.Name.Trim();
+        existing.Symbol = item.Symbol?.Trim();
+        existing.BuyRate = item.BuyRate > 0 ? item.BuyRate : existing.BuyRate;
+        existing.SellRate = item.SellRate > 0 ? item.SellRate : existing.SellRate;
+        existing.InterExRate = item.InterExRate > 0 ? item.InterExRate : (existing.BuyRate + existing.SellRate) / 2m;
+        existing.InterExSource = item.InterExSource?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+        existing.UpdatedTime = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật tỷ giá loại tiền '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleCurrencyExchangeStatusAsync(int id)
+    {
+        var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+
+        if (existing.IsBase)
+        {
+            return (false, "Không thể ngừng áp dụng đồng tiền cơ sở (VND).");
+        }
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedTime = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt tỷ giá '{existing.Code}'." : $"Đã chuyển '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteCurrencyExchangeAsync(int id)
+    {
+        var existing = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại ngoại tệ.");
+
+        if (existing.IsBase)
+        {
+            return (false, "Không được xóa đồng tiền cơ sở (VND).");
+        }
+
+        db.CurrencyExchanges.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại ngoại tệ '{existing.Code}'.");
+    }
+
+    public async Task<CurrencyConvertResultDto> ConvertCurrencyAsync(decimal amount, string sourceCode, string targetCode, string rateType = "buy")
+    {
+        sourceCode = string.IsNullOrWhiteSpace(sourceCode) ? "USD" : sourceCode.Trim().ToUpperInvariant();
+        targetCode = string.IsNullOrWhiteSpace(targetCode) ? "VND" : targetCode.Trim().ToUpperInvariant();
+        rateType = string.IsNullOrWhiteSpace(rateType) ? "buy" : rateType.Trim().ToLowerInvariant();
+
+        if (sourceCode == targetCode)
+        {
+            return new CurrencyConvertResultDto(amount, sourceCode, targetCode, amount, 1m, rateType, $"{amount:N2} {sourceCode} = {amount:N2} {targetCode}");
+        }
+
+        var sourceCurr = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Code == sourceCode)
+                         ?? new CurrencyExchange { Code = sourceCode, BuyRate = 1m, SellRate = 1m, InterExRate = 1m };
+        var targetCurr = await db.CurrencyExchanges.FirstOrDefaultAsync(c => c.Code == targetCode)
+                         ?? new CurrencyExchange { Code = targetCode, BuyRate = 1m, SellRate = 1m, InterExRate = 1m };
+
+        Func<CurrencyExchange, decimal> getRate = c => rateType switch
+        {
+            "sell" => c.SellRate,
+            "inter" => c.InterExRate,
+            _ => c.BuyRate
+        };
+
+        decimal sRate = getRate(sourceCurr);
+        decimal tRate = getRate(targetCurr);
+
+        decimal convertedAmount;
+        decimal appliedRate;
+        string formula;
+
+        if (targetCode == "VND" || targetCurr.IsBase)
+        {
+            // Ngoại tệ -> VND: Amount * sRate
+            convertedAmount = Math.Round(amount * sRate, 2);
+            appliedRate = sRate;
+            formula = $"{amount:N2} {sourceCode} × {appliedRate:N2} = {convertedAmount:N2} {targetCode}";
+        }
+        else if (sourceCode == "VND" || sourceCurr.IsBase)
+        {
+            // VND -> Ngoại tệ: Amount / tRate
+            appliedRate = tRate > 0 ? tRate : 1m;
+            convertedAmount = Math.Round(amount / appliedRate, 4);
+            formula = $"{amount:N0} VND ÷ {appliedRate:N2} = {convertedAmount:N4} {targetCode}";
+        }
+        else
+        {
+            // Ngoại tệ A -> Ngoại tệ B: (Amount * sRate) / tRate
+            decimal inVnd = amount * sRate;
+            appliedRate = tRate > 0 ? (sRate / tRate) : 1m;
+            convertedAmount = tRate > 0 ? Math.Round(inVnd / tRate, 4) : 0m;
+            formula = $"{amount:N2} {sourceCode} × {sRate:N2} ÷ {tRate:N2} = {convertedAmount:N4} {targetCode}";
+        }
+
+        return new CurrencyConvertResultDto(amount, sourceCode, targetCode, convertedAmount, appliedRate, rateType, formula);
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

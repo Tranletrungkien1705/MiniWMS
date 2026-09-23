@@ -2873,3 +2873,69 @@ public record SummaryInOutPartnerPivotReport(
 
 
 
+
+
+// ==================== QUẢN LÝ LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
+
+/// <summary>Danh mục Loại tiền & Tỷ giá quy đổi ngoại tệ kho (port từ OS_PrdCenter_Mst_CurrencyEx Skycic: CurrencyCode, CurrencyName, BaseCurrencyCode, BuyRate, SellRate, InterEx, UpdatedTime, FlagActive, Remark).</summary>
+public class CurrencyExchange : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã ngoại tệ (CurrencyCode, vd: USD, EUR, JPY, CNY, GBP, KRW, SGD, THB, VND)
+    public string Name { get; set; } = "";             // Tên loại tiền (CurrencyName, vd: Đô la Mỹ, Euro, Yên Nhật, Nhân dân tệ...)
+    public string BaseCurrencyCode { get; set; } = "VND"; // Loại tiền cơ sở đối chiếu (BaseCurrencyCode)
+    public decimal BuyRate { get; set; } = 1m;         // Tỷ giá mua vào quy đổi sang tiền cơ sở (BuyRate)
+    public decimal SellRate { get; set; } = 1m;        // Tỷ giá bán ra quy đổi sang tiền cơ sở (SellRate)
+    public decimal InterExRate { get; set; } = 1m;     // Tỷ giá liên ngân hàng / tỷ giá trung tâm (InterEx)
+    public string? InterExSource { get; set; }         // Nguồn tham chiếu tỷ giá (Vietcombank, Ngân hàng Nhà nước, VietinBank...)
+    public string? Symbol { get; set; }                // Ký hiệu loại tiền ($, €, ¥, £, ₩, ₫)
+    public bool IsBase { get; set; } = false;          // Là đồng tiền hạch toán cơ sở (VND)
+    public bool IsActive { get; set; } = true;         // Cờ hoạt động / Cho phép giao dịch quy đổi kho (FlagActive)
+    public string? Remark { get; set; }                // Ghi chú / Quy ước quy đổi giá vốn ngoại thương
+    public DateTime UpdatedTime { get; set; } = DateTime.Now; // Thời điểm cập nhật tỷ giá
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng hiển thị tỷ giá loại tiền trên bảng danh mục.</summary>
+public record CurrencyExchangeRow(
+    int Id,
+    string Code,
+    string Name,
+    string BaseCurrencyCode,
+    decimal BuyRate,
+    decimal SellRate,
+    decimal InterExRate,
+    string? InterExSource,
+    string? Symbol,
+    bool IsBase,
+    bool IsActive,
+    string? Remark,
+    DateTime UpdatedTime,
+    string UpdatedTimeDisplay,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo danh mục tỷ giá ngoại tệ tổng hợp kèm 4 thẻ KPI.</summary>
+public record CurrencyExchangeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalCurrencies,
+    int ActiveCount,
+    int InactiveCount,
+    decimal UsdBuyRate,
+    decimal UsdSellRate,
+    DateTime LastUpdated,
+    List<CurrencyExchangeRow> Rows
+);
+
+/// <summary>Kết quả quy đổi tiền tệ theo tỷ giá kho.</summary>
+public record CurrencyConvertResultDto(
+    decimal SourceAmount,
+    string SourceCurrency,
+    string TargetCurrency,
+    decimal ConvertedAmount,
+    decimal AppliedRate,
+    string RateType,     // "buy", "sell", "inter"
+    string Formula
+);

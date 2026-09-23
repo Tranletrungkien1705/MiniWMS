@@ -5414,6 +5414,156 @@ public class SummaryInOutPartnerPivotController(IWmsService svc, AppDbContext db
     }
 }
 
+// ==================== QUẢN LÝ LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PrdCenter_Mst_CurrencyEx Skycic) ====================
+public class CurrencyExController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.CurrencyExchangesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var item = await svc.GetCurrencyExchangeAsync(id);
+        if (item == null) return NotFound(new { error = "Không tìm thấy loại ngoại tệ." });
+        return Json(new
+        {
+            item.Id,
+            item.Code,
+            item.Name,
+            item.BaseCurrencyCode,
+            item.BuyRate,
+            item.SellRate,
+            item.InterExRate,
+            item.InterExSource,
+            item.Symbol,
+            item.IsBase,
+            item.IsActive,
+            item.Remark,
+            UpdatedTime = item.UpdatedTime.ToString("dd/MM/yyyy HH:mm")
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Convert(decimal amount, string from, string to, string rateType = "buy")
+    {
+        var result = await svc.ConvertCurrencyAsync(amount, from, to, rateType);
+        return Json(result);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? symbol, decimal buyRate, decimal sellRate, decimal? interExRate, string? interExSource, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã và tên loại ngoại tệ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new CurrencyExchange
+            {
+                Code = code.Trim().ToUpperInvariant(),
+                Name = name.Trim(),
+                Symbol = symbol?.Trim(),
+                BuyRate = buyRate > 0 ? buyRate : 1m,
+                SellRate = sellRate > 0 ? sellRate : buyRate,
+                InterExRate = (interExRate.HasValue && interExRate.Value > 0) ? interExRate.Value : (buyRate + sellRate) / 2m,
+                InterExSource = interExSource?.Trim(),
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreateCurrencyExchangeAsync(item);
+            TempData["Success"] = $"Đã thêm loại ngoại tệ '{item.Name}' ({item.Code}) với tỷ giá {item.BuyRate:N2} - {item.SellRate:N2} VND thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? symbol, decimal buyRate, decimal sellRate, decimal? interExRate, string? interExSource, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên loại ngoại tệ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new CurrencyExchange
+        {
+            Name = name.Trim(),
+            Symbol = symbol?.Trim(),
+            BuyRate = buyRate > 0 ? buyRate : 1m,
+            SellRate = sellRate > 0 ? sellRate : buyRate,
+            InterExRate = (interExRate.HasValue && interExRate.Value > 0) ? interExRate.Value : (buyRate + sellRate) / 2m,
+            InterExSource = interExSource?.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateCurrencyExchangeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleCurrencyExchangeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteCurrencyExchangeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.CurrencyExchangesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+
+        sb.AppendLine("DANH MỤC LOẠI TIỀN & TỶ GIÁ NGOẠI TỆ KHO (OS_PRDCENTER_MST_CURRENCYEX)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine($"Tỷ giá USD tham chiếu:;Mua: {report.UsdBuyRate:N2} VND;Bán: {report.UsdSellRate:N2} VND");
+        sb.AppendLine();
+
+        sb.AppendLine("STT;Mã ngoại tệ;Tên loại tiền;Ký hiệu;Đồng cơ sở;Tỷ giá Mua vào (VND);Tỷ giá Bán ra (VND);Tỷ giá Liên NH (VND);Nguồn tham chiếu tỷ giá;Cập nhật lần cuối;Trạng thái;Ghi chú quy ước");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            var isBaseStr = r.IsBase ? "Đồng tiền cơ sở" : "Ngoại tệ quy đổi";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.Symbol ?? ""}\";\"{r.BaseCurrencyCode} ({isBaseStr})\";{r.BuyRate:F4};{r.SellRate:F4};{r.InterExRate:F4};\"{r.InterExSource?.Replace("\"", "\"\"") ?? ""}\";{r.UpdatedTimeDisplay};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG LOẠI NGOẠI TỆ:;{report.TotalCurrencies};;;;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;;;");
+        sb.AppendLine($";;TẠM DỪNG:;{report.InactiveCount};;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"TyGiaNgoaiTe_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 
 
 
