@@ -40,6 +40,7 @@ public class Product : IOrgOwned
     public string? ModelCode { get; set; }    // Dòng sản phẩm / Model hàng hóa (port từ Mst_Model / OS_PrdCenter_Mst_Model: MD-M10-SLIM, MD-LV-501...)
     public string? PMType { get; set; }       // Nhóm chất liệu / Loại vật liệu hàng hóa (port từ Mst_PartMaterialType Skycic: COTTON, KAKI, LEATHER...)
     public string? ProductGrpCode { get; set; } // Phân nhóm hàng hóa / Nhóm sản phẩm (port từ Mst_ProductGroup Skycic: GRP_THOI_TRANG, GRP_AO_SM, GRP_QUAN_JEAN...)
+    public string? SpecCode { get; set; }     // Quy cách / Cấu hình kỹ thuật sản phẩm (port từ Mst_Spec / OS_PrdCenter_Mst_Spec Skycic: SPC-AO-SM-TRANG-L, SPC-QUAN-JN-DEN-32...)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
@@ -2939,3 +2940,74 @@ public record CurrencyConvertResultDto(
     string RateType,     // "buy", "sell", "inter"
     string Formula
 );
+
+// ==================== QUẢN LÝ QUY CÁCH & THUỘC TÍNH KỸ THUẬT SẢN PHẨM KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+
+/// <summary>Danh mục Quy cách & Thuộc tính / Đặc tính kỹ thuật hàng hóa kho (port từ Mst_Spec & OS_PrdCenter_Mst_Spec Skycic: SpecCode, SpecName, SpecDesc, ModelCode, SpecType1, SpecType2, Color, FlagHasSerial, FlagHasLOT, StandardUnitCode, DefaultUnitCode, FlagActive, Remark).</summary>
+public class ProductSpec : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã quy cách / Mã cấu hình kỹ thuật sản phẩm (SpecCode, vd: SPC-AO-SM-TRANG-L, SPC-QUAN-JN-DEN-32...)
+    public string Name { get; set; } = "";             // Tên quy cách / Tên phiên bản hàng hóa (SpecName, vd: Áo sơ mi Slimfit Trắng - Size L, Quần Jeans Nam Đen - W32/L32...)
+    public string? SpecDesc { get; set; }             // Mô tả thông số kỹ thuật chi tiết (SpecDesc)
+    public string? ModelCode { get; set; }            // Thuộc Dòng sản phẩm / Model nào (ModelCode, vd: MD-M10-SLIM, MD-LV-501...)
+    public string? SpecType1 { get; set; }            // Phân loại cấp 1 (SpecType1, vd: Tiêu chuẩn Standard, Cao cấp Premium, Công nghiệp Industrial, Xuất khẩu Export)
+    public string? Color { get; set; }                // Phiên bản màu sắc (Color, vd: Trắng White, Đen Matt Black, Xanh Navy, Bạc Silver)
+    public string? StandardUnitCode { get; set; }     // Đơn vị tính tiêu chuẩn (StandardUnitCode / DefaultUnitCode, vd: cái, chiếc, mét, bộ)
+    public bool FlagHasSerial { get; set; } = false;   // Cờ quản lý theo Serial / Barcode cá thể hóa (FlagHasSerial: bắt buộc quét mã vạch cá thể khi xuất nhập kho)
+    public bool FlagHasLOT { get; set; } = false;      // Cờ quản lý theo Lô sản xuất & Hạn sử dụng (FlagHasLOT: bắt buộc nhập số lô và HSD theo dõi FEFO/FIFO)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public string? Remark { get; set; }               // Ghi chú kỹ thuật, tiêu chuẩn đóng gói hoặc điều kiện bảo quản kho (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Dòng thông tin hiển thị Quy cách sản phẩm kèm dòng sản phẩm, thương hiệu, cờ Serial/Lô, số lượng mặt hàng và tổng tồn kho thực tế.</summary>
+public record ProductSpecRow(
+    int Id,
+    string Code,
+    string Name,
+    string? SpecDesc,
+    string? ModelCode,
+    string? ModelName,
+    string? BrandName,
+    string? SpecType1,
+    string? Color,
+    string? StandardUnitCode,
+    bool FlagHasSerial,
+    bool FlagHasLOT,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách quy cách sản phẩm tổng hợp kèm 4 thẻ KPI.</summary>
+public record ProductSpecReport(
+    string? Keyword,
+    string? ModelCodeFilter,
+    string? SpecType1Filter,
+    bool? HasSerialFilter,
+    bool? HasLotFilter,
+    bool? ActiveFilter,
+    int TotalSpecs,
+    int ActiveCount,
+    int HasSerialCount,
+    int HasLotCount,
+    int TotalProductsMapped,
+    int TotalStockQty,
+    List<ProductSpecRow> Rows
+);
+
+/// <summary>Chi tiết Quy cách sản phẩm kèm thông tin dòng model và danh sách mặt hàng thực tế áp dụng quy cách này.</summary>
+public record ProductSpecDetailDto(
+    ProductSpec Spec,
+    ProductModel? Model,
+    Brand? Brand,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+

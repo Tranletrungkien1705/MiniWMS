@@ -57,6 +57,7 @@ public class AppDbContext : DbContext
     public DbSet<TempPrintType> TempPrintTypes => Set<TempPrintType>();
     public DbSet<TempPrint> TempPrints => Set<TempPrint>();
     public DbSet<CurrencyExchange> CurrencyExchanges => Set<CurrencyExchange>();
+    public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -360,6 +361,12 @@ public class AppDbContext : DbContext
             e.Property(x => x.BuyRate).HasPrecision(18, 4);
             e.Property(x => x.SellRate).HasPrecision(18, 4);
             e.Property(x => x.InterExRate).HasPrecision(18, 4);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<ProductSpec>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ModelCode });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

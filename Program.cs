@@ -3361,6 +3361,97 @@ app.MapDelete("/api/currency-exchanges/{id:int}", async (int id, IWmsService svc
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== QUẢN LÝ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+app.MapGet("/api/product-specs", async (string? q, string? modelCode, string? specType1, bool? hasSerial, bool? hasLot, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.ProductSpecsReportAsync(q, modelCode, specType1, hasSerial, hasLot, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/product-specs/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetProductSpecAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy quy cách sản phẩm." });
+});
+
+app.MapGet("/api/product-specs/code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetProductSpecByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy quy cách sản phẩm." });
+});
+
+app.MapGet("/api/product-specs/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetProductSpecDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy quy cách sản phẩm." });
+});
+
+app.MapPost("/api/product-specs", async (CreateProductSpecDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Mã quy cách và tên quy cách không được để trống." });
+
+    var item = new ProductSpec
+    {
+        Code = dto.Code.Trim().ToUpper(),
+        Name = dto.Name.Trim(),
+        SpecDesc = dto.SpecDesc?.Trim(),
+        ModelCode = string.IsNullOrWhiteSpace(dto.ModelCode) ? null : dto.ModelCode.Trim(),
+        SpecType1 = string.IsNullOrWhiteSpace(dto.SpecType1) ? null : dto.SpecType1.Trim(),
+        Color = string.IsNullOrWhiteSpace(dto.Color) ? null : dto.Color.Trim(),
+        StandardUnitCode = string.IsNullOrWhiteSpace(dto.StandardUnitCode) ? "cái" : dto.StandardUnitCode.Trim(),
+        FlagHasSerial = dto.FlagHasSerial ?? false,
+        FlagHasLOT = dto.FlagHasLOT ?? false,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateProductSpecAsync(item);
+        return Results.Created($"/api/product-specs/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/product-specs/{id:int}", async (int id, UpdateProductSpecDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Tên quy cách không được để trống." });
+
+    var item = new ProductSpec
+    {
+        Name = dto.Name.Trim(),
+        SpecDesc = dto.SpecDesc?.Trim(),
+        ModelCode = string.IsNullOrWhiteSpace(dto.ModelCode) ? null : dto.ModelCode.Trim(),
+        SpecType1 = string.IsNullOrWhiteSpace(dto.SpecType1) ? null : dto.SpecType1.Trim(),
+        Color = string.IsNullOrWhiteSpace(dto.Color) ? null : dto.Color.Trim(),
+        StandardUnitCode = string.IsNullOrWhiteSpace(dto.StandardUnitCode) ? "cái" : dto.StandardUnitCode.Trim(),
+        FlagHasSerial = dto.FlagHasSerial ?? false,
+        FlagHasLOT = dto.FlagHasLOT ?? false,
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    var (ok, msg) = await svc.UpdateProductSpecAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/product-specs/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleProductSpecStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/product-specs/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteProductSpecAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3446,4 +3537,6 @@ record CreateTempPrintTypeDto(string? Code, string Name, string? GroupCode, stri
 record UpdateTempPrintTypeDto(string Name, string? GroupCode, string? Description, bool? IsActive);
 record CreateCurrencyExchangeDto(string Code, string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
 record UpdateCurrencyExchangeDto(string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
+record CreateProductSpecDto(string Code, string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
+record UpdateProductSpecDto(string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
 

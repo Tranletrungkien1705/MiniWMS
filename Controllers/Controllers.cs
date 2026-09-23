@@ -5564,6 +5564,154 @@ public class CurrencyExController(IWmsService svc) : Controller
     }
 }
 
+// ==================== QUẢN LÝ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+public class ProductSpecController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? modelCode, string? specType1, bool? hasSerial, bool? hasLot, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ModelCode = modelCode;
+        ViewBag.SpecType1 = specType1;
+        ViewBag.HasSerial = hasSerial;
+        ViewBag.HasLot = hasLot;
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Models = await svc.ProductModelsAsync();
+        ViewBag.Units = await svc.PartUnitsAsync();
+
+        var report = await svc.ProductSpecsReportAsync(q, modelCode, specType1, hasSerial, hasLot, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetProductSpecDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy quy cách sản phẩm." });
+        return Json(detail);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? specDesc, string? modelCode, string? specType1, string? color, string? standardUnitCode, bool flagHasSerial, bool flagHasLOT, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Mã quy cách và tên quy cách không được để trống.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new ProductSpec
+            {
+                Code = code.Trim().ToUpper(),
+                Name = name.Trim(),
+                SpecDesc = specDesc?.Trim(),
+                ModelCode = string.IsNullOrWhiteSpace(modelCode) ? null : modelCode.Trim(),
+                SpecType1 = string.IsNullOrWhiteSpace(specType1) ? null : specType1.Trim(),
+                Color = string.IsNullOrWhiteSpace(color) ? null : color.Trim(),
+                StandardUnitCode = string.IsNullOrWhiteSpace(standardUnitCode) ? "cái" : standardUnitCode.Trim(),
+                FlagHasSerial = flagHasSerial,
+                FlagHasLOT = flagHasLOT,
+                IsActive = isActive,
+                Remark = remark?.Trim()
+            };
+            await svc.CreateProductSpecAsync(item);
+            TempData["Success"] = $"Đã thêm quy cách '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, string name, string? specDesc, string? modelCode, string? specType1, string? color, string? standardUnitCode, bool flagHasSerial, bool flagHasLOT, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Tên quy cách không được để trống.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new ProductSpec
+        {
+            Name = name.Trim(),
+            SpecDesc = specDesc?.Trim(),
+            ModelCode = string.IsNullOrWhiteSpace(modelCode) ? null : modelCode.Trim(),
+            SpecType1 = string.IsNullOrWhiteSpace(specType1) ? null : specType1.Trim(),
+            Color = string.IsNullOrWhiteSpace(color) ? null : color.Trim(),
+            StandardUnitCode = string.IsNullOrWhiteSpace(standardUnitCode) ? "cái" : standardUnitCode.Trim(),
+            FlagHasSerial = flagHasSerial,
+            FlagHasLOT = flagHasLOT,
+            IsActive = isActive,
+            Remark = remark?.Trim()
+        };
+
+        var (ok, msg) = await svc.UpdateProductSpecAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleProductSpecStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteProductSpecAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? modelCode, string? specType1, bool? hasSerial, bool? hasLot, bool? activeOnly)
+    {
+        var report = await svc.ProductSpecsReportAsync(q, modelCode, specType1, hasSerial, hasLot, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC QUY CÁCH SẢN PHẨM KHO (OS_PRDCENTER_MST_SPEC)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số quy cách:;{report.TotalSpecs};Đang áp dụng:;{report.ActiveCount};QL Serial:;{report.HasSerialCount};QL Lô & Date:;{report.HasLotCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã quy cách;Tên quy cách;Dòng Model;Thương hiệu;Phân loại;Màu sắc;ĐVT chuẩn;QL Serial;QL Lô & Date;Số mặt hàng;Tổng tồn kho;Trạng thái;Mô tả kỹ thuật;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            var serialStr = r.FlagHasSerial ? "Có (Serial/IMEI)" : "Không";
+            var lotStr = r.FlagHasLOT ? "Có (Lô & HSD)" : "Không";
+
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.ModelName ?? r.ModelCode ?? ""}\";\"{r.BrandName ?? ""}\";\"{r.SpecType1 ?? ""}\";\"{r.Color ?? ""}\";\"{r.StandardUnitCode ?? ""}\";\"{serialStr}\";\"{lotStr}\";{r.ProductCount};{r.TotalStockQty};\"{statusStr}\";\"{r.SpecDesc?.Replace("\"", "\"\"") ?? ""}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG QUY CÁCH:;{report.TotalSpecs};;;;;;;;;;;");
+        sb.AppendLine($";;MẶT HÀNG LIÊN KẾT:;{report.TotalProductsMapped};;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG TỒN KHO THỰC TẾ:;{report.TotalStockQty};;;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"QuyCachSanPham_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+
 
 
 

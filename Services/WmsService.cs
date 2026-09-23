@@ -306,6 +306,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleCurrencyExchangeStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteCurrencyExchangeAsync(int id);
     Task<CurrencyConvertResultDto> ConvertCurrencyAsync(decimal amount, string sourceCode, string targetCode, string rateType = "buy");
+    Task<ProductSpecReport> ProductSpecsReportAsync(string? q = null, string? modelCode = null, string? specType1 = null, bool? hasSerial = null, bool? hasLot = null, bool? activeOnly = null);
+    Task<List<ProductSpec>> ProductSpecsAsync(bool? activeOnly = null);
+    Task<ProductSpec?> GetProductSpecAsync(int id);
+    Task<ProductSpec?> GetProductSpecByCodeAsync(string code);
+    Task<ProductSpecDetailDto?> GetProductSpecDetailAsync(int id);
+    Task<int> CreateProductSpecAsync(ProductSpec item);
+    Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item);
+    Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteProductSpecAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -10420,6 +10429,246 @@ public class WmsService(AppDbContext db) : IWmsService
         }
 
         return new CurrencyConvertResultDto(amount, sourceCode, targetCode, convertedAmount, appliedRate, rateType, formula);
+    }
+
+    // ==================== QUẢN LÝ QUY CÁCH SẢN PHẨM KHO (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+    public async Task<ProductSpecReport> ProductSpecsReportAsync(string? q = null, string? modelCode = null, string? specType1 = null, bool? hasSerial = null, bool? hasLot = null, bool? activeOnly = null)
+    {
+        var query = db.ProductSpecs.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(s => s.Code.ToLower().Contains(kw) || s.Name.ToLower().Contains(kw) || (s.SpecDesc != null && s.SpecDesc.ToLower().Contains(kw)) || (s.Color != null && s.Color.ToLower().Contains(kw)));
+        }
+        if (!string.IsNullOrWhiteSpace(modelCode))
+        {
+            query = query.Where(s => s.ModelCode == modelCode.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(specType1))
+        {
+            query = query.Where(s => s.SpecType1 == specType1.Trim());
+        }
+        if (hasSerial.HasValue)
+        {
+            query = query.Where(s => s.FlagHasSerial == hasSerial.Value);
+        }
+        if (hasLot.HasValue)
+        {
+            query = query.Where(s => s.FlagHasLOT == hasLot.Value);
+        }
+        if (activeOnly == true)
+        {
+            query = query.Where(s => s.IsActive);
+        }
+
+        var specs = await query.OrderBy(s => s.Code).ToListAsync();
+        var allSpecs = await db.ProductSpecs.ToListAsync();
+        var allModels = await db.ProductModels.ToListAsync();
+        var allBrands = await db.Brands.ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+
+        // Tính tồn kho thực tế của từng sản phẩm
+        var docs = await db.Docs.Include(d => d.Lines).Where(d => d.Status == DocStatus.Posted).ToListAsync();
+        var stockByProduct = new Dictionary<int, int>();
+        foreach (var doc in docs)
+        {
+            foreach (var l in doc.Lines)
+            {
+                if (!stockByProduct.ContainsKey(l.ProductId)) stockByProduct[l.ProductId] = 0;
+                if (doc.Type == DocType.In) stockByProduct[l.ProductId] += l.Quantity;
+                else if (doc.Type == DocType.Out) stockByProduct[l.ProductId] -= l.Quantity;
+            }
+        }
+
+        int totalSpecs = allSpecs.Count;
+        int activeCount = allSpecs.Count(s => s.IsActive);
+        int hasSerialCount = allSpecs.Count(s => s.FlagHasSerial);
+        int hasLotCount = allSpecs.Count(s => s.FlagHasLOT);
+
+        var modelDict = allModels.ToDictionary(m => m.Code, m => m);
+        var brandDict = allBrands.ToDictionary(b => b.Code, b => b.Name);
+
+        var rows = new List<ProductSpecRow>();
+        int totalProductsMapped = 0;
+        int totalStockAllMapped = 0;
+
+        foreach (var s in specs)
+        {
+            string? modelName = null;
+            string? brandName = null;
+            if (!string.IsNullOrEmpty(s.ModelCode) && modelDict.TryGetValue(s.ModelCode, out var m))
+            {
+                modelName = m.Name;
+                if (!string.IsNullOrEmpty(m.BrandCode) && brandDict.TryGetValue(m.BrandCode, out var bName))
+                {
+                    brandName = bName;
+                }
+            }
+
+            // Mặt hàng liên kết theo SpecCode hoặc theo ModelCode
+            var matchedProducts = allProducts.Where(p => p.SpecCode == s.Code || (!string.IsNullOrEmpty(s.ModelCode) && p.ModelCode == s.ModelCode)).ToList();
+            int prdCount = matchedProducts.Count;
+            int stockQty = matchedProducts.Sum(p => stockByProduct.TryGetValue(p.Id, out var qty) ? Math.Max(0, qty) : 0);
+
+            if (prdCount > 0) totalProductsMapped += prdCount;
+            totalStockAllMapped += stockQty;
+
+            rows.Add(new ProductSpecRow(
+                s.Id,
+                s.Code,
+                s.Name,
+                s.SpecDesc,
+                s.ModelCode,
+                modelName,
+                brandName,
+                s.SpecType1,
+                s.Color,
+                s.StandardUnitCode,
+                s.FlagHasSerial,
+                s.FlagHasLOT,
+                s.IsActive,
+                s.Remark,
+                s.CreatedAt,
+                prdCount,
+                stockQty
+            ));
+        }
+
+        return new ProductSpecReport(
+            q,
+            modelCode,
+            specType1,
+            hasSerial,
+            hasLot,
+            activeOnly,
+            totalSpecs,
+            activeCount,
+            hasSerialCount,
+            hasLotCount,
+            totalProductsMapped,
+            totalStockAllMapped,
+            rows
+        );
+    }
+
+    public Task<List<ProductSpec>> ProductSpecsAsync(bool? activeOnly = null)
+    {
+        var q = db.ProductSpecs.AsQueryable();
+        if (activeOnly == true) q = q.Where(s => s.IsActive);
+        return q.OrderBy(s => s.Code).ToListAsync();
+    }
+
+    public Task<ProductSpec?> GetProductSpecAsync(int id) =>
+        db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
+
+    public Task<ProductSpec?> GetProductSpecByCodeAsync(string code) =>
+        db.ProductSpecs.FirstOrDefaultAsync(s => s.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<ProductSpecDetailDto?> GetProductSpecDetailAsync(int id)
+    {
+        var spec = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
+        if (spec == null) return null;
+
+        ProductModel? model = null;
+        Brand? brand = null;
+        if (!string.IsNullOrEmpty(spec.ModelCode))
+        {
+            model = await db.ProductModels.FirstOrDefaultAsync(m => m.Code == spec.ModelCode);
+            if (model != null && !string.IsNullOrEmpty(model.BrandCode))
+            {
+                brand = await db.Brands.FirstOrDefaultAsync(b => b.Code == model.BrandCode);
+            }
+        }
+
+        var products = await db.Products
+            .Where(p => p.SpecCode == spec.Code || (!string.IsNullOrEmpty(spec.ModelCode) && p.ModelCode == spec.ModelCode))
+            .OrderBy(p => p.Code)
+            .ToListAsync();
+
+        var docs = await db.Docs.Include(d => d.Lines).Where(d => d.Status == DocStatus.Posted).ToListAsync();
+        var stockByProduct = new Dictionary<int, int>();
+        foreach (var doc in docs)
+        {
+            foreach (var l in doc.Lines)
+            {
+                if (!stockByProduct.ContainsKey(l.ProductId)) stockByProduct[l.ProductId] = 0;
+                if (doc.Type == DocType.In) stockByProduct[l.ProductId] += l.Quantity;
+                else if (doc.Type == DocType.Out) stockByProduct[l.ProductId] -= l.Quantity;
+            }
+        }
+
+        int totalStock = products.Sum(p => stockByProduct.TryGetValue(p.Id, out var qty) ? Math.Max(0, qty) : 0);
+
+        return new ProductSpecDetailDto(spec, model, brand, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreateProductSpecAsync(ProductSpec item)
+    {
+        item.Code = item.Code.Trim().ToUpper();
+        item.Name = item.Name.Trim();
+        if (string.IsNullOrWhiteSpace(item.StandardUnitCode)) item.StandardUnitCode = "cái";
+
+        bool exists = await db.ProductSpecs.AnyAsync(s => s.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã quy cách '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.ProductSpecs.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item)
+    {
+        var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+
+        existing.Name = item.Name.Trim();
+        existing.SpecDesc = item.SpecDesc?.Trim();
+        existing.ModelCode = item.ModelCode?.Trim();
+        existing.SpecType1 = item.SpecType1?.Trim();
+        existing.Color = item.Color?.Trim();
+        existing.StandardUnitCode = !string.IsNullOrWhiteSpace(item.StandardUnitCode) ? item.StandardUnitCode.Trim() : "cái";
+        existing.FlagHasSerial = item.FlagHasSerial;
+        existing.FlagHasLOT = item.FlagHasLOT;
+        existing.IsActive = item.IsActive;
+        existing.Remark = item.Remark?.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật quy cách '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id)
+    {
+        var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
+        return (true, $"Đã {status} quy cách '{existing.Name}' ({existing.Code}).");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteProductSpecAsync(int id)
+    {
+        var existing = await db.ProductSpecs.FirstOrDefaultAsync(s => s.Id == id);
+        if (existing == null) return (false, "Không tìm thấy quy cách sản phẩm.");
+
+        bool hasProducts = await db.Products.AnyAsync(p => p.SpecCode == existing.Code);
+        if (hasProducts)
+        {
+            return (false, $"Không thể xóa quy cách '{existing.Code}' vì đang có mặt hàng liên kết. Hãy chuyển sang trạng thái tạm dừng.");
+        }
+
+        db.ProductSpecs.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa quy cách '{existing.Name}' ({existing.Code}) thành công.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

@@ -3428,13 +3428,151 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+
+        // ==================== SEED DANH MỤC QUY CÁCH SẢN PHẨM (OS_PrdCenter_Mst_Spec / Mst_Spec Skycic) ====================
+        if (!await db.ProductSpecs.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.ProductSpecs.AddRange(
+                new ProductSpec
+                {
+                    Code = "SPC-AO-SM-TRANG-L",
+                    Name = "Áo sơ mi Slimfit Trắng - Size L",
+                    SpecDesc = "Dáng ôm vừa Slimfit, Cổ áo bẻ cứng cáp 3.8cm, Tay dài măng sét kép, Vòng ngực 104cm, Vòng eo 96cm, Dài áo 74cm",
+                    ModelCode = "MD-M10-SLIM",
+                    SpecType1 = "Tiêu chuẩn",
+                    Color = "Trắng Tinh (White)",
+                    StandardUnitCode = "cái",
+                    FlagHasSerial = false,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Sản phẩm chủ lực bán buôn & hệ thống showroom, bảo quản nơi khô ráo, nhiệt độ < 30°C",
+                    CreatedAt = now.AddDays(-60)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-AO-SM-TRANG-M",
+                    Name = "Áo sơ mi Slimfit Trắng - Size M",
+                    SpecDesc = "Dáng ôm vừa Slimfit, Cổ áo bẻ 3.8cm, Tay dài, Vòng ngực 100cm, Vòng eo 92cm, Dài áo 72cm",
+                    ModelCode = "MD-M10-SLIM",
+                    SpecType1 = "Tiêu chuẩn",
+                    Color = "Trắng Tinh (White)",
+                    StandardUnitCode = "cái",
+                    FlagHasSerial = false,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Quy cách phổ biến nhất thị trường miền Bắc & Trung",
+                    CreatedAt = now.AddDays(-55)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-AO-SM-XANH-L",
+                    Name = "Áo sơ mi Slimfit Xanh Pastel - Size L",
+                    SpecDesc = "Dáng ôm vừa Slimfit, Cổ áo bẻ, Vải Cotton dệt vân chìm chống nhăn, Vòng ngực 104cm, Vòng eo 96cm",
+                    ModelCode = "MD-M10-SLIM",
+                    SpecType1 = "Cao cấp",
+                    Color = "Xanh Pastel (Light Blue)",
+                    StandardUnitCode = "cái",
+                    FlagHasSerial = false,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Dòng công sở cao cấp mùa hè",
+                    CreatedAt = now.AddDays(-50)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-QUAN-JN-DEN-32",
+                    Name = "Quần Jeans Nam Co Giãn Đen - Size 32",
+                    SpecDesc = "Form ống đứng Regular Straight, Lưng vừa, Vòng bụng 82cm, Dài quần 102cm, Ống rộng 18.5cm, Chỉ may đúp chịu lực",
+                    ModelCode = "MD-LV-501",
+                    SpecType1 = "Cao cấp",
+                    Color = "Đen Nhám (Matt Black)",
+                    StandardUnitCode = "chiếc",
+                    FlagHasSerial = true,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Mặt hàng kiểm soát nghiêm ngặt theo mã Serial/Barcode cá thể hóa chống giả mạo",
+                    CreatedAt = now.AddDays(-45)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-QUAN-JN-XANH-31",
+                    Name = "Quần Jeans Nam Cổ Điển Xanh Denim - Size 31",
+                    SpecDesc = "Form suông ống thẳng cổ điển, Lưng vừa, Vòng bụng 80cm, Dài quần 100cm, Xử lý wash sờn phong cách",
+                    ModelCode = "MD-LV-501",
+                    SpecType1 = "Tiêu chuẩn",
+                    Color = "Xanh Denim (Classic Blue)",
+                    StandardUnitCode = "chiếc",
+                    FlagHasSerial = true,
+                    FlagHasLOT = false,
+                    IsActive = true,
+                    Remark = "Dán tem bảo mật WMS và nhãn QR code theo dõi xuất xưởng",
+                    CreatedAt = now.AddDays(-40)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-AO-POLO-TRANG-L",
+                    Name = "Áo thun Polo Nam Thể Thao Trắng - Size L",
+                    SpecDesc = "Vải Pique gai cá sấu thoáng khí, Kháng khuẩn khử mùi, Bo cổ dệt sọc thể thao, Dài áo 71cm, Ngực 102cm",
+                    ModelCode = "MD-VT-POLO",
+                    SpecType1 = "Tiêu chuẩn",
+                    Color = "Trắng Phối Đỏ (White/Red)",
+                    StandardUnitCode = "cái",
+                    FlagHasSerial = false,
+                    FlagHasLOT = false,
+                    IsActive = true,
+                    Remark = "Sản phẩm sự kiện & quà tặng công đoàn đại lý",
+                    CreatedAt = now.AddDays(-35)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-GIAT-XA-CAN-3L",
+                    Name = "Nước Giặt Xả Đậm Đặc Can 3.5 Lít",
+                    SpecDesc = "Dung tích thực 3500ml, Can nhựa HDPE chịu va đập kèm nắp định lượng 60ml, Hương hoa thiên nhiên ngát hương 7 ngày",
+                    ModelCode = "MD-AP-VEST",
+                    SpecType1 = "Công nghiệp",
+                    Color = "Tím Oải Hương (Lavender)",
+                    StandardUnitCode = "can",
+                    FlagHasSerial = false,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Bắt buộc theo dõi Date sản xuất & hạn dùng 36 tháng theo chuẩn FEFO kho hóa chất tiêu dùng",
+                    CreatedAt = now.AddDays(-30)
+                },
+                new ProductSpec
+                {
+                    Code = "SPC-AO-KHOAC-DA-XL",
+                    Name = "Áo Khoác Da Bò Nam Bomber - Size XL",
+                    SpecDesc = "Da bò thuộc 100% nhập khẩu Ý, Khóa kéo đồng YKK cao cấp, Lớp lót lụa habutai giữ ấm, Ngực 112cm, Dài 68cm",
+                    ModelCode = "MD-LV-501",
+                    SpecType1 = "Xuất khẩu",
+                    Color = "Nâu Bò Cổ Điển (Vintage Brown)",
+                    StandardUnitCode = "cái",
+                    FlagHasSerial = true,
+                    FlagHasLOT = true,
+                    IsActive = true,
+                    Remark = "Sản phẩm giá trị cao, bảo quản phòng lạnh độ ẩm < 55%, quét serial từng chiếc",
+                    CreatedAt = now.AddDays(-25)
+                }
+            );
+            await db.SaveChangesAsync();
+
+            // Cập nhật SpecCode cho các sản phẩm hiện có
+            var p1 = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP001");
+            if (p1 != null) { p1.SpecCode = "SPC-AO-SM-TRANG-L"; p1.ModelCode = "MD-M10-SLIM"; }
+            var p2 = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP002");
+            if (p2 != null) { p2.SpecCode = "SPC-QUAN-JN-DEN-32"; p2.ModelCode = "MD-LV-501"; }
+            var p3 = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP003");
+            if (p3 != null) { p3.SpecCode = "SPC-AO-POLO-TRANG-L"; p3.ModelCode = "MD-VT-POLO"; }
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -3497,8 +3635,12 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_TempPrints_OrgId_IsDefault\" ON miniwms.\"TempPrints\" (\"OrgId\", \"IsDefault\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"CurrencyExchanges\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"BaseCurrencyCode\" text NOT NULL DEFAULT 'VND', \"BuyRate\" numeric NOT NULL DEFAULT 1, \"SellRate\" numeric NOT NULL DEFAULT 1, \"InterExRate\" numeric NOT NULL DEFAULT 1, \"InterExSource\" text NULL, \"Symbol\" text NULL, \"IsBase\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"UpdatedTime\" timestamp NOT NULL DEFAULT now(), \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CurrencyExchanges_OrgId_Code\" ON miniwms.\"CurrencyExchanges\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"ProductSpecs\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"SpecDesc\" text NULL, \"ModelCode\" text NULL, \"SpecType1\" text NULL, \"Color\" text NULL, \"StandardUnitCode\" text NULL, \"FlagHasSerial\" boolean NOT NULL DEFAULT false, \"FlagHasLOT\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_Code\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_ModelCode\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"ModelCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
+        sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeName\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Customers\" ADD COLUMN IF NOT EXISTS \"CustomerSourceCode\" text NULL");
@@ -4221,7 +4363,27 @@ public static class Seeder
                 ""UpdatedTime"" TEXT NOT NULL,
                 ""CreatedAt"" TEXT NOT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CurrencyExchanges_OrgId_Code"" ON ""CurrencyExchanges"" (""OrgId"", ""Code"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CurrencyExchanges_OrgId_Code"" ON ""CurrencyExchanges"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""ProductSpecs"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""SpecDesc"" TEXT NULL,
+                ""ModelCode"" TEXT NULL,
+                ""SpecType1"" TEXT NULL,
+                ""Color"" TEXT NULL,
+                ""StandardUnitCode"" TEXT NULL,
+                ""FlagHasSerial"" INTEGER NOT NULL DEFAULT 0,
+                ""FlagHasLOT"" INTEGER NOT NULL DEFAULT 0,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProductSpecs_OrgId_Code"" ON ""ProductSpecs"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_ProductSpecs_OrgId_ModelCode"" ON ""ProductSpecs"" (""OrgId"", ""ModelCode"");",
+            @"ALTER TABLE ""Products"" ADD COLUMN ""SpecCode"" TEXT NULL;"
         };
         foreach (var s in sql)
         {
