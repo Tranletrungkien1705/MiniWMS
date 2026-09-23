@@ -3278,6 +3278,55 @@ public record ProductSpecDetailDto(
 );
 
 
+// ==================== QUẢN LÝ PHÂN LOẠI QUY CÁCH CẤP 1 (OS_PrdCenter_Mst_SpecType1 / Mst_SpecType1 Skycic) ====================
+
+/// <summary>Danh mục Phân loại Quy cách sản phẩm cấp 1 (port từ Mst_SpecType1 &amp; OS_PrdCenter_Mst_SpecType1 Skycic).
+/// Đây là danh mục gốc phân loại quy cách sản phẩm: ProductSpec tham chiếu tới đây qua trường SpecType1.
+/// Khóa nghiệp vụ: SpecType1Code + OrgId. Mỗi dòng khai báo tên phân loại (SpecType1Name), ghi chú và cờ hiệu lực.</summary>
+public class SpecType1 : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";        // Mã phân loại cấp 1 (SpecType1, vd: TIEU_CHUAN, CAO_CAP, CONG_NGHIEP, XUAT_KHAU)
+    public string Name { get; set; } = "";        // Tên phân loại cấp 1 (SpecType1Name)
+    public bool IsActive { get; set; } = true;     // Trạng thái áp dụng (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public string? Remark { get; set; }            // Ghi chú phân loại (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Dòng hiển thị Phân loại Quy cách cấp 1 kèm số quy cách sản phẩm và tổng tồn kho thực tế áp dụng phân loại này.</summary>
+public record SpecType1Row(
+    int Id,
+    string Code,
+    string Name,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int SpecCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách Phân loại Quy cách cấp 1 tổng hợp kèm 4 thẻ KPI (port từ Mst_SpecType1 Skycic).</summary>
+public record SpecType1Report(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int InactiveCount,
+    int MappedSpecs,
+    List<SpecType1Row> Rows
+);
+
+/// <summary>Chi tiết Phân loại Quy cách cấp 1 kèm danh sách quy cách sản phẩm thực tế áp dụng phân loại này.</summary>
+public record SpecType1DetailDto(
+    SpecType1 Type,
+    List<ProductSpec> Specs,
+    int TotalSpecs,
+    int TotalStockQty
+);
+
+
 // ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
 
 /// <summary>Quy cách đóng gói theo Đơn vị tính của Quy cách sản phẩm (port từ OS_PrdCenter_Mst_SpecUnit &amp; Mst_SpecUnit Skycic).

@@ -63,6 +63,7 @@ public class AppDbContext : DbContext
     public DbSet<TempPrint> TempPrints => Set<TempPrint>();
     public DbSet<CurrencyExchange> CurrencyExchanges => Set<CurrencyExchange>();
     public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
+    public DbSet<SpecType1> SpecType1s => Set<SpecType1>();
     public DbSet<SpecUnit> SpecUnits => Set<SpecUnit>();
     public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
     public DbSet<VATRate> VATRates => Set<VATRate>();
@@ -404,6 +405,11 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ModelCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<SpecType1>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<SpecUnit>(e =>

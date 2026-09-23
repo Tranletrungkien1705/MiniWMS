@@ -6859,6 +6859,128 @@ public class ProductSpecController(IWmsService svc) : Controller
     }
 }
 
+// ==================== QUAN LY PHAN LOAI QUY CACH CAP 1 (OS_PrdCenter_Mst_SpecType1 / Mst_SpecType1 Skycic) ====================
+public class SpecType1Controller(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.SpecType1sReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetSpecType1DetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy phân loại cấp 1." });
+        return Json(detail);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Mã phân loại và tên phân loại không được để trống.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new SpecType1
+            {
+                Code = code.Trim().ToUpper(),
+                Name = name.Trim(),
+                IsActive = isActive,
+                Remark = remark?.Trim()
+            };
+            await svc.CreateSpecType1Async(item);
+            TempData["Success"] = $"Đã thêm phân loại '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, string name, bool isActive, string? remark)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Tên phân loại không được để trống.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new SpecType1
+        {
+            Name = name.Trim(),
+            IsActive = isActive,
+            Remark = remark?.Trim()
+        };
+
+        var (ok, msg) = await svc.UpdateSpecType1Async(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleSpecType1StatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteSpecType1Async(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.SpecType1sReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC PHÂN LOẠI QUY CÁCH CẤP 1 (OS_PRDCENTER_MST_SPECTYPE1)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số phân loại:;{report.TotalTypes};Đang áp dụng:;{report.ActiveCount};Tạm dừng:;{report.InactiveCount}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phân loại;Tên phân loại;Số quy cách SP;Tổng tồn kho;Trạng thái;Ghi chú");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";{r.SpecCount};{r.TotalStockQty};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\"");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG PHÂN LOẠI:;{report.TotalTypes};;;;");
+        sb.AppendLine($";;QUY CÁCH LIÊN KẾT:;{report.MappedSpecs};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"PhanLoaiQuyCachCap1_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 // ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
 public class SpecUnitController(IWmsService svc) : Controller
 {

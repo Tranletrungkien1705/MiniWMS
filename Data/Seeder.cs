@@ -4021,6 +4021,47 @@ public static class Seeder
             await db.SaveChangesAsync();
         }
 
+        // ==================== SEED DANH MUC PHAN LOAI QUY CACH CAP 1 (OS_PrdCenter_Mst_SpecType1 / Mst_SpecType1 Skycic) ====================
+        if (!await db.SpecType1s.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.SpecType1s.AddRange(
+                new SpecType1
+                {
+                    Code = "TIEU_CHUAN",
+                    Name = "Tiêu chuẩn",
+                    IsActive = true,
+                    Remark = "Phân loại quy cách phổ thông, đáp ứng tiêu chuẩn chất lượng cơ bản, sản xuất đại trà",
+                    CreatedAt = now.AddDays(-90)
+                },
+                new SpecType1
+                {
+                    Code = "CAO_CAP",
+                    Name = "Cao cấp",
+                    IsActive = true,
+                    Remark = "Phân loại quy cách cao cấp, vật liệu và gia công hoàn thiện vượt trội, phân khúc premium",
+                    CreatedAt = now.AddDays(-85)
+                },
+                new SpecType1
+                {
+                    Code = "CONG_NGHIEP",
+                    Name = "Công nghiệp",
+                    IsActive = true,
+                    Remark = "Phân loại quy cách phục vụ sản xuất công nghiệp, số lượng lớn, yêu cầu độ bền cao",
+                    CreatedAt = now.AddDays(-80)
+                },
+                new SpecType1
+                {
+                    Code = "XUAT_KHAU",
+                    Name = "Xuất khẩu",
+                    IsActive = true,
+                    Remark = "Phân loại quy cách đạt tiêu chuẩn xuất khẩu, kiểm định nghiêm ngặt, truy xuất nguồn gốc",
+                    CreatedAt = now.AddDays(-75)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
+
         // ==================== SEED QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
         if (!await db.SpecUnits.AnyAsync())
         {

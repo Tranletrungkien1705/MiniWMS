@@ -378,6 +378,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateProductSpecAsync(int id, ProductSpec item);
     Task<(bool ok, string msg)> ToggleProductSpecStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteProductSpecAsync(int id);
+    Task<SpecType1Report> SpecType1sReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<SpecType1>> SpecType1sAsync(bool? activeOnly = null);
+    Task<SpecType1?> GetSpecType1Async(int id);
+    Task<SpecType1?> GetSpecType1ByCodeAsync(string code);
+    Task<SpecType1DetailDto?> GetSpecType1DetailAsync(int id);
+    Task<int> CreateSpecType1Async(SpecType1 item);
+    Task<(bool ok, string msg)> UpdateSpecType1Async(int id, SpecType1 item);
+    Task<(bool ok, string msg)> ToggleSpecType1StatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteSpecType1Async(int id);
     Task<SpecUnitReport> SpecUnitsReportAsync(string? q = null, string? specCode = null, string? unitCode = null, bool? activeOnly = null);
     Task<List<SpecUnit>> SpecUnitsAsync(string? specCode = null, bool? activeOnly = null);
     Task<SpecUnit?> GetSpecUnitAsync(int id);
@@ -12455,6 +12464,167 @@ public class WmsService(AppDbContext db) : IWmsService
     }
 
     // ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
+    // ==================== QUAN LY PHAN LOAI QUY CACH CAP 1 (OS_PrdCenter_Mst_SpecType1 / Mst_SpecType1 Skycic) ====================
+    public async Task<SpecType1Report> SpecType1sReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.SpecType1s.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) || t.Name.ToLower().Contains(kw) || (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+        if (activeOnly.HasValue)
+        {
+            query = query.Where(t => t.IsActive == activeOnly.Value);
+        }
+
+        var types = await query.OrderBy(t => t.Code).ToListAsync();
+        var allTypes = await db.SpecType1s.ToListAsync();
+        var allSpecs = await db.ProductSpecs.ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+
+        // Ton kho thuc te cua tung mat hang (tu phieu kho da ghi so)
+        var docs = await db.Docs.Include(d => d.Lines).Where(d => d.Status == DocStatus.Posted).ToListAsync();
+        var stockByProduct = new Dictionary<int, int>();
+        foreach (var doc in docs)
+        {
+            foreach (var l in doc.Lines)
+            {
+                if (!stockByProduct.ContainsKey(l.ProductId)) stockByProduct[l.ProductId] = 0;
+                if (doc.Type == DocType.In) stockByProduct[l.ProductId] += l.Quantity;
+                else if (doc.Type == DocType.Out) stockByProduct[l.ProductId] -= l.Quantity;
+            }
+        }
+
+        int totalTypes = allTypes.Count;
+        int activeCount = allTypes.Count(t => t.IsActive);
+        int inactiveCount = totalTypes - activeCount;
+        int mappedSpecs = allSpecs.Count(s => !string.IsNullOrEmpty(s.SpecType1));
+
+        var rows = new List<SpecType1Row>();
+        foreach (var t in types)
+        {
+            // Quy cach san pham ap dung phan loai nay (khop theo ma hoac theo ten phan loai)
+            var matchedSpecs = allSpecs.Where(s => !string.IsNullOrEmpty(s.SpecType1) &&
+                (string.Equals(s.SpecType1, t.Code, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(s.SpecType1, t.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+
+            var specCodes = matchedSpecs.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var matchedProducts = allProducts.Where(p => !string.IsNullOrEmpty(p.SpecCode) && specCodes.Contains(p.SpecCode)).ToList();
+            int stockQty = matchedProducts.Sum(p => stockByProduct.TryGetValue(p.Id, out var qty) ? Math.Max(0, qty) : 0);
+
+            rows.Add(new SpecType1Row(t.Id, t.Code, t.Name, t.IsActive, t.Remark, t.CreatedAt, matchedSpecs.Count, stockQty));
+        }
+
+        return new SpecType1Report(q, activeOnly, totalTypes, activeCount, inactiveCount, mappedSpecs, rows);
+    }
+
+    public Task<List<SpecType1>> SpecType1sAsync(bool? activeOnly = null)
+    {
+        var q = db.SpecType1s.AsQueryable();
+        if (activeOnly == true) q = q.Where(t => t.IsActive);
+        return q.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<SpecType1?> GetSpecType1Async(int id) =>
+        db.SpecType1s.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<SpecType1?> GetSpecType1ByCodeAsync(string code) =>
+        db.SpecType1s.FirstOrDefaultAsync(t => t.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<SpecType1DetailDto?> GetSpecType1DetailAsync(int id)
+    {
+        var type = await db.SpecType1s.FirstOrDefaultAsync(t => t.Id == id);
+        if (type == null) return null;
+
+        var specs = await db.ProductSpecs
+            .Where(s => s.SpecType1 != null &&
+                (s.SpecType1.ToLower() == type.Code.ToLower() || s.SpecType1.ToLower() == type.Name.ToLower()))
+            .OrderBy(s => s.Code)
+            .ToListAsync();
+
+        var specCodes = specs.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var products = await db.Products.Where(p => p.SpecCode != null && specCodes.Contains(p.SpecCode)).ToListAsync();
+
+        var docs = await db.Docs.Include(d => d.Lines).Where(d => d.Status == DocStatus.Posted).ToListAsync();
+        var stockByProduct = new Dictionary<int, int>();
+        foreach (var doc in docs)
+        {
+            foreach (var l in doc.Lines)
+            {
+                if (!stockByProduct.ContainsKey(l.ProductId)) stockByProduct[l.ProductId] = 0;
+                if (doc.Type == DocType.In) stockByProduct[l.ProductId] += l.Quantity;
+                else if (doc.Type == DocType.Out) stockByProduct[l.ProductId] -= l.Quantity;
+            }
+        }
+
+        int totalStock = products.Sum(p => stockByProduct.TryGetValue(p.Id, out var qty) ? Math.Max(0, qty) : 0);
+
+        return new SpecType1DetailDto(type, specs, specs.Count, totalStock);
+    }
+
+    public async Task<int> CreateSpecType1Async(SpecType1 item)
+    {
+        item.Code = item.Code.Trim().ToUpper();
+        item.Name = item.Name.Trim();
+
+        bool exists = await db.SpecType1s.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Ma phan loai cap 1 '{item.Code}' da ton tai trong he thong.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.SpecType1s.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateSpecType1Async(int id, SpecType1 item)
+    {
+        var existing = await db.SpecType1s.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Khong tim thay phan loai cap 1.");
+
+        existing.Name = item.Name.Trim();
+        existing.IsActive = item.IsActive;
+        existing.Remark = item.Remark?.Trim();
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Da cap nhat phan loai '{existing.Name}' ({existing.Code}) thanh cong.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleSpecType1StatusAsync(int id)
+    {
+        var existing = await db.SpecType1s.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Khong tim thay phan loai cap 1.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.IsActive ? "kich hoat ap dung" : "tam dung ap dung";
+        return (true, $"Da {status} phan loai '{existing.Name}' ({existing.Code}).");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteSpecType1Async(int id)
+    {
+        var existing = await db.SpecType1s.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Khong tim thay phan loai cap 1.");
+
+        bool isUsed = await db.ProductSpecs.AnyAsync(s => s.SpecType1 != null &&
+            (s.SpecType1.ToLower() == existing.Code.ToLower() || s.SpecType1.ToLower() == existing.Name.ToLower()));
+        if (isUsed)
+        {
+            return (false, $"Khong the xoa phan loai '{existing.Code}' vi dang co quy cach san pham lien ket. Hay chuyen sang trang thai tam dung.");
+        }
+
+        db.SpecType1s.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Da xoa phan loai '{existing.Name}' ({existing.Code}) thanh cong.");
+    }
+
     public async Task<SpecUnitReport> SpecUnitsReportAsync(string? q = null, string? specCode = null, string? unitCode = null, bool? activeOnly = null)
     {
         var query = db.SpecUnits.AsQueryable();

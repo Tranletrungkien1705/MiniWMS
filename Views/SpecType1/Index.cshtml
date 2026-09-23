@@ -1,0 +1,406 @@
+@model SpecType1Report
+@{
+    ViewData["Title"] = "Phân loại quy cách cấp 1";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-diagram-2 text-primary me-2"></i>Danh mục Phân loại Quy cách Sản phẩm Cấp 1</h5>
+        <div class="text-muted small">Port từ <code>OS_PrdCenter_Mst_SpecType1</code> / <code>Mst_SpecType1</code> (Skycic) — Danh mục gốc phân loại quy cách sản phẩm (SpecType1Code, SpecType1Name, FlagActive, Remark). Quy cách sản phẩm (<code>Mst_Spec</code>) tham chiếu tới đây qua trường <code>SpecType1</code></div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/SpecType1/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <a href="/ProductSpec" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-card-checklist me-1"></i> Quy cách SP
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createSpecType1Modal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Phân loại
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ PHÂN LOẠI</span>
+                    <i class="bi bi-diagram-2 text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalTypes</div>
+                <div class="small text-muted">Phân loại cấp 1 thiết lập trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng phân loại quy cách sản phẩm</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TẠM DỪNG</span>
+                    <i class="bi bi-pause-circle text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-secondary">@Model.InactiveCount</div>
+                <div class="small text-muted">Phân loại ngừng áp dụng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">QUY CÁCH LIÊN KẾT</span>
+                    <i class="bi bi-card-checklist text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.MappedSpecs</div>
+                <div class="small text-muted">Quy cách sản phẩm đã gán phân loại</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Mã, tên phân loại, ghi chú..." />
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm" title="Trạng thái">
+                    <option value="">-- Trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/SpecType1" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Phân loại cấp 1 -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3" style="width: 45px;">STT</th>
+                        <th style="width: 200px;">Mã phân loại</th>
+                        <th>Tên phân loại cấp 1</th>
+                        <th class="text-center" style="width: 120px;">Quy cách SP</th>
+                        <th class="text-end" style="width: 120px;">Tồn kho</th>
+                        <th class="text-center" style="width: 120px;">Trạng thái</th>
+                        <th class="text-end pe-3" style="width: 135px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Không tìm thấy phân loại quy cách cấp 1 nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="ps-3 text-muted">@stt</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border font-monospace fw-semibold">@r.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark">@r.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(r.Remark))
+                                    {
+                                        <div class="text-muted small" title="@r.Remark" style="max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            <i class="bi bi-info-circle me-1"></i>@r.Remark
+                                        </div>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (r.SpecCount > 0)
+                                    {
+                                        <span class="badge bg-primary bg-opacity-10 text-primary fw-bold">@r.SpecCount quy cách</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">0</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    @if (r.TotalStockQty > 0)
+                                    {
+                                        <span class="fw-bold text-success">@r.TotalStockQty.ToString("N0")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">0</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (r.IsActive)
+                                    {
+                                        <span class="badge bg-success bg-opacity-10 text-success border border-success">Đang áp dụng</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary">Tạm dừng</span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-info" title="Xem chi tiết" onclick="showSpecType1Detail(@r.Id)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary" title="Sửa phân loại" onclick="openEditSpecType1Modal(@r.Id, '@r.Code', '@Html.Raw(Html.Encode(r.Name))', @(r.IsActive ? "true" : "false"), '@Html.Raw(Html.Encode(r.Remark ?? ""))')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" action="/SpecType1/ToggleStatus" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <button type="submit" class="btn btn-outline-@(r.IsActive ? "warning" : "success")" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                                <i class="bi bi-@(r.IsActive ? "pause-fill" : "play-fill")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="/SpecType1/Delete" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa phân loại \'@r.Code\'?');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa phân loại">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            stt++;
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Phân loại -->
+<div class="modal fade" id="createSpecType1Modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/SpecType1/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle text-primary me-2"></i>Thêm mới Phân loại Quy cách cấp 1 (Mst_SpecType1)</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label small fw-semibold">Mã phân loại (SpecType1) <span class="text-danger">*</span></label>
+                            <input type="text" name="code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="vd: TIEU_CHUAN" required />
+                            <div class="form-text text-muted small">Mã định danh duy nhất của phân loại cấp 1</div>
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label small fw-semibold">Tên phân loại (SpecType1Name) <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="form-control form-control-sm" placeholder="vd: Tiêu chuẩn" required />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-semibold">Ghi chú (Remark)</label>
+                            <textarea name="remark" class="form-control form-control-sm" rows="2" placeholder="Mô tả đặc điểm phân loại, tiêu chuẩn áp dụng..."></textarea>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="isActive" value="true" id="addSpecType1IsActive" checked>
+                                <label class="form-check-label small" for="addSpecType1IsActive">Áp dụng</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu Phân loại</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Phân loại -->
+<div class="modal fade" id="editSpecType1Modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/SpecType1/Edit">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="editSpecType1Id" />
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Chỉnh sửa Phân loại Quy cách cấp 1</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label small fw-semibold">Mã phân loại</label>
+                            <input type="text" id="editSpecType1Code" class="form-control form-control-sm font-monospace bg-light" readonly />
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label small fw-semibold">Tên phân loại <span class="text-danger">*</span></label>
+                            <input type="text" name="name" id="editSpecType1Name" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-semibold">Ghi chú (Remark)</label>
+                            <textarea name="remark" id="editSpecType1Remark" class="form-control form-control-sm" rows="2"></textarea>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editSpecType1IsActive">
+                                <label class="form-check-label small" for="editSpecType1IsActive">Áp dụng</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xem chi tiết Phân loại -->
+<div class="modal fade" id="detailSpecType1Modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="bi bi-card-heading text-info me-2"></i>Chi tiết Phân loại & Danh sách Quy cách liên kết</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailSpecType1Content">
+                <div class="text-center py-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Đang tải dữ liệu...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditSpecType1Modal(id, code, name, active, remark) {
+        document.getElementById('editSpecType1Id').value = id;
+        document.getElementById('editSpecType1Code').value = code;
+        document.getElementById('editSpecType1Name').value = name;
+        document.getElementById('editSpecType1IsActive').checked = active;
+        document.getElementById('editSpecType1Remark').value = remark;
+
+        new bootstrap.Modal(document.getElementById('editSpecType1Modal')).show();
+    }
+
+    async function showSpecType1Detail(id) {
+        var modalEl = document.getElementById('detailSpecType1Modal');
+        var modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+        var container = document.getElementById('detailSpecType1Content');
+        container.innerHTML = '<div class="text-center py-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Đang tải dữ liệu...</div>';
+
+        try {
+            var res = await fetch('/SpecType1/Detail?id=' + id);
+            if (!res.ok) throw new Error('Không thể tải thông tin chi tiết');
+            var data = await res.json();
+            var type = data.type;
+            var specs = data.specs || [];
+
+            var statusBadge = type.isActive
+                ? '<span class="badge bg-success bg-opacity-10 text-success border border-success">Đang áp dụng</span>'
+                : '<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary">Tạm dừng</span>';
+
+            var specsHtml = '';
+            if (specs.length === 0) {
+                specsHtml = '<tr><td colspan="4" class="text-center text-muted py-3">Chưa có quy cách sản phẩm nào liên kết với phân loại này.</td></tr>';
+            } else {
+                for (var i = 0; i < specs.length; i++) {
+                    var s = specs[i];
+                    specsHtml += '<tr>' +
+                        '<td class="ps-3 text-muted">' + (i + 1) + '</td>' +
+                        '<td><span class="badge bg-light text-dark font-monospace border">' + s.code + '</span></td>' +
+                        '<td><div class="fw-semibold">' + s.name + '</div></td>' +
+                        '<td class="text-center"><span class="badge bg-light text-secondary border">' + (s.standardUnitCode || 'cái') + '</span></td>' +
+                        '</tr>';
+                }
+            }
+
+            var html = `
+                <div class="card bg-light border-0 mb-3">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <span class="badge bg-primary font-monospace me-2">${type.code}</span>
+                                <span class="fw-bold fs-6">${type.name}</span>
+                            </div>
+                            <div>${statusBadge}</div>
+                        </div>
+                        ${type.remark ? '<div class="small"><span class="text-muted">Ghi chú:</span> <span class="text-dark">' + type.remark + '</span></div>' : ''}
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-card-checklist text-primary me-2"></i>Danh sách quy cách áp dụng phân loại (${data.totalSpecs} quy cách)</h6>
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success fw-bold">Tổng tồn kho: ${data.totalStockQty.toLocaleString()}</span>
+                </div>
+
+                <div class="table-responsive border rounded bg-white">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 40px;">STT</th>
+                                <th style="width: 180px;">Mã quy cách</th>
+                                <th>Tên quy cách</th>
+                                <th class="text-center" style="width: 90px;">ĐVT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${specsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>' + err.message + '</div>';
+        }
+    }
+</script>
+}

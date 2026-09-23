@@ -4048,6 +4048,83 @@ app.MapDelete("/api/product-specs/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== QUAN LY PHAN LOAI QUY CACH CAP 1 (OS_PrdCenter_Mst_SpecType1 / Mst_SpecType1 Skycic) ====================
+app.MapGet("/api/spec-type1s", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.SpecType1sReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/spec-type1s/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetSpecType1Async(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy phân loại cấp 1." });
+});
+
+app.MapGet("/api/spec-type1s/code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetSpecType1ByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy phân loại cấp 1." });
+});
+
+app.MapGet("/api/spec-type1s/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetSpecType1DetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy phân loại cấp 1." });
+});
+
+app.MapPost("/api/spec-type1s", async (CreateSpecType1Dto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Mã phân loại và tên phân loại không được để trống." });
+
+    var item = new SpecType1
+    {
+        Code = dto.Code.Trim().ToUpper(),
+        Name = dto.Name.Trim(),
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateSpecType1Async(item);
+        return Results.Created($"/api/spec-type1s/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/spec-type1s/{id:int}", async (int id, UpdateSpecType1Dto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Tên phân loại không được để trống." });
+
+    var item = new SpecType1
+    {
+        Name = dto.Name.Trim(),
+        IsActive = dto.IsActive ?? true,
+        Remark = dto.Remark?.Trim()
+    };
+
+    var (ok, msg) = await svc.UpdateSpecType1Async(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/spec-type1s/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleSpecType1StatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/spec-type1s/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteSpecType1Async(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // ==================== QUẢN LÝ QUY CÁCH ĐÓNG GÓI THEO ĐƠN VỊ TÍNH (OS_PrdCenter_Mst_SpecUnit / Mst_SpecUnit Skycic) ====================
 app.MapGet("/api/spec-units", async (string? q, string? specCode, string? unitCode, bool? activeOnly, IWmsService svc) =>
 {
@@ -4628,6 +4705,8 @@ record CreateCurrencyExchangeDto(string Code, string Name, string? Symbol, decim
 record UpdateCurrencyExchangeDto(string Name, string? Symbol, decimal BuyRate, decimal SellRate, decimal? InterExRate, string? InterExSource, string? Remark, bool? IsActive);
 record CreateProductSpecDto(string Code, string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
 record UpdateProductSpecDto(string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
+record CreateSpecType1Dto(string Code, string Name, string? Remark, bool? IsActive);
+record UpdateSpecType1Dto(string Name, string? Remark, bool? IsActive);
 record CreateSpecUnitDto(string SpecCode, string UnitCode, string? StandardUnitCode, string? SpecUnitDesc, decimal Qty, decimal Length, decimal Width, decimal Height, decimal Volume, decimal Weight, string? Remark, bool? IsActive);
 record UpdateSpecUnitDto(string? StandardUnitCode, string? SpecUnitDesc, decimal Qty, decimal Length, decimal Width, decimal Height, decimal Volume, decimal Weight, string? Remark, bool? IsActive);
 record CreateSpecPriceDto(string SpecCode, string UnitCode, decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
