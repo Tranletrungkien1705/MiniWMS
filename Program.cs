@@ -4649,6 +4649,102 @@ app.MapGet("/api/reports/inv-balance-last-upd-by-product", async (int? warehouse
     });
 });
 
+// API Quản lý Danh mục Loại hóa đơn kho (Invoice Type - port từ Mst_InvoiceType Skycic)
+app.MapGet("/api/invoice-types", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.InvoiceTypesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/invoice-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetInvoiceTypeDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy loại hóa đơn." });
+    return Results.Ok(new
+    {
+        detail.Item.Id,
+        detail.Item.Code,
+        detail.Item.Name,
+        detail.Item.NetworkID,
+        detail.Item.TTType,
+        detail.Item.FlagActive,
+        detail.Item.Remark,
+        detail.Item.CreatedAt,
+        detail.Item.UpdatedAt,
+        totalMappedReceipts = detail.TotalMappedReceipts,
+        mappedReceipts = detail.MappedReceipts.Select(p => new
+        {
+            p.Id,
+            p.Code,
+            Warehouse = p.Warehouse.Name,
+            p.SupplierName,
+            p.InvoiceNo,
+            p.Date,
+            Status = p.Status.ToString(),
+            p.TotalQty,
+            p.TotalAmountAfterVAT
+        })
+    });
+});
+
+app.MapGet("/api/invoice-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetInvoiceTypeByCodeAsync(code);
+    return item == null ? Results.NotFound(new { error = "Không tìm thấy loại hóa đơn." }) : Results.Ok(item);
+});
+
+app.MapPost("/api/invoice-types", async (CreateInvoiceTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code)) return Results.BadRequest(new { error = "Cần Code." });
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
+
+    try
+    {
+        var item = new InvoiceType
+        {
+            Code = dto.Code.Trim().ToUpper(),
+            Name = dto.Name.Trim(),
+            NetworkID = dto.NetworkID?.Trim(),
+            TTType = dto.TTType?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            FlagActive = dto.FlagActive ?? true,
+            CreatedBy = "api"
+        };
+        var id = await svc.CreateInvoiceTypeAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/invoice-types/{id:int}", async (int id, UpdateInvoiceTypeDto dto, IWmsService svc) =>
+{
+    var item = new InvoiceType
+    {
+        Name = dto.Name ?? "",
+        NetworkID = dto.NetworkID,
+        TTType = dto.TTType,
+        Remark = dto.Remark,
+        FlagActive = dto.FlagActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateInvoiceTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/invoice-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInvoiceTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/invoice-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInvoiceTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -4765,4 +4861,6 @@ record InventoryOutHistItemDto(int ProductId, int Qty, string? Note);
 record InventoryOutHistSerialDto(int ProductId, string SerialNo, string? Note);
 record CreateGovTaxOfficeDto(string? Code, string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
 record UpdateGovTaxOfficeDto(string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
+record CreateInvoiceTypeDto(string Code, string Name, string? NetworkID, string? TTType, string? Remark, bool? FlagActive);
+record UpdateInvoiceTypeDto(string Name, string? NetworkID, string? TTType, string? Remark, bool? FlagActive);
 

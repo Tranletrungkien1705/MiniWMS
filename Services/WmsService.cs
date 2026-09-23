@@ -433,6 +433,15 @@ public interface IWmsService
     Task<int> CreateInventoryOutHistAsync(InventoryOutHist doc, List<(int productId, int qty, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
     Task<(bool ok, string msg)> ApproveInventoryOutHistAsync(int id);
     Task<(bool ok, string msg)> CancelInventoryOutHistAsync(int id);
+    Task<InvoiceTypeReport> InvoiceTypesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<InvoiceType>> InvoiceTypesAsync(bool? activeOnly = null);
+    Task<InvoiceType?> GetInvoiceTypeAsync(int id);
+    Task<InvoiceType?> GetInvoiceTypeByCodeAsync(string code);
+    Task<InvoiceTypeDetailDto?> GetInvoiceTypeDetailAsync(int id);
+    Task<int> CreateInvoiceTypeAsync(InvoiceType item);
+    Task<(bool ok, string msg)> UpdateInvoiceTypeAsync(int id, InvoiceType item);
+    Task<(bool ok, string msg)> ToggleInvoiceTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteInvoiceTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -13408,6 +13417,149 @@ public class WmsService(AppDbContext db) : IWmsService
 
         db.VATRates.Remove(existing);
         await db.SaveChangesAsync();
+        return (true, $"ÄÃ£ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' thÃ nh cÃ´ng.");
+    }
+
+    // ==================== QUẢN LÝ DANH MỤC LOẠI HÓA ĐƠN KHO (Mst_InvoiceType Skycic) ====================
+    public async Task<InvoiceTypeReport> InvoiceTypesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.InvoiceTypes.AsNoTracking().AsQueryable();
+
+        if (activeOnly.HasValue)
+            query = query.Where(t => t.FlagActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.TTType != null && t.TTType.ToLower().Contains(kw)) ||
+                                     (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(t => t.Code).ToListAsync();
+
+        // Đếm số phiếu nhập kho mua hàng tham chiếu từng loại hóa đơn (InvoiceTypeCode).
+        var mappedReceipts = await db.PurchaseReceipts.AsNoTracking()
+            .Where(p => p.InvoiceTypeCode != null)
+            .GroupBy(p => p.InvoiceTypeCode!)
+            .Select(g => new { Code = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Code, x => x.Count, StringComparer.OrdinalIgnoreCase);
+
+        var rows = list.Select(t => new InvoiceTypeRow(
+            t.Id,
+            t.Code,
+            t.Name,
+            t.NetworkID,
+            t.TTType,
+            t.FlagActive,
+            t.Remark,
+            t.CreatedAt,
+            t.UpdatedAt,
+            mappedReceipts.TryGetValue(t.Code, out var c) ? c : 0
+        )).ToList();
+
+        var totalTypes = await db.InvoiceTypes.CountAsync();
+        var activeCount = await db.InvoiceTypes.CountAsync(t => t.FlagActive);
+
+        return new InvoiceTypeReport(
+            q,
+            activeOnly,
+            totalTypes,
+            activeCount,
+            totalTypes - activeCount,
+            rows.Sum(r => r.MappedReceiptCount),
+            rows);
+    }
+
+    public Task<List<InvoiceType>> InvoiceTypesAsync(bool? activeOnly = null)
+    {
+        var query = db.InvoiceTypes.AsNoTracking().AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.FlagActive == activeOnly.Value);
+        return query.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<InvoiceType?> GetInvoiceTypeAsync(int id) => db.InvoiceTypes.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<InvoiceType?> GetInvoiceTypeByCodeAsync(string code) =>
+        db.InvoiceTypes.FirstOrDefaultAsync(t => t.Code.ToUpper() == code.Trim().ToUpper());
+
+    public async Task<InvoiceTypeDetailDto?> GetInvoiceTypeDetailAsync(int id)
+    {
+        var item = await db.InvoiceTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (item == null) return null;
+
+        var receipts = await db.PurchaseReceipts.AsNoTracking()
+            .Include(p => p.Warehouse)
+            .Include(p => p.Lines).ThenInclude(l => l.Product)
+            .Where(p => p.InvoiceTypeCode == item.Code)
+            .OrderByDescending(p => p.Date)
+            .Take(50)
+            .ToListAsync();
+
+        return new InvoiceTypeDetailDto(item, receipts, receipts.Count);
+    }
+
+    public async Task<int> CreateInvoiceTypeAsync(InvoiceType item)
+    {
+        item.Code = item.Code.Trim().ToUpper();
+        item.Name = item.Name.Trim();
+
+        bool exists = await db.InvoiceTypes.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã loại hóa đơn '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.InvoiceTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateInvoiceTypeAsync(int id, InvoiceType item)
+    {
+        var existing = await db.InvoiceTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hóa đơn.");
+
+        existing.Name = item.Name.Trim();
+        existing.NetworkID = item.NetworkID?.Trim();
+        existing.TTType = item.TTType?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.FlagActive = item.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật loại hóa đơn '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleInvoiceTypeStatusAsync(int id)
+    {
+        var existing = await db.InvoiceTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hóa đơn.");
+
+        existing.FlagActive = !existing.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.FlagActive ? "kích hoạt áp dụng" : "ngưng áp dụng";
+        return (true, $"Đã {status} loại hóa đơn '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteInvoiceTypeAsync(int id)
+    {
+        var existing = await db.InvoiceTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại hóa đơn.");
+
+        int inUse = await db.PurchaseReceipts.CountAsync(p => p.InvoiceTypeCode == existing.Code);
+        if (inUse > 0)
+        {
+            return (false, $"Không thể xóa loại hóa đơn '{existing.Code}' vì đang được {inUse} phiếu nhập kho mua hàng tham chiếu.");
+        }
+
+        db.InvoiceTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại hóa đơn '{existing.Code}' thành công.");
+    }
         return (true, $"ÄÃ£ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' thÃ nh cÃ´ng.");
     }
 

@@ -3978,6 +3978,8 @@ public class PurchaseReceipt : IOrgOwned
     public string? SupplierCode { get; set; }                              // Mã nhà cung cấp
     public string? InvoiceNo { get; set; }                                 // Số hóa đơn mua hàng (InvoiceNo)
     public DateTime? InvoiceDate { get; set; }                             // Ngày hóa đơn (InvoiceDate)
+    public string? InvoiceTypeCode { get; set; }                           // Loại hóa đơn (InvoiceType, port từ Mst_InvoiceType)
+    public string? InvoiceTypeName { get; set; }                           // Tên loại hóa đơn (InvoiceTypeName)
     public string? OrderNo { get; set; }                                   // Số đơn hàng / hợp đồng mua (OrderNo)
     public string? UserDeliver { get; set; }                               // Người giao hàng (UserDeliver)
     public string? VehicleNo { get; set; }                                 // Biển số xe vận chuyển (InvFCFInCode03)
@@ -4349,4 +4351,54 @@ public record LastUpdInvByProductReport(
     int StaleCount,              // Số mặt hàng cập nhật quá 30 ngày
     DateTime LatestUpdatedAt,    // Thời điểm cập nhật mới nhất trong toàn bộ dữ liệu
     List<LastUpdInvByProductRow> Rows
+);// ==================== QUẢN LÝ DANH MỤC LOẠI HÓA ĐƠN KHO (Mst_InvoiceType Skycic) ====================
+
+/// <summary>Danh mục Loại hóa đơn kho (port từ Mst_InvoiceType Skycic).
+/// Phân loại chứng từ hóa đơn gắn với phiếu nhập/xuất kho mua hàng (HĐ GTGT, HĐ bán hàng, HĐ kiêm phiếu xuất kho,
+/// HĐ điều chuyển nội bộ, HĐ trả lại...), phục vụ hạch toán và đối chiếu chứng từ mua - bán - luân chuyển hàng hóa.</summary>
+public class InvoiceType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";              // Mã loại hóa đơn (InvoiceType, vd: HĐGTGT, HĐBH)
+    public string Name { get; set; } = "";              // Tên loại hóa đơn (InvoiceTypeName)
+    public string? NetworkID { get; set; }              // Mạng / đại lý sở hữu danh mục (NetworkID)
+    public string? TTType { get; set; }                 // Loại thông tư / ký hiệu nghiệp vụ (TTType)
+    public bool FlagActive { get; set; } = true;        // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngưng)
+    public string? Remark { get; set; }                 // Ghi chú / diễn giải (Remark)
+    public string? CreatedBy { get; set; }              // Người tạo (LogLUBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }            // Thời điểm cập nhật cuối (LogLUDTimeUTC)
+}
+
+/// <summary>Dòng hiển thị danh mục Loại hóa đơn kho kèm số phiếu nhập kho đang tham chiếu loại hóa đơn này.</summary>
+public record InvoiceTypeRow(
+    int Id,
+    string Code,                 // Mã loại hóa đơn (InvoiceType)
+    string Name,                 // Tên loại hóa đơn (InvoiceTypeName)
+    string? NetworkID,           // Mạng / đại lý (NetworkID)
+    string? TTType,              // Loại thông tư / ký hiệu nghiệp vụ (TTType)
+    bool FlagActive,             // Trạng thái áp dụng (FlagActive)
+    string? Remark,              // Ghi chú
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    int MappedReceiptCount       // Số phiếu nhập kho mua hàng đang dùng loại hóa đơn này
+);
+
+/// <summary>Báo cáo / Danh sách Loại hóa đơn kho tổng hợp kèm 4 thẻ KPI (port từ Mst_InvoiceType Skycic).</summary>
+public record InvoiceTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalTypes,              // Tổng số loại hóa đơn
+    int ActiveCount,             // Số loại đang áp dụng
+    int InactiveCount,           // Số loại ngưng áp dụng
+    int TotalMappedReceipts,     // Tổng số phiếu nhập kho tham chiếu
+    List<InvoiceTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại hóa đơn kho kèm danh sách phiếu nhập kho mua hàng đang sử dụng loại hóa đơn này.</summary>
+public record InvoiceTypeDetailDto(
+    InvoiceType Item,
+    List<PurchaseReceipt> MappedReceipts,
+    int TotalMappedReceipts
 );

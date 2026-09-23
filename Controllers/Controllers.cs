@@ -7909,4 +7909,132 @@ public class LeafWarehouseBalanceController(IWmsService svc) : Controller
         var fileName = $"BaoCao_TonKhoCapNhatCuoi_{DateTime.Now:yyyyMMdd_HHmm}.csv";
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
+}// ==================== QUẢN LÝ DANH MỤC LOẠI HÓA ĐƠN KHO (Mst_InvoiceType Skycic) ====================
+public class InvoiceTypeController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.InvoiceTypesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetInvoiceTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy loại hóa đơn." });
+        return Json(detail);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? networkId, string? ttType, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã và tên loại hóa đơn.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new InvoiceType
+            {
+                Code = code.Trim().ToUpper(),
+                Name = name.Trim(),
+                NetworkID = networkId?.Trim(),
+                TTType = ttType?.Trim(),
+                Remark = remark?.Trim(),
+                FlagActive = flagActive,
+                CreatedBy = "web"
+            };
+            await svc.CreateInvoiceTypeAsync(item);
+            TempData["Success"] = $"Đã thêm loại hóa đơn '{item.Code}' thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, string name, string? networkId, string? ttType, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên loại hóa đơn.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new InvoiceType
+        {
+            Name = name.Trim(),
+            NetworkID = networkId?.Trim(),
+            TTType = ttType?.Trim(),
+            Remark = remark?.Trim(),
+            FlagActive = flagActive
+        };
+
+        var (ok, msg) = await svc.UpdateInvoiceTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleInvoiceTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteInvoiceTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.InvoiceTypesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC LOẠI HÓA ĐƠN KHO (MST_INVOICETYPE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số loại:;{report.TotalTypes};Đang áp dụng:;{report.ActiveCount};Ngưng áp dụng:;{report.InactiveCount};Tổng phiếu nhập tham chiếu:;{report.TotalMappedReceipts}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã loại hóa đơn;Tên loại hóa đơn;Mạng/Đại lý;Loại thông tư;Số phiếu nhập tham chiếu;Trạng thái;Ghi chú;Ngày tạo;Cập nhật lần cuối");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.FlagActive ? "Đang áp dụng" : "Ngưng áp dụng";
+            var updatedStr = r.UpdatedAt.HasValue ? r.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm") : "-";
+
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.NetworkID ?? ""}\";\"{r.TTType ?? ""}\";{r.MappedReceiptCount};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";{r.CreatedAt:dd/MM/yyyy HH:mm};{updatedStr}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG LOẠI HÓA ĐƠN:;{report.TotalTypes};;;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;;");
+        sb.AppendLine($";;TỔNG PHIẾU NHẬP THAM CHIẾU:;{report.TotalMappedReceipts};;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DanhMucLoaiHoaDonKho_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
 }

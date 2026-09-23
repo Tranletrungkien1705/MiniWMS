@@ -79,6 +79,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryOutHist> InventoryOutHists => Set<InventoryOutHist>();
     public DbSet<InventoryOutHistLine> InventoryOutHistLines => Set<InventoryOutHistLine>();
     public DbSet<InventoryOutHistSerial> InventoryOutHistSerials => Set<InventoryOutHistSerial>();
+    public DbSet<InvoiceType> InvoiceTypes => Set<InvoiceType>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -528,6 +529,11 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.InventoryOutHistId, x.ProductId, x.SerialNo });
             e.HasOne(x => x.InventoryOutHist).WithMany(x => x.Serials).HasForeignKey(x => x.InventoryOutHistId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InvoiceType>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }
