@@ -1,0 +1,758 @@
+@model DealerReport
+@{
+    ViewData["Title"] = "Đại lý phân phối";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var level = (int?)ViewBag.Level;
+    var province = (string)(ViewBag.Province ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var warehouses = ViewBag.Warehouses as List<Warehouse> ?? [];
+    var parentDealers = ViewBag.ParentDealers as List<Dealer> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-shop text-primary me-2"></i>Danh mục Đại lý phân phối & Điểm bán kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_Dealer</code> (Skycic) — Chuẩn hóa danh mục mạng lưới đại lý uỷ quyền, showroom và điểm bán kho (phân cấp Cấp 1/Cấp 2/Điểm bán, liên kết kho cung ứng, người đại diện pháp luật, số CCCD/MST và theo dõi tổng sản lượng xuất hàng phân phối)</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Customer" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-person-badge me-1"></i> Khách hàng
+        </a>
+        <a href="/CustomerGroup" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-person-lines-fill me-1"></i> Nhóm khách hàng
+        </a>
+        <a href="/CustomerSource" class="btn btn-sm btn-outline-dark">
+            <i class="bi bi-diagram-3 me-1"></i> Nguồn khách hàng
+        </a>
+        <a href="/Dealer/ExportCsv?q=@keyword&level=@level&province=@province&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> In danh sách
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createDealerModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Đại lý
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ ĐẠI LÝ</span>
+                    <i class="bi bi-shop text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalDealers</div>
+                <div class="small text-muted">@Model.Level1Count Cấp 1 · @Model.Level2Count Cấp 2 · @Model.Level3Count Showroom</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG ĐẠI LÝ CẤP 1</span>
+                    <i class="bi bi-award text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.Level1Count</div>
+                <div class="small text-muted">Đầu mối bao tiêu phân phối vùng miền</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG HOẠT ĐỘNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng giao dịch (@Model.InactiveCount tạm dừng)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SẢN LƯỢNG XUẤT</span>
+                    <i class="bi bi-box-seam text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalShippedQty.ToString("N0")</div>
+                <div class="small text-muted">Doanh số: <strong>@Model.TotalShippedAmount.ToString("N0")</strong> đ (@Model.TotalShippedDocsCount phiếu)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã, tên đại lý, đại diện, SĐT, địa chỉ..." />
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="level" class="form-select form-select-sm">
+                    <option value="">-- Cấp bậc: Tất cả --</option>
+                    <!option value="1" @(level == 1 ? "selected" : "")>Cấp 1 - Tổng đại lý</!option>
+                    <!option value="2" @(level == 2 ? "selected" : "")>Cấp 2 - Đại lý vùng</!option>
+                    <!option value="3" @(level == 3 ? "selected" : "")>Cấp 3 - Showroom / Điểm bán</!option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="province" value="@province" class="form-control form-control-sm" placeholder="Tỉnh / Thành phố..." />
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái: Tất cả --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang hoạt động</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng hoạt động</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/Dealer" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Đại lý phân phối -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width: 40px;">STT</th>
+                        <th style="width: 120px;">Mã đại lý</th>
+                        <th>Tên đại lý / Showroom</th>
+                        <th style="width: 130px;">Cấp bậc</th>
+                        <th style="width: 130px;">Loại hình</th>
+                        <th>Đại lý cha / Trực thuộc</th>
+                        <th>Tỉnh / Địa chỉ</th>
+                        <th>Người đại diện & SĐT</th>
+                        <th>Kho phụ trách</th>
+                        <th class="text-end" style="width: 110px;">SL xuất</th>
+                        <th class="text-center" style="width: 110px;">Trạng thái</th>
+                        <th class="text-end" style="width: 140px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="12" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                Không tìm thấy đại lý phân phối nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border font-monospace">@r.Code</span>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark">
+                                        @if (r.Level == 2)
+                                        {
+                                            <span class="text-muted me-1">└─</span>
+                                        }
+                                        else if (r.Level >= 3)
+                                        {
+                                            <span class="text-muted me-1">└───</span>
+                                        }
+                                        <a href="javascript:void(0)" onclick="viewDealerDetail(@r.Id)" class="text-decoration-none text-dark fw-bold">
+                                            @r.Name
+                                        </a>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(r.Address))
+                                    {
+                                        <div class="small text-muted text-truncate" style="max-width: 260px;" title="@r.Address">
+                                            <i class="bi bi-geo-alt me-1"></i>@r.Address
+                                        </div>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge @r.LevelBadgeClass">@r.LevelLabel</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-secondary border">@r.DealerType</span>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.ParentCode))
+                                    {
+                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">
+                                            <i class="bi bi-diagram-2 me-1"></i>@(r.ParentName ?? r.ParentCode)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-light text-muted border">Kênh cấp 1 (Gốc)</span>
+                                    }
+                                    @if (r.SubDealersCount > 0)
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border ms-1" title="Số đại lý con trực thuộc">
+                                            @r.SubDealersCount con
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.ProvinceCode))
+                                    {
+                                        <span class="fw-semibold text-dark"><i class="bi bi-pin-map text-danger me-1"></i>@r.ProvinceCode</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="small fw-semibold text-dark">@(r.PresentBy ?? "—")</div>
+                                    @if (!string.IsNullOrEmpty(r.Phone))
+                                    {
+                                        <div class="small text-muted"><i class="bi bi-telephone me-1"></i>@r.Phone</div>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.WarehouseName))
+                                    {
+                                        <span class="badge bg-light text-primary border"><i class="bi bi-building me-1"></i>@r.WarehouseName</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Toàn hệ thống</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="fw-bold text-dark">@r.TotalShippedQty.ToString("N0")</div>
+                                    <div class="small text-muted">@r.TotalShippedDocsCount phiếu</div>
+                                </td>
+                                <td class="text-center">
+                                    @if (r.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                            <i class="bi bi-check-circle me-1"></i>Hoạt động
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                            <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-info" title="Xem chi tiết" onclick="viewDealerDetail(@r.Id)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin"
+                                                onclick="openEditDealerModal(@r.Id, '@r.Code', '@Html.Raw(Html.Encode(r.Name))', '@r.ParentCode', @r.Level, '@Html.Raw(Html.Encode(r.DealerType))', '@r.BUCode', '@Html.Raw(Html.Encode(r.ProvinceCode))', '@Html.Raw(Html.Encode(r.Address))', '@Html.Raw(Html.Encode(r.PresentBy))', '@r.GovIdNumber', '@r.Email', '@r.Phone', '@r.WarehouseId', @(r.IsActive ? "true" : "false"), '@Html.Raw(Html.Encode(r.Remark))')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" action="/Dealer/ToggleStatus/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái đại lý @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-warning" title="@(r.IsActive ? "Tạm dừng" : "Kích hoạt")">
+                                                <i class="bi @(r.IsActive ? "bi-toggle-on text-success" : "bi-toggle-off text-muted")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="/Dealer/Delete/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa đại lý @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL THÊM MỚI ĐẠI LÝ -->
+<div class="modal fade" id="createDealerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="/Dealer/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-primary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Thêm mới Đại lý phân phối / Showroom</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã đại lý <span class="text-danger">*</span></label>
+                            <input type="text" name="Code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="vd: DL_MB02, DL_HCM03..." required />
+                            <div class="form-text small">Để trống để hệ thống tự động sinh</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên đại lý phân phối / Showroom <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" class="form-control form-control-sm" placeholder="vd: Tổng Đại lý Phân phối Miền Bắc - Sao Mai" required />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Cấp bậc đại lý</label>
+                            <select name="Level" class="form-select form-select-sm" id="createDealerLevel">
+                                <option value="1">Cấp 1 - Tổng đại lý phân phối</option>
+                                <option value="2">Cấp 2 - Đại lý khu vực tỉnh/vùng</option>
+                                <option value="3">Cấp 3 - Showroom / Điểm bán ủy quyền</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Loại hình đơn vị</label>
+                            <select name="DealerType" class="form-select form-select-sm">
+                                <option value="Đại lý phân phối">Đại lý phân phối tiêu chuẩn</option>
+                                <option value="Đại lý độc quyền">Đại lý độc quyền</option>
+                                <option value="Đại lý phổ thông">Đại lý phổ thông</option>
+                                <option value="Showroom bán lẻ">Showroom trưng bày & bán lẻ</option>
+                                <option value="Cửa hàng uỷ quyền">Cửa hàng nhượng quyền uỷ quyền</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Thuộc đại lý cấp cha</label>
+                            <select name="ParentCode" class="form-select form-select-sm">
+                                <option value="">-- Không có (Cấp 1 gốc) --</option>
+                                @foreach (var p in parentDealers)
+                                {
+                                    <option value="@p.Code">@p.Code - @p.Name (Cấp @p.Level)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Khối kinh doanh (BU)</label>
+                            <input type="text" name="BUCode" class="form-control form-control-sm text-uppercase" placeholder="vd: BU_NORTH, BU_SOUTH..." />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <input type="text" name="ProvinceCode" class="form-control form-control-sm" placeholder="vd: Hà Nội, TP.HCM, Đà Nẵng..." />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Kho cung ứng phụ trách</label>
+                            <select name="WarehouseId" class="form-select form-select-sm">
+                                <option value="">-- Toàn hệ thống --</option>
+                                @foreach (var w in warehouses)
+                                {
+                                    <option value="@w.Id">@w.Code - @w.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Địa chỉ chi tiết trụ sở / Showroom</label>
+                            <input type="text" name="Address" class="form-control form-control-sm" placeholder="Số nhà, đường phố, phường/xã, quận/huyện..." />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Người đại diện pháp luật / Giám đốc</label>
+                            <input type="text" name="PresentBy" class="form-control form-control-sm" placeholder="Họ và tên người đại diện" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Số CCCD / Mã số thuế (MST)</label>
+                            <input type="text" name="GovIdNumber" class="form-control form-control-sm font-monospace" placeholder="Mã số thuế doanh nghiệp hoặc CCCD" />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Điện thoại liên hệ</label>
+                            <input type="text" name="Phone" class="form-control form-control-sm" placeholder="Số điện thoại bàn hoặc di động" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email liên hệ</label>
+                            <input type="email" name="Email" class="form-control form-control-sm" placeholder="vd: contact@dailywms.vn" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Ghi chú & Chính sách đại lý</label>
+                            <textarea name="Remark" class="form-control form-control-sm" rows="2" placeholder="Chính sách chiết khấu, hạn mức công nợ, quy chế giao nhận hàng..."></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="createIsActive" checked />
+                                <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt hoạt động ngay khi tạo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu đại lý</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHỈNH SỬA ĐẠI LÝ -->
+<div class="modal fade" id="editDealerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" id="editDealerForm" action="/Dealer/Update">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-secondary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Chỉnh sửa Đại lý phân phối</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã đại lý</label>
+                            <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên đại lý phân phối / Showroom <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" id="editName" class="form-control form-control-sm" required />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Cấp bậc đại lý</label>
+                            <select name="Level" id="editLevel" class="form-select form-select-sm">
+                                <option value="1">Cấp 1 - Tổng đại lý phân phối</option>
+                                <option value="2">Cấp 2 - Đại lý khu vực tỉnh/vùng</option>
+                                <option value="3">Cấp 3 - Showroom / Điểm bán ủy quyền</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Loại hình đơn vị</label>
+                            <select name="DealerType" id="editDealerType" class="form-select form-select-sm">
+                                <option value="Đại lý phân phối">Đại lý phân phối tiêu chuẩn</option>
+                                <option value="Đại lý độc quyền">Đại lý độc quyền</option>
+                                <option value="Đại lý phổ thông">Đại lý phổ thông</option>
+                                <option value="Showroom bán lẻ">Showroom trưng bày & bán lẻ</option>
+                                <option value="Cửa hàng uỷ quyền">Cửa hàng nhượng quyền uỷ quyền</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Thuộc đại lý cấp cha</label>
+                            <select name="ParentCode" id="editParentCode" class="form-select form-select-sm">
+                                <option value="">-- Không có (Cấp 1 gốc) --</option>
+                                @foreach (var p in parentDealers)
+                                {
+                                    <option value="@p.Code">@p.Code - @p.Name (Cấp @p.Level)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Khối kinh doanh (BU)</label>
+                            <input type="text" name="BUCode" id="editBUCode" class="form-control form-control-sm text-uppercase" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <input type="text" name="ProvinceCode" id="editProvinceCode" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Kho cung ứng phụ trách</label>
+                            <select name="WarehouseId" id="editWarehouseId" class="form-select form-select-sm">
+                                <option value="">-- Toàn hệ thống --</option>
+                                @foreach (var w in warehouses)
+                                {
+                                    <option value="@w.Id">@w.Code - @w.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Địa chỉ chi tiết trụ sở / Showroom</label>
+                            <input type="text" name="Address" id="editAddress" class="form-control form-control-sm" />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Người đại diện pháp luật / Giám đốc</label>
+                            <input type="text" name="PresentBy" id="editPresentBy" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Số CCCD / Mã số thuế (MST)</label>
+                            <input type="text" name="GovIdNumber" id="editGovIdNumber" class="form-control form-control-sm font-monospace" />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Điện thoại liên hệ</label>
+                            <input type="text" name="Phone" id="editPhone" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email liên hệ</label>
+                            <input type="email" name="Email" id="editEmail" class="form-control form-control-sm" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Ghi chú & Chính sách đại lý</label>
+                            <textarea name="Remark" id="editRemark" class="form-control form-control-sm" rows="2"></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="editIsActive" />
+                                <label class="form-check-label small fw-semibold" for="editIsActive">Trạng thái hoạt động</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHI TIẾT ĐẠI LÝ -->
+<div class="modal fade" id="detailDealerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white">
+                <h6 class="modal-title fw-bold"><i class="bi bi-shop me-2"></i>Hồ sơ chi tiết Đại lý phân phối</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4" id="detailModalBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2 text-muted small">Đang tải hồ sơ đại lý...</div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditDealerModal(id, code, name, parentCode, level, dealerType, buCode, province, address, presentBy, govId, email, phone, whId, isActive, remark) {
+        document.getElementById('editDealerForm').action = '/Dealer/Update/' + id;
+        document.getElementById('editCode').value = code || '';
+        document.getElementById('editName').value = name || '';
+        document.getElementById('editParentCode').value = parentCode || '';
+        document.getElementById('editLevel').value = level || 1;
+        document.getElementById('editDealerType').value = dealerType || 'Đại lý phân phối';
+        document.getElementById('editBUCode').value = buCode || '';
+        document.getElementById('editProvinceCode').value = province || '';
+        document.getElementById('editAddress').value = address || '';
+        document.getElementById('editPresentBy').value = presentBy || '';
+        document.getElementById('editGovIdNumber').value = govId || '';
+        document.getElementById('editEmail').value = email || '';
+        document.getElementById('editPhone').value = phone || '';
+        document.getElementById('editWarehouseId').value = whId || '';
+        document.getElementById('editIsActive').checked = isActive;
+        document.getElementById('editRemark').value = remark || '';
+
+        new bootstrap.Modal(document.getElementById('editDealerModal')).show();
+    }
+
+    async function viewDealerDetail(id) {
+        const modal = new bootstrap.Modal(document.getElementById('detailDealerModal'));
+        modal.show();
+        const container = document.getElementById('detailModalBody');
+        container.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 text-muted small">Đang tải hồ sơ đại lý...</div>
+            </div>`;
+
+        try {
+            const res = await fetch('/Dealer/Detail/' + id);
+            if (!res.ok) throw new Error('Không thể tải dữ liệu');
+            const data = await res.json();
+            const d = data.dealer;
+
+            let subDealersHtml = '';
+            if (data.subDealers && data.subDealers.length > 0) {
+                subDealersHtml = `
+                    <div class="table-responsive mt-2">
+                        <table class="table table-sm table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Mã ĐL</th>
+                                    <th>Tên đại lý / Showroom</th>
+                                    <th>Cấp bậc</th>
+                                    <th>Loại hình</th>
+                                    <th>Tỉnh/Thành</th>
+                                    <th>SĐT</th>
+                                    <th>Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.subDealers.map(s => `
+                                    <tr>
+                                        <td class="font-monospace fw-bold">${s.code}</td>
+                                        <td>${s.name}</td>
+                                        <td><span class="badge bg-light text-dark border">${s.levelLabel}</span></td>
+                                        <td>${s.dealerType}</td>
+                                        <td>${s.provinceCode || '—'}</td>
+                                        <td>${s.phone || '—'}</td>
+                                        <td>${s.isActive ? '<span class="text-success small fw-semibold">Hoạt động</span>' : '<span class="text-muted small">Tạm dừng</span>'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } else {
+                subDealersHtml = '<div class="alert alert-light border small text-muted py-2 mb-0">Chưa có đại lý cấp dưới trực thuộc đơn vị này.</div>';
+            }
+
+            let dispatchesHtml = '';
+            if (data.recentDispatches && data.recentDispatches.length > 0) {
+                dispatchesHtml = `
+                    <div class="table-responsive mt-2">
+                        <table class="table table-sm table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Số phiếu xuất</th>
+                                    <th>Ngày xuất</th>
+                                    <th>Kho xuất</th>
+                                    <th class="text-end">Số lượng (cái)</th>
+                                    <th>Số tham chiếu</th>
+                                    <th>Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.recentDispatches.map(p => `
+                                    <tr>
+                                        <td><span class="badge bg-light text-primary border font-monospace">${p.code}</span></td>
+                                        <td>${p.date}</td>
+                                        <td>${p.fromWarehouse || 'Kho trung tâm'}</td>
+                                        <td class="text-end fw-bold text-dark">${p.totalQty.toLocaleString()}</td>
+                                        <td>${p.refNo || '—'}</td>
+                                        <td class="small text-muted">${p.note || '—'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } else {
+                dispatchesHtml = '<div class="alert alert-light border small text-muted py-2 mb-0">Chưa ghi nhận phiếu xuất kho giao hàng nào cho đại lý này.</div>';
+            }
+
+            container.innerHTML = `
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="badge bg-primary fs-6 font-monospace">${d.code}</span>
+                            <h5 class="fw-bold mb-0 text-dark">${d.name}</h5>
+                            ${d.isActive ? '<span class="badge bg-success ms-2">Đang hoạt động</span>' : '<span class="badge bg-secondary ms-2">Tạm dừng</span>'}
+                        </div>
+                        <p class="text-muted small mb-3"><i class="bi bi-geo-alt-fill text-danger me-1"></i>${d.address || 'Chưa cập nhật địa chỉ'} · <strong>${d.provinceCode || 'Toàn quốc'}</strong></p>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Cấp bậc & Loại hình:</div>
+                                    <div class="fw-semibold">${d.levelLabel} · <span class="text-primary">${d.dealerType}</span></div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Trực thuộc đại lý cấp cha:</div>
+                                    <div class="fw-semibold">${d.parentCode ? d.parentCode + ' - ' + (d.parentName || '') : 'Kênh cấp 1 độc lập'}</div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Khối kinh doanh (BU):</div>
+                                    <div class="fw-semibold">${d.buCode || 'Toàn hệ thống'}</div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="p-2 border rounded bg-light">
+                                    <div class="small text-muted">Kho cấp hàng phụ trách:</div>
+                                    <div class="fw-semibold">${d.warehouseName || 'Tất cả kho'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card border mb-3">
+                            <div class="card-header bg-light py-2">
+                                <span class="fw-bold small text-dark"><i class="bi bi-diagram-3 text-primary me-1"></i>Mạng lưới đại lý cấp dưới trực thuộc (${data.totalSubDealers} đơn vị)</span>
+                            </div>
+                            <div class="card-body p-2">
+                                ${subDealersHtml}
+                            </div>
+                        </div>
+
+                        <div class="card border">
+                            <div class="card-header bg-light py-2">
+                                <span class="fw-bold small text-dark"><i class="bi bi-box-arrow-up-right text-success me-1"></i>Lịch sử phiếu xuất kho giao hàng gần nhất (${data.totalShippedDocsCount} đợt)</span>
+                            </div>
+                            <div class="card-body p-2">
+                                ${dispatchesHtml}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="card border-0 bg-light p-3 mb-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2"><i class="bi bi-person-lines-fill text-info me-1"></i>Thông tin pháp lý & Liên hệ</h6>
+                            <div class="mb-2">
+                                <div class="small text-muted">Người đại diện pháp luật:</div>
+                                <div class="fw-semibold text-dark">${d.presentBy || 'Chưa cập nhật'}</div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="small text-muted">Số CCCD / Mã số thuế (MST):</div>
+                                <div class="fw-semibold font-monospace">${d.govIdNumber || '—'}</div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="small text-muted">Điện thoại liên hệ:</div>
+                                <div class="fw-semibold">${d.phone || '—'}</div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="small text-muted">Email trao đổi:</div>
+                                <div class="fw-semibold">${d.email || '—'}</div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="small text-muted">Ngày thiết lập đại lý:</div>
+                                <div class="fw-semibold">${d.createdAt}</div>
+                            </div>
+                        </div>
+
+                        <div class="card border-0 bg-light p-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2"><i class="bi bi-graph-up-arrow text-warning me-1"></i>Thống kê luân chuyển hàng</h6>
+                            <div class="d-flex justify-content-between py-1 border-bottom">
+                                <span class="small text-muted">Số phiếu xuất kho:</span>
+                                <span class="fw-bold">${data.totalShippedDocsCount} phiếu</span>
+                            </div>
+                            <div class="d-flex justify-content-between py-1 border-bottom">
+                                <span class="small text-muted">Tổng sản lượng xuất:</span>
+                                <span class="fw-bold text-primary">${data.totalShippedQty.toLocaleString()} cái</span>
+                            </div>
+                            <div class="d-flex justify-content-between py-1 border-bottom">
+                                <span class="small text-muted">Tổng doanh số xuất:</span>
+                                <span class="fw-bold text-success">${data.totalShippedAmount.toLocaleString()} đ</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="small text-muted mb-1">Chính sách & Ghi chú đại lý:</div>
+                                <div class="small text-secondary p-2 bg-white rounded border">${d.remark || 'Chưa có ghi chú chính sách đặc biệt.'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        } catch (err) {
+            container.innerHTML = `<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Lỗi khi tải thông tin: ${err.message}</div>`;
+        }
+    }
+</script>
+}

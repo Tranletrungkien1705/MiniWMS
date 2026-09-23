@@ -4937,6 +4937,171 @@ public class MoveOrdTypeController(IWmsService svc) : Controller
     }
 }
 
+public class DealerController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, int? level, string? province, bool? activeOnly)
+    {
+        var report = await svc.DealersReportAsync(q, level, province, activeOnly);
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Level = level;
+        ViewBag.Province = province ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Warehouses = await svc.WarehousesAsync();
+        ViewBag.ParentDealers = (await svc.DealersAsync(activeOnly: true)).Where(d => d.Level < 3).ToList();
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(Dealer item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên đại lý phân phối.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            await svc.CreateDealerAsync(item);
+            TempData["Success"] = $"Đã tạo mới đại lý '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, Dealer item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên đại lý phân phối.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (ok, msg) = await svc.UpdateDealerAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleDealerStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteDealerAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetDealerDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy đại lý phân phối." });
+
+        return Json(new
+        {
+            dealer = new
+            {
+                detail.Dealer.Id,
+                detail.Dealer.Code,
+                detail.Dealer.Name,
+                detail.Dealer.ParentCode,
+                parentName = detail.ParentDealer?.Name,
+                detail.Dealer.Level,
+                levelLabel = detail.Dealer.Level switch { 1 => "Cấp 1 - Tổng đại lý", 2 => "Cấp 2 - Đại lý vùng", 3 => "Cấp 3 - Showroom / Điểm bán", _ => $"Cấp {detail.Dealer.Level}" },
+                detail.Dealer.DealerType,
+                detail.Dealer.BUCode,
+                detail.Dealer.ProvinceCode,
+                detail.Dealer.Address,
+                detail.Dealer.PresentBy,
+                detail.Dealer.GovIdNumber,
+                detail.Dealer.Phone,
+                detail.Dealer.Email,
+                detail.Dealer.WarehouseId,
+                warehouseName = detail.Warehouse?.Name,
+                detail.Dealer.IsActive,
+                detail.Dealer.Remark,
+                createdAt = detail.Dealer.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            subDealers = detail.SubDealers.Select(s => new
+            {
+                s.Id,
+                s.Code,
+                s.Name,
+                s.Level,
+                levelLabel = s.Level switch { 1 => "Cấp 1", 2 => "Cấp 2", 3 => "Cấp 3 / Showroom", _ => $"Cấp {s.Level}" },
+                s.DealerType,
+                s.ProvinceCode,
+                s.Phone,
+                s.IsActive
+            }),
+            totalSubDealers = detail.TotalSubDealers,
+            totalShippedDocsCount = detail.TotalShippedDocsCount,
+            totalShippedQty = detail.TotalShippedQty,
+            totalShippedAmount = detail.TotalShippedAmount,
+            recentDispatches = detail.RecentDispatches.Select(doc => new
+            {
+                doc.Id,
+                doc.Code,
+                date = doc.Date.ToString("dd/MM/yyyy"),
+                fromWarehouse = doc.FromWarehouse?.Name,
+                totalQty = doc.TotalQty,
+                doc.RefNo,
+                doc.Note
+            })
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, int? level, string? province, bool? activeOnly)
+    {
+        var report = await svc.DealersReportAsync(q, level, province, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC ĐẠI LÝ PHÂN PHỐI & MẠNG LƯỚI ĐIỂM BÁN KHO (MST_DEALER)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc cấp đại lý:;{(level.HasValue ? $"Cấp {level.Value}" : "Tất cả")}");
+        sb.AppendLine($"Bộ lọc tỉnh thành:;{(string.IsNullOrWhiteSpace(province) ? "Tất cả" : province)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang hoạt động" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã đại lý;Tên đại lý;Cấp bậc;Loại hình;Đại lý cấp cha;Khối kinh doanh;Tỉnh / Thành phố;Địa chỉ;Người đại diện;Số CCCD / MST;Điện thoại;Email;Kho phụ trách;Trạng thái;Số đại lý con;Số phiếu xuất;Tổng SL xuất;Tổng giá trị xuất;Ghi chú;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang hoạt động" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.LevelLabel}\";\"{r.DealerType}\";\"{r.ParentCode} - {r.ParentName}\";\"{r.BUCode}\";\"{r.ProvinceCode}\";\"{r.Address?.Replace("\"", "\"\"")}\";\"{r.PresentBy}\";\"{r.GovIdNumber}\";\"{r.Phone}\";\"{r.Email}\";\"{r.WarehouseName}\";\"{statusStr}\";{r.SubDealersCount};{r.TotalShippedDocsCount};{r.TotalShippedQty};{r.TotalShippedAmount:N0};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ ĐẠI LÝ:;{report.TotalDealers};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;ĐẠI LÝ CẤP 1:;{report.Level1Count};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;ĐẠI LÝ CẤP 2:;{report.Level2Count};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;ĐẠI LÝ CẤP 3 / SHOWROOM:;{report.Level3Count};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;HOẠT ĐỘNG:;{report.ActiveCount};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;TẠM DỪNG:;{report.InactiveCount};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG PHIẾU XUẤT:;{report.TotalShippedDocsCount};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG SẢN LƯỢNG XUẤT:;{report.TotalShippedQty};;;;;;;;;;;;;;;;");
+        sb.AppendLine($";;TỔNG DOANH SỐ XUẤT:;{report.TotalShippedAmount:N0};;;;;;;;;;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DaiLyPhanPhoi_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 
 
 

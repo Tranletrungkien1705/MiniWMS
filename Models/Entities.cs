@@ -2517,6 +2517,92 @@ public record MoveOrdTypeDetailDto(
     int TotalQtyMoved
 );
 
+/// <summary>Danh mục Đại lý phân phối, Showroom & Cửa hàng uỷ quyền thuộc mạng lưới phân phối kho (port từ Mst_Dealer Skycic: DLCode, DLName, DLCodeParent, DLBUCode, DLLevel, ProvinceCode, DLAddress, DLPresentBy, DLGovIDNumber, DLEmail, DLPhoneNo, FlagActive, Remark).</summary>
+public class Dealer : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã đơn vị / đại lý (DLCode, vd: DL_MB01, DL_MN01, DL_HP01...)
+    public string Name { get; set; } = "";             // Tên đơn vị / đại lý phân phối (DLName)
+    public string? ParentCode { get; set; }           // Mã đại lý cấp cha (DLCodeParent) - phân cấp cây đại lý
+    public int Level { get; set; } = 1;                // Cấp bậc đại lý (DLLevel: 1 = Cấp 1 / Tổng đại lý, 2 = Cấp 2 / Đại lý khu vực, 3 = Điểm bán / Showroom ủy quyền)
+    public string DealerType { get; set; } = "Đại lý phân phối"; // Loại hình đơn vị (DLType: Đại lý độc quyền, Đại lý phổ thông, Cửa hàng uỷ quyền, Showroom bán lẻ)
+    public string? BUCode { get; set; }               // Khối kinh doanh quản lý (DLBUCode, vd: BU_NORTH, BU_CENTRAL, BU_SOUTH)
+    public string? ProvinceCode { get; set; }         // Tỉnh / Thành phố đại lý đặt trụ sở (ProvinceCode)
+    public string? Address { get; set; }              // Địa chỉ chi tiết (DLAddress)
+    public string? PresentBy { get; set; }            // Người đại diện pháp luật / Giám đốc đại lý (DLPresentBy)
+    public string? GovIdNumber { get; set; }          // Số CCCD / Mã số thuế đại lý (DLGovIDNumber)
+    public string? Email { get; set; }                // Email liên hệ (DLEmail)
+    public string? Phone { get; set; }                // Điện thoại liên hệ (DLPhoneNo)
+    public int? WarehouseId { get; set; }             // Kho phụ trách cung ứng / phục vụ xuất kho cho đại lý
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang hoạt động, 0 - Tạm dừng)
+    public string? Remark { get; set; }               // Ghi chú chính sách chiết khấu, hạn mức công nợ, quy định giao nhận
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    public Warehouse? Warehouse { get; set; }
+}
+
+/// <summary>Dòng thông tin hiển thị đại lý kèm thông tin cấp bậc, đại lý cha, kho phụ trách và thống kê sản lượng xuất hàng.</summary>
+public record DealerRow(
+    int Id,
+    string Code,
+    string Name,
+    string? ParentCode,
+    string? ParentName,
+    int Level,
+    string LevelLabel,
+    string LevelBadgeClass,
+    string DealerType,
+    string? BUCode,
+    string? ProvinceCode,
+    string? Address,
+    string? PresentBy,
+    string? GovIdNumber,
+    string? Phone,
+    string? Email,
+    int? WarehouseId,
+    string? WarehouseName,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int SubDealersCount,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    decimal TotalShippedAmount
+);
+
+/// <summary>Báo cáo / Danh sách đại lý phân phối tổng hợp kèm 4 thẻ KPI.</summary>
+public record DealerReport(
+    string? Keyword,
+    int? LevelFilter,
+    string? ProvinceFilter,
+    bool? ActiveFilter,
+    int TotalDealers,
+    int Level1Count,
+    int Level2Count,
+    int Level3Count,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    decimal TotalShippedAmount,
+    List<DealerRow> Rows
+);
+
+/// <summary>Chi tiết Đại lý kèm danh sách các đại lý cấp dưới trực thuộc, kho phụ trách và các phiếu xuất kho giao hàng gần nhất.</summary>
+public record DealerDetailDto(
+    Dealer Dealer,
+    Dealer? ParentDealer,
+    List<Dealer> SubDealers,
+    Warehouse? Warehouse,
+    int TotalSubDealers,
+    int TotalShippedDocsCount,
+    int TotalShippedQty,
+    decimal TotalShippedAmount,
+    List<StockDoc> RecentDispatches
+);
+
+
 
 
 

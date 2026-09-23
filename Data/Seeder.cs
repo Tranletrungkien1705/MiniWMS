@@ -124,6 +124,173 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.Dealers.AnyAsync())
+        {
+            var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
+            var whHcm = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HCM");
+            var whDn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-DN");
+
+            db.Dealers.AddRange(
+                // Cấp 1: Tổng Đại lý Phân phối Vùng (Level 1)
+                new Dealer
+                {
+                    Code = "DL_MB01",
+                    Name = "Tổng Đại lý Phân phối Miền Bắc - Sao Mai",
+                    ParentCode = null,
+                    Level = 1,
+                    DealerType = "Đại lý độc quyền",
+                    BUCode = "BU_NORTH",
+                    ProvinceCode = "Hà Nội",
+                    Address = "Số 188 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+                    PresentBy = "Trần Đình Khang",
+                    GovIdNumber = "0108876543",
+                    Phone = "024-38665544",
+                    Email = "saomai.mb@dailywms.vn",
+                    WarehouseId = whHn?.Id,
+                    IsActive = true,
+                    Remark = "Tổng đại lý bao tiêu thị trường phía Bắc, định mức công nợ 60 ngày",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Dealer
+                {
+                    Code = "DL_MN01",
+                    Name = "Tổng Đại lý Phân phối Miền Nam - Phương Nam",
+                    ParentCode = null,
+                    Level = 1,
+                    DealerType = "Đại lý độc quyền",
+                    BUCode = "BU_SOUTH",
+                    ProvinceCode = "TP. Hồ Chí Minh",
+                    Address = "Số 450 Hai Bà Trưng, Phường Tân Định, Quận 1, TP.HCM",
+                    PresentBy = "Võ Văn Hậu",
+                    GovIdNumber = "0309988776",
+                    Phone = "028-38221100",
+                    Email = "phuongnam.mn@dailywms.vn",
+                    WarehouseId = whHcm?.Id,
+                    IsActive = true,
+                    Remark = "Tổng đại lý phân phối toàn bộ thị trường Đông & Tây Nam Bộ",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+                new Dealer
+                {
+                    Code = "DL_MT01",
+                    Name = "Tổng Đại lý Phân phối Miền Trung - Sông Hàn",
+                    ParentCode = null,
+                    Level = 1,
+                    DealerType = "Đại lý độc quyền",
+                    BUCode = "BU_CENTRAL",
+                    ProvinceCode = "Đà Nẵng",
+                    Address = "Số 92 Điện Biên Phủ, Thanh Khê, TP. Đà Nẵng",
+                    PresentBy = "Nguyễn Hữu Cảnh",
+                    GovIdNumber = "0407766554",
+                    Phone = "0236-3755443",
+                    Email = "songhan.mt@dailywms.vn",
+                    WarehouseId = whDn?.Id,
+                    IsActive = true,
+                    Remark = "Tổng đại lý trung tâm miền Trung & khu vực Tây Nguyên",
+                    CreatedAt = DateTime.Now.AddDays(-120)
+                },
+
+                // Cấp 2: Đại lý khu vực tỉnh / thành (Level 2)
+                new Dealer
+                {
+                    Code = "DL_HP01",
+                    Name = "Đại lý Khu vực Hải Phòng - Cảng Xanh",
+                    ParentCode = "DL_MB01",
+                    Level = 2,
+                    DealerType = "Đại lý phổ thông",
+                    BUCode = "BU_NORTH",
+                    ProvinceCode = "Hải Phòng",
+                    Address = "Số 55 Lạch Tray, Ngô Quyền, Hải Phòng",
+                    PresentBy = "Lê Hải Triều",
+                    GovIdNumber = "0316655443",
+                    Phone = "0225-3844332",
+                    Email = "cangxanh.hp@dailywms.vn",
+                    WarehouseId = whHn?.Id,
+                    IsActive = true,
+                    Remark = "Đại lý cấp 2 phân phối khu vực Hải Phòng, Quảng Ninh",
+                    CreatedAt = DateTime.Now.AddDays(-100)
+                },
+                new Dealer
+                {
+                    Code = "DL_CT01",
+                    Name = "Đại lý Khu vực Tây Nam Bộ - Cần Thơ",
+                    ParentCode = "DL_MN01",
+                    Level = 2,
+                    DealerType = "Đại lý phổ thông",
+                    BUCode = "BU_SOUTH",
+                    ProvinceCode = "Cần Thơ",
+                    Address = "Số 120 30 Tháng 4, Ninh Kiều, Cần Thơ",
+                    PresentBy = "Phạm Thanh Phong",
+                    GovIdNumber = "0925544332",
+                    Phone = "0292-3833221",
+                    Email = "taynam.ct@dailywms.vn",
+                    WarehouseId = whHcm?.Id,
+                    IsActive = true,
+                    Remark = "Đại lý cấp 2 phân phối khu vực Đồng bằng Sông Cửu Long",
+                    CreatedAt = DateTime.Now.AddDays(-90)
+                },
+                new Dealer
+                {
+                    Code = "DL_NA01",
+                    Name = "Đại lý Khu vực Nghệ An - Lam Giang",
+                    ParentCode = "DL_MT01",
+                    Level = 2,
+                    DealerType = "Đại lý phổ thông",
+                    BUCode = "BU_CENTRAL",
+                    ProvinceCode = "Nghệ An",
+                    Address = "Số 78 Quang Trung, TP. Vinh, Nghệ An",
+                    PresentBy = "Hồ Xuân Hương",
+                    GovIdNumber = "0384433221",
+                    Phone = "0238-3844112",
+                    Email = "lamgiang.na@dailywms.vn",
+                    WarehouseId = whDn?.Id,
+                    IsActive = true,
+                    Remark = "Đại lý cấp 2 khu vực Bắc Trung Bộ",
+                    CreatedAt = DateTime.Now.AddDays(-80)
+                },
+
+                // Cấp 3: Showroom & Điểm bán ủy quyền (Level 3)
+                new Dealer
+                {
+                    Code = "DL_SR_HN",
+                    Name = "Showroom Ủy quyền Tràng Thi - Hoàn Kiếm",
+                    ParentCode = "DL_MB01",
+                    Level = 3,
+                    DealerType = "Showroom bán lẻ",
+                    BUCode = "BU_NORTH",
+                    ProvinceCode = "Hà Nội",
+                    Address = "Số 12 Tràng Thi, Hoàn Kiếm, Hà Nội",
+                    PresentBy = "Nguyễn Minh Thu",
+                    GovIdNumber = "0011928374",
+                    Phone = "024-39366688",
+                    Email = "trangthi.sr@dailywms.vn",
+                    WarehouseId = whHn?.Id,
+                    IsActive = true,
+                    Remark = "Điểm trưng bày và bán lẻ flagship tại trung tâm Hà Nội",
+                    CreatedAt = DateTime.Now.AddDays(-60)
+                },
+                new Dealer
+                {
+                    Code = "DL_SR_SG",
+                    Name = "Showroom Ủy quyền Nguyễn Huệ - Quận 1",
+                    ParentCode = "DL_MN01",
+                    Level = 3,
+                    DealerType = "Showroom bán lẻ",
+                    BUCode = "BU_SOUTH",
+                    ProvinceCode = "TP. Hồ Chí Minh",
+                    Address = "Số 68 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM",
+                    PresentBy = "Đoàn Gia Bảo",
+                    GovIdNumber = "0791987654",
+                    Phone = "028-38299988",
+                    Email = "nguyenhue.sr@dailywms.vn",
+                    WarehouseId = whHcm?.Id,
+                    IsActive = true,
+                    Remark = "Điểm trưng bày và bán lẻ cao cấp tại phố đi bộ TP.HCM",
+                    CreatedAt = DateTime.Now.AddDays(-60)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.UserMapInventories.AnyAsync())
         {
             var whHn = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO-HN");
@@ -2562,7 +2729,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2612,6 +2779,11 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_CustomerSources_OrgId_ParentCode\" ON miniwms.\"CustomerSources\" (\"OrgId\", \"ParentCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"MoveOrdTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"IsUrgent\" boolean NOT NULL DEFAULT false, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_MoveOrdTypes_OrgId_Code\" ON miniwms.\"MoveOrdTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Dealers\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"ParentCode\" text NULL, \"Level\" integer NOT NULL DEFAULT 1, \"DealerType\" text NOT NULL DEFAULT 'Đại lý phân phối', \"BUCode\" text NULL, \"ProvinceCode\" text NULL, \"Address\" text NULL, \"PresentBy\" text NULL, \"GovIdNumber\" text NULL, \"Email\" text NULL, \"Phone\" text NULL, \"WarehouseId\" integer NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_Code\" ON miniwms.\"Dealers\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_ParentCode\" ON miniwms.\"Dealers\" (\"OrgId\", \"ParentCode\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_Level\" ON miniwms.\"Dealers\" (\"OrgId\", \"Level\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Dealers_OrgId_ProvinceCode\" ON miniwms.\"Dealers\" (\"OrgId\", \"ProvinceCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"MoveOrders\" ADD COLUMN IF NOT EXISTS \"MoveOrdTypeCode\" text NULL");
@@ -3258,7 +3430,32 @@ public static class Seeder
                 ""IsActive"" INTEGER NOT NULL DEFAULT 1,
                 ""CreatedAt"" TEXT NOT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MoveOrdTypes_OrgId_Code"" ON ""MoveOrdTypes"" (""OrgId"", ""Code"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MoveOrdTypes_OrgId_Code"" ON ""MoveOrdTypes"" (""OrgId"", ""Code"");",
+            @"CREATE TABLE IF NOT EXISTS ""Dealers"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""Level"" INTEGER NOT NULL DEFAULT 1,
+                ""DealerType"" TEXT NOT NULL DEFAULT 'Đại lý phân phối',
+                ""BUCode"" TEXT NULL,
+                ""ProvinceCode"" TEXT NULL,
+                ""Address"" TEXT NULL,
+                ""PresentBy"" TEXT NULL,
+                ""GovIdNumber"" TEXT NULL,
+                ""Email"" TEXT NULL,
+                ""Phone"" TEXT NULL,
+                ""WarehouseId"" INTEGER NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                CONSTRAINT ""FK_Dealers_Warehouses_WarehouseId"" FOREIGN KEY (""WarehouseId"") REFERENCES ""Warehouses"" (""Id"") ON DELETE SET NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_Code"" ON ""Dealers"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_ParentCode"" ON ""Dealers"" (""OrgId"", ""ParentCode"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_Level"" ON ""Dealers"" (""OrgId"", ""Level"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Dealers_OrgId_ProvinceCode"" ON ""Dealers"" (""OrgId"", ""ProvinceCode"");"
         };
         foreach (var s in sql)
         {

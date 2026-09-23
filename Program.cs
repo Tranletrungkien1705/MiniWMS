@@ -2865,6 +2865,104 @@ app.MapDelete("/api/move-ord-types/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== QUẢN LÝ ĐẠI LÝ PHÂN PHỐI & MẠNG LƯỚI ĐIỂM BÁN KHO (Mst_Dealer Skycic) ====================
+app.MapGet("/api/dealers", async (string? q, int? level, string? province, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.DealersReportAsync(q, level, province, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/dealers/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetDealerAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy đại lý phân phối." });
+});
+
+app.MapGet("/api/dealers/code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetDealerByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy đại lý phân phối." });
+});
+
+app.MapGet("/api/dealers/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetDealerDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy đại lý phân phối." });
+});
+
+app.MapPost("/api/dealers", async (CreateDealerDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Tên đại lý phân phối không được để trống." });
+
+    var item = new Dealer
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        Level = dto.Level > 0 ? dto.Level : 1,
+        DealerType = string.IsNullOrWhiteSpace(dto.DealerType) ? "Đại lý phân phối" : dto.DealerType.Trim(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        ProvinceCode = string.IsNullOrWhiteSpace(dto.ProvinceCode) ? null : dto.ProvinceCode.Trim(),
+        Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
+        PresentBy = string.IsNullOrWhiteSpace(dto.PresentBy) ? null : dto.PresentBy.Trim(),
+        GovIdNumber = string.IsNullOrWhiteSpace(dto.GovIdNumber) ? null : dto.GovIdNumber.Trim(),
+        Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
+        Phone = string.IsNullOrWhiteSpace(dto.Phone) ? null : dto.Phone.Trim(),
+        WarehouseId = dto.WarehouseId,
+        IsActive = dto.IsActive ?? true,
+        Remark = string.IsNullOrWhiteSpace(dto.Remark) ? null : dto.Remark.Trim()
+    };
+
+    try
+    {
+        var id = await svc.CreateDealerAsync(item);
+        return Results.Created($"/api/dealers/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/dealers/{id:int}", async (int id, UpdateDealerDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Tên đại lý phân phối không được để trống." });
+
+    var item = new Dealer
+    {
+        Name = dto.Name.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        Level = dto.Level > 0 ? dto.Level : 1,
+        DealerType = string.IsNullOrWhiteSpace(dto.DealerType) ? "Đại lý phân phối" : dto.DealerType.Trim(),
+        BUCode = string.IsNullOrWhiteSpace(dto.BUCode) ? null : dto.BUCode.Trim().ToUpperInvariant(),
+        ProvinceCode = string.IsNullOrWhiteSpace(dto.ProvinceCode) ? null : dto.ProvinceCode.Trim(),
+        Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
+        PresentBy = string.IsNullOrWhiteSpace(dto.PresentBy) ? null : dto.PresentBy.Trim(),
+        GovIdNumber = string.IsNullOrWhiteSpace(dto.GovIdNumber) ? null : dto.GovIdNumber.Trim(),
+        Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
+        Phone = string.IsNullOrWhiteSpace(dto.Phone) ? null : dto.Phone.Trim(),
+        WarehouseId = dto.WarehouseId,
+        IsActive = dto.IsActive ?? true,
+        Remark = string.IsNullOrWhiteSpace(dto.Remark) ? null : dto.Remark.Trim()
+    };
+    var (ok, msg) = await svc.UpdateDealerAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/dealers/{id:int}/toggle-status", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleDealerStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/dealers/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteDealerAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2942,3 +3040,5 @@ record CreateCustomerSourceDto(string? Code, string Name, string? ParentCode, st
 record UpdateCustomerSourceDto(string Name, string? ParentCode, string? BUCode, string? Description, bool? IsActive);
 record CreateMoveOrdTypeDto(string? Code, string Name, string? Description, bool? IsUrgent, bool? IsActive);
 record UpdateMoveOrdTypeDto(string Name, string? Description, bool? IsUrgent, bool? IsActive);
+record CreateDealerDto(string? Code, string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
+record UpdateDealerDto(string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);

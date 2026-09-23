@@ -271,6 +271,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleMoveOrdTypeStatusAsync(int id);
     Task<(bool ok, string msg)> ToggleMoveOrdTypeUrgentAsync(int id);
     Task<(bool ok, string msg)> DeleteMoveOrdTypeAsync(int id);
+    Task<DealerReport> DealersReportAsync(string? q = null, int? level = null, string? province = null, bool? activeOnly = null);
+    Task<List<Dealer>> DealersAsync(string? q = null, bool? activeOnly = null);
+    Task<Dealer?> GetDealerAsync(int id);
+    Task<Dealer?> GetDealerByCodeAsync(string code);
+    Task<DealerDetailDto?> GetDealerDetailAsync(int id);
+    Task<int> CreateDealerAsync(Dealer item);
+    Task<(bool ok, string msg)> UpdateDealerAsync(int id, Dealer item);
+    Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteDealerAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -8665,6 +8674,270 @@ public class WmsService(AppDbContext db) : IWmsService
         db.MoveOrdTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại điều chuyển '{existing.Code}'.");
+    }
+
+    // ==================== QUẢN LÝ ĐẠI LÝ PHÂN PHỐI & MẠNG LƯỚI ĐIỂM BÁN KHO (Mst_Dealer Skycic) ====================
+    public async Task<DealerReport> DealersReportAsync(string? q = null, int? level = null, string? province = null, bool? activeOnly = null)
+    {
+        var query = db.Dealers.Include(d => d.Warehouse).AsQueryable();
+        if (level.HasValue && level > 0) query = query.Where(d => d.Level == level.Value);
+        if (!string.IsNullOrWhiteSpace(province)) query = query.Where(d => d.ProvinceCode != null && d.ProvinceCode.ToLower().Contains(province.Trim().ToLower()));
+        if (activeOnly.HasValue) query = query.Where(d => d.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLower();
+            query = query.Where(d => d.Code.ToLower().Contains(term) ||
+                                     d.Name.ToLower().Contains(term) ||
+                                     (d.PresentBy != null && d.PresentBy.ToLower().Contains(term)) ||
+                                     (d.Phone != null && d.Phone.ToLower().Contains(term)) ||
+                                     (d.ProvinceCode != null && d.ProvinceCode.ToLower().Contains(term)) ||
+                                     (d.Address != null && d.Address.ToLower().Contains(term)));
+        }
+
+        var allDealers = await db.Dealers.ToListAsync();
+        var dealersList = await query.OrderBy(d => d.Level).ThenBy(d => d.Code).ToListAsync();
+
+        var outDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && d.Status == DocStatus.Posted)
+            .Include(d => d.Lines)
+            .ThenInclude(l => l.Product)
+            .ToListAsync();
+
+        var rows = new List<DealerRow>();
+        foreach (var d in dealersList)
+        {
+            var parent = !string.IsNullOrEmpty(d.ParentCode) ? allDealers.FirstOrDefault(p => p.Code.Equals(d.ParentCode, StringComparison.OrdinalIgnoreCase)) : null;
+            int subCount = allDealers.Count(s => !string.IsNullOrEmpty(s.ParentCode) && s.ParentCode.Equals(d.Code, StringComparison.OrdinalIgnoreCase));
+
+            var matchedDocs = outDocs.Where(doc =>
+                (!string.IsNullOrEmpty(doc.CustomerCode) && doc.CustomerCode.Equals(d.Code, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(doc.CustomerName) && doc.CustomerName.Contains(d.Name, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+
+            int docCount = matchedDocs.Count;
+            int shippedQty = matchedDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity));
+            decimal shippedAmount = matchedDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity * (l.Product?.CostPrice ?? 0m)));
+
+            string levelLabel = d.Level switch
+            {
+                1 => "Cấp 1 - Tổng đại lý",
+                2 => "Cấp 2 - Đại lý vùng",
+                3 => "Cấp 3 - Showroom / Điểm bán",
+                _ => $"Cấp {d.Level}"
+            };
+
+            string badgeClass = d.Level switch
+            {
+                1 => "bg-primary text-white",
+                2 => "bg-info text-dark",
+                3 => "bg-secondary text-white",
+                _ => "bg-light text-dark"
+            };
+
+            rows.Add(new DealerRow(
+                d.Id,
+                d.Code,
+                d.Name,
+                d.ParentCode,
+                parent?.Name,
+                d.Level,
+                levelLabel,
+                badgeClass,
+                d.DealerType,
+                d.BUCode,
+                d.ProvinceCode,
+                d.Address,
+                d.PresentBy,
+                d.GovIdNumber,
+                d.Phone,
+                d.Email,
+                d.WarehouseId,
+                d.Warehouse?.Name,
+                d.IsActive,
+                d.Remark,
+                d.CreatedAt,
+                subCount,
+                docCount,
+                shippedQty,
+                shippedAmount
+            ));
+        }
+
+        int totalDealers = allDealers.Count;
+        int level1Count = allDealers.Count(d => d.Level == 1);
+        int level2Count = allDealers.Count(d => d.Level == 2);
+        int level3Count = allDealers.Count(d => d.Level >= 3);
+        int activeCount = allDealers.Count(d => d.IsActive);
+        int inactiveCount = totalDealers - activeCount;
+
+        int totalShippedDocs = rows.Sum(r => r.TotalShippedDocsCount);
+        int totalShippedQty = rows.Sum(r => r.TotalShippedQty);
+        decimal totalShippedAmount = rows.Sum(r => r.TotalShippedAmount);
+
+        return new DealerReport(
+            q,
+            level,
+            province,
+            activeOnly,
+            totalDealers,
+            level1Count,
+            level2Count,
+            level3Count,
+            activeCount,
+            inactiveCount,
+            totalShippedDocs,
+            totalShippedQty,
+            totalShippedAmount,
+            rows
+        );
+    }
+
+    public Task<List<Dealer>> DealersAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Dealers.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(d => d.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLower();
+            query = query.Where(d => d.Code.ToLower().Contains(term) || d.Name.ToLower().Contains(term));
+        }
+        return query.OrderBy(d => d.Level).ThenBy(d => d.Name).ToListAsync();
+    }
+
+    public Task<Dealer?> GetDealerAsync(int id) =>
+        db.Dealers.Include(d => d.Warehouse).FirstOrDefaultAsync(d => d.Id == id);
+
+    public Task<Dealer?> GetDealerByCodeAsync(string code) =>
+        db.Dealers.Include(d => d.Warehouse).FirstOrDefaultAsync(d => d.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<DealerDetailDto?> GetDealerDetailAsync(int id)
+    {
+        var dealer = await db.Dealers.Include(d => d.Warehouse).FirstOrDefaultAsync(d => d.Id == id);
+        if (dealer == null) return null;
+
+        Dealer? parentDealer = null;
+        if (!string.IsNullOrEmpty(dealer.ParentCode))
+        {
+            parentDealer = await db.Dealers.FirstOrDefaultAsync(d => d.Code.ToLower() == dealer.ParentCode.ToLower());
+        }
+
+        var subDealers = await db.Dealers
+            .Where(d => !string.IsNullOrEmpty(d.ParentCode) && d.ParentCode.ToLower() == dealer.Code.ToLower())
+            .OrderBy(d => d.Level).ThenBy(d => d.Name)
+            .ToListAsync();
+
+        var outDocs = await db.Docs
+            .Where(d => d.Type == DocType.Out && d.Status == DocStatus.Posted)
+            .Include(d => d.Lines)
+            .ThenInclude(l => l.Product)
+            .Where(doc => (!string.IsNullOrEmpty(doc.CustomerCode) && doc.CustomerCode.ToLower() == dealer.Code.ToLower()) ||
+                          (!string.IsNullOrEmpty(doc.CustomerName) && doc.CustomerName.ToLower().Contains(dealer.Name.ToLower())))
+            .OrderByDescending(d => d.Date)
+            .Take(10)
+            .ToListAsync();
+
+        int docCount = outDocs.Count;
+        int shippedQty = outDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity));
+        decimal shippedAmount = outDocs.Sum(doc => doc.Lines.Sum(l => l.Quantity * (l.Product?.CostPrice ?? 0m)));
+
+        return new DealerDetailDto(
+            dealer,
+            parentDealer,
+            subDealers,
+            dealer.Warehouse,
+            subDealers.Count,
+            docCount,
+            shippedQty,
+            shippedAmount,
+            outDocs
+        );
+    }
+
+    public async Task<int> CreateDealerAsync(Dealer item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"DL_{(item.Level == 1 ? "MB" : item.Level == 2 ? "KV" : "SR")}{await db.Dealers.CountAsync() + 1:D2}";
+        }
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
+        }
+        if (!string.IsNullOrWhiteSpace(item.BUCode))
+        {
+            item.BUCode = item.BUCode.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.Dealers.AnyAsync(d => d.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã đại lý '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.Dealers.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateDealerAsync(int id, Dealer item)
+    {
+        var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+
+        existing.Name = item.Name.Trim();
+        existing.ParentCode = string.IsNullOrWhiteSpace(item.ParentCode) ? null : item.ParentCode.Trim().ToUpperInvariant();
+        existing.Level = item.Level > 0 ? item.Level : 1;
+        existing.DealerType = string.IsNullOrWhiteSpace(item.DealerType) ? "Đại lý phân phối" : item.DealerType.Trim();
+        existing.BUCode = string.IsNullOrWhiteSpace(item.BUCode) ? null : item.BUCode.Trim().ToUpperInvariant();
+        existing.ProvinceCode = string.IsNullOrWhiteSpace(item.ProvinceCode) ? null : item.ProvinceCode.Trim();
+        existing.Address = string.IsNullOrWhiteSpace(item.Address) ? null : item.Address.Trim();
+        existing.PresentBy = string.IsNullOrWhiteSpace(item.PresentBy) ? null : item.PresentBy.Trim();
+        existing.GovIdNumber = string.IsNullOrWhiteSpace(item.GovIdNumber) ? null : item.GovIdNumber.Trim();
+        existing.Email = string.IsNullOrWhiteSpace(item.Email) ? null : item.Email.Trim();
+        existing.Phone = string.IsNullOrWhiteSpace(item.Phone) ? null : item.Phone.Trim();
+        existing.WarehouseId = item.WarehouseId;
+        existing.IsActive = item.IsActive;
+        existing.Remark = string.IsNullOrWhiteSpace(item.Remark) ? null : item.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật đại lý '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleDealerStatusAsync(int id)
+    {
+        var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt hoạt động đại lý '{existing.Code}'." : $"Đã chuyển đại lý '{existing.Code}' sang trạng thái tạm dừng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteDealerAsync(int id)
+    {
+        var existing = await db.Dealers.FirstOrDefaultAsync(d => d.Id == id);
+        if (existing == null) return (false, "Không tìm thấy đại lý phân phối.");
+
+        bool hasSubs = await db.Dealers.AnyAsync(d => d.ParentCode != null && d.ParentCode.ToUpper() == existing.Code.ToUpper());
+        if (hasSubs)
+        {
+            return (false, $"Đại lý '{existing.Code}' đang có các đại lý cấp dưới trực thuộc, không thể xóa.");
+        }
+
+        bool inUse = await db.Docs.AnyAsync(doc => doc.CustomerCode != null && doc.CustomerCode.ToUpper() == existing.Code.ToUpper());
+        if (inUse)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Đại lý '{existing.Code}' đã có phiếu xuất kho liên kết nên đã được chuyển sang trạng thái Tạm dừng hoạt động thay vì xóa hẳn.");
+        }
+
+        db.Dealers.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa đại lý '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };
