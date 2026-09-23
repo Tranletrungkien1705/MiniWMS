@@ -9,6 +9,7 @@
     var specs = ViewBag.Specs as List<ProductSpec> ?? [];
     var units = ViewBag.Units as List<PartUnit> ?? [];
     var currencies = ViewBag.Currencies as List<CurrencyExchange> ?? [];
+    var vatRates = ViewBag.VATRates as List<VATRate> ?? [];
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -405,11 +406,21 @@
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold">Thuế suất VAT</label>
                             <select name="vatRateCode" class="form-select form-select-sm">
-                                <option value="VAT10" selected>VAT 10% (Thuế GTGT 10%)</option>
-                                <option value="VAT8">VAT 8% (Thuế GTGT 8%)</option>
-                                <option value="VAT5">VAT 5% (Thuế GTGT 5%)</option>
-                                <option value="VAT0">VAT 0% (Thuế suất 0% xuất khẩu)</option>
-                                <option value="KCT">KCT (Không chịu thuế)</option>
+                                @if (vatRates.Count > 0)
+                                {
+                                    foreach (var vr in vatRates)
+                                    {
+                                        <!option value="@vr.VATRateCode" @(vr.VATRateCode == "VAT10" ? "selected" : "")>@vr.VATRateCode - @vr.Rate.ToString("F1")% (@vr.VATDesc)</!option>
+                                    }
+                                }
+                                else
+                                {
+                                    <option value="VAT10" selected>VAT 10% (Thuế GTGT 10%)</option>
+                                    <option value="VAT8">VAT 8% (Thuế GTGT 8%)</option>
+                                    <option value="VAT5">VAT 5% (Thuế GTGT 5%)</option>
+                                    <option value="VAT0">VAT 0% (Thuế suất 0% xuất khẩu)</option>
+                                    <option value="KCT">KCT (Không chịu thuế)</option>
+                                }
                             </select>
                         </div>
                         <div class="col-md-4">
@@ -517,11 +528,21 @@
                         <div class="col-md-4">
                             <label class="form-label small fw-semibold">Thuế suất VAT</label>
                             <select name="vatRateCode" id="edit_vatRateCode" class="form-select form-select-sm">
-                                <option value="VAT10">VAT 10% (Thuế GTGT 10%)</option>
-                                <option value="VAT8">VAT 8% (Thuế GTGT 8%)</option>
-                                <option value="VAT5">VAT 5% (Thuế GTGT 5%)</option>
-                                <option value="VAT0">VAT 0% (Thuế suất 0% xuất khẩu)</option>
-                                <option value="KCT">KCT (Không chịu thuế)</option>
+                                @if (vatRates.Count > 0)
+                                {
+                                    foreach (var vr in vatRates)
+                                    {
+                                        <option value="@vr.VATRateCode">@vr.VATRateCode - @vr.Rate.ToString("F1")% (@vr.VATDesc)</option>
+                                    }
+                                }
+                                else
+                                {
+                                    <option value="VAT10">VAT 10% (Thuế GTGT 10%)</option>
+                                    <option value="VAT8">VAT 8% (Thuế GTGT 8%)</option>
+                                    <option value="VAT5">VAT 5% (Thuế GTGT 5%)</option>
+                                    <option value="VAT0">VAT 0% (Thuế suất 0% xuất khẩu)</option>
+                                    <option value="KCT">KCT (Không chịu thuế)</option>
+                                }
                             </select>
                         </div>
                         <div class="col-md-4">

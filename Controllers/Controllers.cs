@@ -5726,6 +5726,7 @@ public class SpecPriceController(IWmsService svc) : Controller
         ViewBag.Specs = await svc.ProductSpecsAsync();
         ViewBag.Units = await svc.PartUnitsAsync();
         ViewBag.Currencies = await svc.CurrencyExchangesAsync();
+        ViewBag.VATRates = await svc.VATRatesAsync(true);
 
         var report = await svc.SpecPricesReportAsync(q, specCode, unitCode, currencyCode, activeOnly);
         return View(report);
@@ -5847,6 +5848,140 @@ public class SpecPriceController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"BangGiaQuyCach_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+// ==================== QUẢN LÝ DANH MỤC THUẾ SUẤT VAT HÀNG HÓA KHO (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
+public class VATRateController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.VATRatesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetVATRateDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy mã thuế suất VAT." });
+        return Json(detail);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> CalcVat(decimal netAmount, string vatRateCode)
+    {
+        var result = await svc.CalculateVatAsync(netAmount, vatRateCode);
+        return Json(result);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string vatRateCode, decimal rate, string vatDesc, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(vatRateCode) || string.IsNullOrWhiteSpace(vatDesc))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã thuế suất VAT và mô tả.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new VATRate
+            {
+                VATRateCode = vatRateCode.Trim().ToUpper(),
+                Rate = Math.Max(0m, rate),
+                VATDesc = vatDesc.Trim(),
+                Remark = remark?.Trim(),
+                IsActive = isActive
+            };
+            await svc.CreateVATRateAsync(item);
+            TempData["Success"] = $"Đã thêm thuế suất VAT '{item.VATRateCode}' ({item.Rate}%) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, decimal rate, string vatDesc, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(vatDesc))
+        {
+            TempData["Error"] = "Vui lòng nhập mô tả chính sách thuế suất VAT.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new VATRate
+        {
+            Rate = Math.Max(0m, rate),
+            VATDesc = vatDesc.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateVATRateAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleVATRateStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteVATRateAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.VATRatesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC THUẾ SUẤT VAT HÀNG HÓA KHO (OS_PRDCENTER_MST_VATRATE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số mức thuế:;{report.TotalRates};Đang áp dụng:;{report.ActiveCount};Tạm dừng:;{report.InactiveCount};Tổng bảng giá liên kết:;{report.TotalMappedSpecs}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã thuế suất VAT;Tỷ lệ %;Mô tả chính sách thuế GTGT;Số bảng giá liên kết;Trạng thái;Căn cứ pháp lý / Ghi chú;Ngày tạo;Cập nhật lần cuối");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            var updatedStr = r.UpdatedAt.HasValue ? r.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm") : "-";
+
+            sb.AppendLine($"{stt++};\"{r.VATRateCode}\";{r.Rate:F1}%;\"{r.VATDesc.Replace("\"", "\"\"")}\";{r.MappedSpecPriceCount};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";{r.CreatedAt:dd/MM/yyyy HH:mm};{updatedStr}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG MỨC THUẾ SUẤT:;{report.TotalRates};;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;");
+        sb.AppendLine($";;TỔNG BẢNG GIÁ LIÊN KẾT:;{report.TotalMappedSpecs};;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DanhMucThueSuatVAT_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 

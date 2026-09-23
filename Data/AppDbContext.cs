@@ -59,6 +59,7 @@ public class AppDbContext : DbContext
     public DbSet<CurrencyExchange> CurrencyExchanges => Set<CurrencyExchange>();
     public DbSet<ProductSpec> ProductSpecs => Set<ProductSpec>();
     public DbSet<SpecPrice> SpecPrices => Set<SpecPrice>();
+    public DbSet<VATRate> VATRates => Set<VATRate>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -379,6 +380,12 @@ public class AppDbContext : DbContext
             e.Ignore(x => x.NetSellPrice);
             e.Ignore(x => x.GrossProfit);
             e.Ignore(x => x.GrossMarginPercent);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<VATRate>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.VATRateCode }).IsUnique();
+            e.Property(x => x.Rate).HasPrecision(18, 2);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
     }

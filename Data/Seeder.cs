@@ -3729,13 +3729,67 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+
+        // ==================== SEED DANH MỤC THUẾ SUẤT VAT HÀNG HÓA (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
+        if (!await db.VATRates.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.VATRates.AddRange(
+                new VATRate
+                {
+                    VATRateCode = "VAT0",
+                    Rate = 0m,
+                    VATDesc = "Thuế suất 0% (Hàng xuất khẩu, vận tải quốc tế, cung cấp dịch vụ cho khu phi thuế quan)",
+                    IsActive = true,
+                    Remark = "Căn cứ Điều 9 Thông tư 219/2013/TT-BTC về thuế GTGT xuất khẩu",
+                    CreatedAt = now.AddMonths(-6)
+                },
+                new VATRate
+                {
+                    VATRateCode = "VAT5",
+                    Rate = 5m,
+                    VATDesc = "Thuế suất 5% (Nông lâm thủy hải sản chưa chế biến, thiết bị y tế, thuốc tân dược, đồ dùng dạy học)",
+                    IsActive = true,
+                    Remark = "Căn cứ Điều 10 Thông tư 219/2013/TT-BTC về nhóm mặt hàng thiết yếu",
+                    CreatedAt = now.AddMonths(-6)
+                },
+                new VATRate
+                {
+                    VATRateCode = "VAT8",
+                    Rate = 8m,
+                    VATDesc = "Thuế suất ưu đãi 8% (Chính sách giảm thuế GTGT 2% hỗ trợ phục hồi sản xuất kinh doanh)",
+                    IsActive = true,
+                    Remark = "Căn cứ Nghị quyết 110/2023/QH15 & Nghị định 94/2023/NĐ-CP (áp dụng giảm 2% từ 10% xuống 8%)",
+                    CreatedAt = now.AddMonths(-4)
+                },
+                new VATRate
+                {
+                    VATRateCode = "VAT10",
+                    Rate = 10m,
+                    VATDesc = "Thuế suất chuẩn 10% (Hàng hóa tiêu chuẩn, thời trang may mặc, thiết bị điện tử, phụ tùng linh kiện)",
+                    IsActive = true,
+                    Remark = "Thuế suất phổ thông tiêu chuẩn theo Điều 11 Thông tư 219/2013/TT-BTC",
+                    CreatedAt = now.AddMonths(-6)
+                },
+                new VATRate
+                {
+                    VATRateCode = "KCT",
+                    Rate = 0m,
+                    VATDesc = "Không chịu thuế GTGT (Sản phẩm giống cây trồng vật nuôi, máy móc thiết bị chuyên dùng phục vụ nông nghiệp)",
+                    IsActive = true,
+                    Remark = "Đối tượng không thuộc diện chịu thuế GTGT theo Điều 4 Thông tư 219/2013/TT-BTC",
+                    CreatedAt = now.AddMonths(-6)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecPrices", "VATRates" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -3803,6 +3857,8 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_ProductSpecs_OrgId_ModelCode\" ON miniwms.\"ProductSpecs\" (\"OrgId\", \"ModelCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"SpecPrices\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"SpecCode\" text NOT NULL, \"UnitCode\" text NOT NULL, \"BuyPrice\" numeric NOT NULL DEFAULT 0, \"SellPrice\" numeric NOT NULL DEFAULT 0, \"CurrencyCode\" text NOT NULL DEFAULT 'VND', \"VATRateCode\" text NULL, \"DiscountVND\" numeric NOT NULL DEFAULT 0, \"EffectDTimeStart\" timestamp NOT NULL DEFAULT now(), \"EffectDTimeEnd\" timestamp NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SpecPrices_OrgId_SpecCode_UnitCode\" ON miniwms.\"SpecPrices\" (\"OrgId\", \"SpecCode\", \"UnitCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"VATRates\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"VATRateCode\" text NOT NULL, \"Rate\" numeric NOT NULL DEFAULT 0, \"VATDesc\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_VATRates_OrgId_VATRateCode\" ON miniwms.\"VATRates\" (\"OrgId\", \"VATRateCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -4566,7 +4622,19 @@ public static class Seeder
                 ""CreatedAt"" TEXT NOT NULL,
                 ""UpdatedAt"" TEXT NULL
             );",
-            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SpecPrices_OrgId_SpecCode_UnitCode"" ON ""SpecPrices"" (""OrgId"", ""SpecCode"", ""UnitCode"");"
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SpecPrices_OrgId_SpecCode_UnitCode"" ON ""SpecPrices"" (""OrgId"", ""SpecCode"", ""UnitCode"");",
+            @"CREATE TABLE IF NOT EXISTS ""VATRates"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""VATRateCode"" TEXT NOT NULL,
+                ""Rate"" NUMERIC NOT NULL DEFAULT 0,
+                ""VATDesc"" TEXT NOT NULL DEFAULT '',
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""Remark"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""UpdatedAt"" TEXT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_VATRates_OrgId_VATRateCode"" ON ""VATRates"" (""OrgId"", ""VATRateCode"");"
         };
         foreach (var s in sql)
         {

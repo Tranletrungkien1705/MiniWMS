@@ -323,6 +323,16 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateSpecPriceAsync(int id, SpecPrice item);
     Task<(bool ok, string msg)> ToggleSpecPriceStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteSpecPriceAsync(int id);
+    Task<VATRateReport> VATRatesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<VATRate>> VATRatesAsync(bool? activeOnly = null);
+    Task<VATRate?> GetVATRateAsync(int id);
+    Task<VATRate?> GetVATRateByCodeAsync(string code);
+    Task<VATRateDetailDto?> GetVATRateDetailAsync(int id);
+    Task<VatCalculationResult> CalculateVatAsync(decimal netAmount, string vatRateCode);
+    Task<int> CreateVATRateAsync(VATRate item);
+    Task<(bool ok, string msg)> UpdateVATRateAsync(int id, VATRate item);
+    Task<(bool ok, string msg)> ToggleVATRateStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteVATRateAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -10914,6 +10924,161 @@ public class WmsService(AppDbContext db) : IWmsService
         db.SpecPrices.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa bảng giá quy cách '{existing.SpecCode}' ({existing.UnitCode}) thành công.");
+    }
+
+    // ==================== QUẢN LÝ DANH MỤC THUẾ SUẤT VAT HÀNG HÓA (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
+    public async Task<VATRateReport> VATRatesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.VATRates.AsNoTracking().AsQueryable();
+
+        if (activeOnly.HasValue)
+        {
+            query = query.Where(v => v.IsActive == activeOnly.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(v => v.VATRateCode.ToLower().Contains(kw) ||
+                                     v.VATDesc.ToLower().Contains(kw) ||
+                                     (v.Remark != null && v.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.ToListAsync();
+
+        // Lấy thống kê số lượng bảng giá quy cách sản phẩm đang áp dụng từng mức thuế suất VAT
+        var mappedPrices = await db.SpecPrices.AsNoTracking()
+            .Where(s => s.VATRateCode != null)
+            .GroupBy(s => s.VATRateCode!)
+            .Select(g => new { Code = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Code, x => x.Count);
+
+        var rows = list.Select(v => new VATRateRow(
+            v.Id,
+            v.VATRateCode,
+            v.Rate,
+            v.VATDesc,
+            v.IsActive,
+            v.Remark,
+            v.CreatedAt,
+            v.UpdatedAt,
+            mappedPrices.TryGetValue(v.VATRateCode, out var c) ? c : 0
+        )).OrderBy(r => r.Rate).ThenBy(r => r.VATRateCode).ToList();
+
+        var totalRates = await db.VATRates.CountAsync();
+        var activeCount = await db.VATRates.CountAsync(v => v.IsActive);
+        var inactiveCount = totalRates - activeCount;
+        var totalMappedSpecs = mappedPrices.Values.Sum();
+
+        return new VATRateReport(
+            q,
+            activeOnly,
+            totalRates,
+            activeCount,
+            inactiveCount,
+            totalMappedSpecs,
+            rows
+        );
+    }
+
+    public Task<List<VATRate>> VATRatesAsync(bool? activeOnly = null)
+    {
+        var query = db.VATRates.AsNoTracking().AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(v => v.IsActive == activeOnly.Value);
+        return query.OrderBy(v => v.Rate).ThenBy(v => v.VATRateCode).ToListAsync();
+    }
+
+    public Task<VATRate?> GetVATRateAsync(int id) => db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
+
+    public Task<VATRate?> GetVATRateByCodeAsync(string code) =>
+        db.VATRates.FirstOrDefaultAsync(v => v.VATRateCode.ToUpper() == code.Trim().ToUpper());
+
+    public async Task<VATRateDetailDto?> GetVATRateDetailAsync(int id)
+    {
+        var item = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
+        if (item == null) return null;
+
+        var mappedPrices = await db.SpecPrices.AsNoTracking()
+            .Where(s => s.VATRateCode == item.VATRateCode)
+            .OrderBy(s => s.SpecCode)
+            .ToListAsync();
+
+        return new VATRateDetailDto(item, mappedPrices, mappedPrices.Count);
+    }
+
+    public async Task<VatCalculationResult> CalculateVatAsync(decimal netAmount, string vatRateCode)
+    {
+        var code = string.IsNullOrWhiteSpace(vatRateCode) ? "VAT10" : vatRateCode.Trim().ToUpper();
+        var vatRate = await db.VATRates.FirstOrDefaultAsync(v => v.VATRateCode == code);
+
+        var rate = vatRate?.Rate ?? 10m;
+        var vatAmount = Math.Round(netAmount * rate / 100m, 0);
+        var totalAmount = netAmount + vatAmount;
+
+        return new VatCalculationResult(netAmount, code, rate, vatAmount, totalAmount);
+    }
+
+    public async Task<int> CreateVATRateAsync(VATRate item)
+    {
+        item.VATRateCode = item.VATRateCode.Trim().ToUpper();
+        item.VATDesc = item.VATDesc.Trim();
+        item.Rate = Math.Max(0m, item.Rate);
+        item.Remark = item.Remark?.Trim();
+
+        bool exists = await db.VATRates.AnyAsync(v => v.VATRateCode == item.VATRateCode);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã thuế suất VAT '{item.VATRateCode}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.VATRates.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateVATRateAsync(int id, VATRate item)
+    {
+        var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+
+        existing.Rate = Math.Max(0m, item.Rate);
+        existing.VATDesc = item.VATDesc.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thuế suất '{existing.VATRateCode}' ({existing.Rate}%) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleVATRateStatusAsync(int id)
+    {
+        var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+
+        existing.IsActive = !existing.IsActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.IsActive ? "kích hoạt áp dụng" : "tạm dừng áp dụng";
+        return (true, $"Đã {status} thuế suất '{existing.VATRateCode}' ({existing.Rate}%).");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteVATRateAsync(int id)
+    {
+        var existing = await db.VATRates.FirstOrDefaultAsync(v => v.Id == id);
+        if (existing == null) return (false, "Không tìm thấy mã thuế suất VAT.");
+
+        bool inUse = await db.SpecPrices.AnyAsync(s => s.VATRateCode == existing.VATRateCode);
+        if (inUse)
+        {
+            return (false, $"Không thể xóa thuế suất '{existing.VATRateCode}' vì đang được áp dụng trong {await db.SpecPrices.CountAsync(s => s.VATRateCode == existing.VATRateCode)} bảng giá quy cách sản phẩm.");
+        }
+
+        db.VATRates.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa thuế suất '{existing.VATRateCode}' thành công.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

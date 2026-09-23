@@ -1,0 +1,525 @@
+@model VATRateReport
+@{
+    ViewData["Title"] = "Danh mục Thuế suất VAT hàng hóa";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1">
+            <i class="bi bi-percent text-primary me-2"></i>Quản lý Danh mục Thuế suất VAT Hàng hóa Kho
+        </h5>
+        <div class="text-muted small">
+            Port từ <code>OS_PrdCenter_Mst_VATRate</code> & <code>Mst_VATRate</code> (Skycic) — Quản lý danh mục thuế suất giá trị gia tăng (0%, 5%, 8%, 10%, Không chịu thuế KCT), liên kết chính sách giá quy cách sản phẩm, chi tiết nhập kho hóa đơn và công cụ tính nhanh tiền thuế VAT WMS
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#calcVatModal">
+            <i class="bi bi-calculator me-1"></i> Tính nhanh thuế VAT
+        </button>
+        <a href="/VATRate/ExportCsv?q=@keyword&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createVatRateModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Thuế suất mới
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG MỨC THUẾ SUẤT</span>
+                    <i class="bi bi-percent text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalRates</div>
+                <div class="small text-muted">Bao gồm các mức từ 0% đến 10% & KCT</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">@Model.InactiveCount mức thuế suất tạm dừng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">BẢNG GIÁ QUY CÁCH LIÊN KẾT</span>
+                    <i class="bi bi-tag-fill text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary font-monospace">@Model.TotalMappedSpecs</div>
+                <div class="small text-muted">Bảng giá sản phẩm đang áp dụng thuế suất</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm h-100">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">THUẾ SUẤT PHỔ THÔNG</span>
+                    <i class="bi bi-receipt text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">
+                    10.0% <span class="badge bg-light text-secondary border fs-6">VAT10</span>
+                </div>
+                <div class="small text-muted">Áp dụng hàng hóa tiêu chuẩn theo TT219</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" action="/VATRate" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" class="form-control form-control-sm border-start-0" placeholder="Tìm theo mã thuế (VAT10, VAT8...), mô tả chính sách hoặc căn cứ pháp lý..." value="@keyword" />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng áp dụng</!option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc dữ liệu
+                </button>
+                <a href="/VATRate" class="btn btn-sm btn-outline-secondary" title="Xóa bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng dữ liệu danh mục thuế suất VAT -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width:45px">STT</th>
+                    <th class="text-center" style="width:110px">Thao tác</th>
+                    <th style="width:140px">Mã thuế suất</th>
+                    <th class="text-center" style="width:110px">Tỷ lệ %</th>
+                    <th>Mô tả chính sách thuế GTGT</th>
+                    <th class="text-center" style="width:150px">Bảng giá liên kết</th>
+                    <th class="text-center" style="width:120px">Trạng thái</th>
+                    <th style="width:250px">Căn cứ pháp lý / Ghi chú</th>
+                    <th class="text-end" style="width:130px">Ngày tạo</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="9" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                            Không tìm thấy mức thuế suất VAT nào phù hợp với bộ lọc hiện tại.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int stt = 1;
+                    foreach (var r in Model.Rows)
+                    {
+                        var rateBadge = r.Rate switch
+                        {
+                            0m => "bg-secondary",
+                            5m => "bg-info text-dark",
+                            8m => "bg-warning text-dark",
+                            10m => "bg-primary",
+                            _ => "bg-dark"
+                        };
+
+                        <tr>
+                            <td class="text-center text-muted">@(stt++)</td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-info" title="Xem chi tiết & bảng giá liên kết" onclick="openDetailModal(@r.Id)">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary" title="Sửa thuế suất" onclick="openEditModal(@r.Id, '@r.VATRateCode', @r.Rate, '@Html.Raw(Html.Encode(r.VATDesc))', '@Html.Raw(Html.Encode(r.Remark ?? ""))', @(r.IsActive ? "true" : "false"))">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="post" action="/VATRate/ToggleStatus" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn thay đổi trạng thái thuế suất @r.VATRateCode?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.Id" />
+                                        <button type="submit" class="btn btn-outline-@(r.IsActive ? "warning" : "success")" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                            <i class="bi bi-@(r.IsActive ? "pause-fill" : "play-fill")"></i>
+                                        </button>
+                                    </form>
+                                    <form method="post" action="/VATRate/Delete" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa thuế suất @r.VATRateCode?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.Id" />
+                                        <button type="submit" class="btn btn-outline-danger" title="Xóa thuế suất" @(r.MappedSpecPriceCount > 0 ? "disabled" : "")>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark border font-monospace px-2 py-1 fs-6">
+                                    @r.VATRateCode
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge @rateBadge font-monospace px-2 py-1">
+                                    @r.Rate.ToString("F1")%
+                                </span>
+                            </td>
+                            <td>
+                                <div class="fw-semibold text-dark">@r.VATDesc</div>
+                            </td>
+                            <td class="text-center">
+                                @if (r.MappedSpecPriceCount > 0)
+                                {
+                                    <a href="/SpecPrice" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none px-2 py-1">
+                                        <i class="bi bi-tag-fill me-1"></i>@r.MappedSpecPriceCount bảng giá
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">0 bảng giá</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (r.IsActive)
+                                {
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                        <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                        <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                <span class="text-muted small text-break">@(r.Remark ?? "-")</span>
+                            </td>
+                            <td class="text-end text-muted small">
+                                @r.CreatedAt.ToString("dd/MM/yyyy")
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL 1: THÊM MỚI THUẾ SUẤT VAT -->
+<div class="modal fade" id="createVatRateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="/VATRate/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header py-2">
+                    <h6 class="modal-title fw-bold text-primary">
+                        <i class="bi bi-plus-circle me-1"></i> Thêm mới Thuế suất VAT
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body py-3">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã thuế suất VAT <span class="text-danger">*</span></label>
+                            <input type="text" name="vatRateCode" class="form-control form-control-sm text-uppercase" placeholder="vd: VAT10, VAT8, VAT5..." required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỷ lệ % thuế suất <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="0.1" min="0" max="100" name="rate" class="form-control form-control-sm" value="10.0" required />
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Mô tả chính sách thuế GTGT <span class="text-danger">*</span></label>
+                            <input type="text" name="vatDesc" class="form-control form-control-sm" placeholder="vd: Thuế suất chuẩn 10% áp dụng hàng hóa dịch vụ tiêu chuẩn..." required />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Căn cứ pháp lý / Ghi chú áp dụng</label>
+                            <textarea name="remark" class="form-control form-control-sm" rows="3" placeholder="vd: Điều 11 Thông tư 219/2013/TT-BTC, Nghị quyết 110/2023/QH15..."></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="isActive" id="create_isActive" value="true" checked />
+                                <label class="form-check-label small" for="create_isActive">Kích hoạt áp dụng ngay trong hệ thống kho</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-save me-1"></i> Lưu thuế suất
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 2: SỬA THUẾ SUẤT VAT -->
+<div class="modal fade" id="editVatRateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="/VATRate/Edit">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="edit_id" />
+                <div class="modal-header py-2">
+                    <h6 class="modal-title fw-bold text-primary">
+                        <i class="bi bi-pencil-square me-1"></i> Cập nhật Thuế suất VAT
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body py-3">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Mã thuế suất VAT</label>
+                            <input type="text" id="edit_vatRateCode" class="form-control form-control-sm text-uppercase bg-light" readonly />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỷ lệ % thuế suất <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="0.1" min="0" max="100" name="rate" id="edit_rate" class="form-control form-control-sm" required />
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Mô tả chính sách thuế GTGT <span class="text-danger">*</span></label>
+                            <input type="text" name="vatDesc" id="edit_vatDesc" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Căn cứ pháp lý / Ghi chú áp dụng</label>
+                            <textarea name="remark" id="edit_remark" class="form-control form-control-sm" rows="3"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="isActive" id="edit_isActive" value="true" />
+                                <label class="form-check-label small" for="edit_isActive">Trạng thái áp dụng</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-save me-1"></i> Cập nhật thay đổi
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 3: CHI TIẾT THUẾ SUẤT & BẢNG GIÁ LIÊN KẾT -->
+<div class="modal fade" id="detailVatRateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold text-primary">
+                    <i class="bi bi-info-circle me-1"></i> Chi tiết Thuế suất VAT & Bảng giá Quy cách liên kết
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3" id="detailModalBody">
+                <div class="text-center py-4 text-muted">
+                    <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                    Đang tải dữ liệu chi tiết thuế suất...
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 4: CÔNG CỤ TÍNH NHANH THUẾ VAT -->
+<div class="modal fade" id="calcVatModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2 bg-light">
+                <h6 class="modal-title fw-bold text-primary">
+                    <i class="bi bi-calculator me-1"></i> Công cụ Tính nhanh Thuế VAT & Tổng sau thuế
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Số tiền trước thuế (Net Amount):</label>
+                    <div class="input-group input-group-sm">
+                        <input type="number" id="calc_netAmount" class="form-control" value="10000000" step="1000" min="0" oninput="runLiveVatCalc()" />
+                        <span class="input-group-text">VND</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Mức thuế suất VAT:</label>
+                    <select id="calc_vatRateCode" class="form-select form-select-sm" onchange="runLiveVatCalc()">
+                        @foreach (var r in Model.Rows)
+                        {
+                            <!option value="@r.VATRateCode" data-rate="@r.Rate" @(r.VATRateCode == "VAT10" ? "selected" : "")>
+                                @r.VATRateCode - @r.Rate.ToString("F1")% (@r.VATDesc)
+                            </!option>
+                        }
+                    </select>
+                </div>
+
+                <div class="card bg-light border p-3 rounded">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted small">Tiền hàng trước thuế:</span>
+                        <span class="fw-bold text-dark font-monospace" id="calc_outNet">10,000,000 đ</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted small">Tiền thuế GTGT (<span id="calc_outRateDisplay">10%</span>):</span>
+                        <span class="fw-bold text-danger font-monospace" id="calc_outVat">1,000,000 đ</span>
+                    </div>
+                    <hr class="my-2" />
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="fw-bold text-dark">TỔNG THANH TOÁN (SAU THUẾ):</span>
+                        <span class="fs-5 fw-bold text-success font-monospace" id="calc_outTotal">11,000,000 đ</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function openEditModal(id, code, rate, desc, remark, isActive) {
+        document.getElementById('edit_id').value = id;
+        document.getElementById('edit_vatRateCode').value = code;
+        document.getElementById('edit_rate').value = rate;
+        document.getElementById('edit_vatDesc').value = desc;
+        document.getElementById('edit_remark').value = remark;
+        document.getElementById('edit_isActive').checked = isActive;
+        new bootstrap.Modal(document.getElementById('editVatRateModal')).show();
+    }
+
+    async function openDetailModal(id) {
+        const modal = new bootstrap.Modal(document.getElementById('detailVatRateModal'));
+        modal.show();
+        const body = document.getElementById('detailModalBody');
+        body.innerHTML = `
+            <div class="text-center py-4 text-muted">
+                <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                Đang tải chi tiết thuế suất...
+            </div>`;
+
+        try {
+            const resp = await fetch(`/VATRate/Detail?id=${id}`);
+            if (!resp.ok) throw new Error('Không thể tải thông tin chi tiết');
+            const data = await resp.json();
+            const it = data.item;
+            const prices = data.mappedPrices || [];
+
+            let pricesHtml = '';
+            if (prices.length === 0) {
+                pricesHtml = `<tr><td colspan="7" class="text-center py-3 text-muted">Chưa có bảng giá quy cách nào áp dụng mức thuế suất này.</td></tr>`;
+            } else {
+                let stt = 1;
+                pricesHtml = prices.map(p => `
+                    <tr>
+                        <td class="text-center text-muted">${stt++}</td>
+                        <td class="font-monospace fw-bold">${p.specCode}</td>
+                        <td class="text-center">${p.unitCode}</td>
+                        <td class="text-end font-monospace">${Number(p.buyPrice).toLocaleString('en-US')} ${p.currencyCode}</td>
+                        <td class="text-end font-monospace text-primary fw-bold">${Number(p.sellPrice).toLocaleString('en-US')} ${p.currencyCode}</td>
+                        <td class="text-end font-monospace text-success fw-bold">${Number(p.netSellPrice).toLocaleString('en-US')} ${p.currencyCode}</td>
+                        <td class="text-center">
+                            <span class="badge ${p.isActive ? 'bg-success' : 'bg-secondary'}">${p.isActive ? 'Áp dụng' : 'Tạm dừng'}</span>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            body.innerHTML = `
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><th class="text-muted" style="width:140px">Mã thuế suất:</th><td><span class="badge bg-light text-dark border font-monospace fs-6">${it.vatRateCode}</span></td></tr>
+                            <tr><th class="text-muted">Tỷ lệ %:</th><td><span class="badge bg-primary font-monospace fs-6">${it.rate}%</span></td></tr>
+                            <tr><th class="text-muted">Trạng thái:</th><td><span class="badge ${it.isActive ? 'bg-success' : 'bg-secondary'}">${it.isActive ? 'Đang áp dụng' : 'Tạm dừng'}</span></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><th class="text-muted" style="width:140px">Mô tả chính sách:</th><td>${it.vatDesc}</td></tr>
+                            <tr><th class="text-muted">Căn cứ pháp lý:</th><td class="small">${it.remark || '-'}</td></tr>
+                            <tr><th class="text-muted">Bảng giá liên kết:</th><td><strong class="text-primary">${data.totalMappedPrices}</strong> bảng giá</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <h6 class="fw-bold text-dark mb-2">Danh sách bảng giá quy cách sản phẩm áp dụng (${data.totalMappedPrices}):</h6>
+                <div class="table-responsive border rounded" style="max-height:260px; overflow-y:auto;">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:12px">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="text-center" style="width:40px">STT</th>
+                                <th>Mã quy cách</th>
+                                <th class="text-center">ĐVT</th>
+                                <th class="text-end">Giá mua</th>
+                                <th class="text-end">Giá bán</th>
+                                <th class="text-end">Giá Net</th>
+                                <th class="text-center">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${pricesHtml}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (err) {
+            body.innerHTML = `<div class="alert alert-danger mb-0">${err.message}</div>`;
+        }
+    }
+
+    function runLiveVatCalc() {
+        const netInp = document.getElementById('calc_netAmount');
+        const select = document.getElementById('calc_vatRateCode');
+        const netVal = parseFloat(netInp.value) || 0;
+        const opt = select.options[select.selectedIndex];
+        const rate = parseFloat(opt.getAttribute('data-rate')) || 0;
+
+        const vatVal = Math.round(netVal * rate / 100);
+        const totalVal = netVal + vatVal;
+
+        document.getElementById('calc_outNet').innerText = netVal.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('calc_outRateDisplay').innerText = rate.toFixed(1) + '%';
+        document.getElementById('calc_outVat').innerText = vatVal.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('calc_outTotal').innerText = totalVal.toLocaleString('vi-VN') + ' đ';
+    }
+</script>
+}

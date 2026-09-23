@@ -3533,6 +3533,88 @@ app.MapDelete("/api/spec-prices/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// ==================== MINIMAL API: THUẾ SUẤT VAT HÀNG HÓA KHO (OS_PRDCENTER_MST_VATRATE) ====================
+app.MapGet("/api/vat-rates", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.VATRatesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/vat-rates/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetVATRateAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy mã thuế suất VAT." });
+});
+
+app.MapGet("/api/vat-rates/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetVATRateDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy chi tiết thuế suất VAT." });
+});
+
+app.MapPost("/api/vat-rates/calc-vat", async (CalcVatDto dto, IWmsService svc) =>
+{
+    var result = await svc.CalculateVatAsync(dto.NetAmount, dto.VATRateCode ?? "VAT10");
+    return Results.Ok(result);
+});
+
+app.MapPost("/api/vat-rates", async (CreateVATRateDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.VATRateCode) || string.IsNullOrWhiteSpace(dto.VATDesc))
+    {
+        return Results.BadRequest(new { error = "Mã thuế suất VAT và mô tả không được để trống." });
+    }
+
+    try
+    {
+        var item = new VATRate
+        {
+            VATRateCode = dto.VATRateCode.Trim().ToUpper(),
+            Rate = Math.Max(0m, dto.Rate),
+            VATDesc = dto.VATDesc.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateVATRateAsync(item);
+        return Results.Created($"/api/vat-rates/{id}", item);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/vat-rates/{id:int}", async (int id, UpdateVATRateDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.VATDesc))
+    {
+        return Results.BadRequest(new { error = "Mô tả chính sách thuế suất không được để trống." });
+    }
+
+    var item = new VATRate
+    {
+        Rate = Math.Max(0m, dto.Rate),
+        VATDesc = dto.VATDesc.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+
+    var (ok, msg) = await svc.UpdateVATRateAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/vat-rates/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleVATRateStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/vat-rates/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteVATRateAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -3622,4 +3704,7 @@ record CreateProductSpecDto(string Code, string Name, string? SpecDesc, string? 
 record UpdateProductSpecDto(string Name, string? SpecDesc, string? ModelCode, string? SpecType1, string? Color, string? StandardUnitCode, bool? FlagHasSerial, bool? FlagHasLOT, string? Remark, bool? IsActive);
 record CreateSpecPriceDto(string SpecCode, string UnitCode, decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
 record UpdateSpecPriceDto(decimal BuyPrice, decimal SellPrice, decimal? DiscountVND, string? CurrencyCode, string? VATRateCode, DateTime? EffectDTimeStart, DateTime? EffectDTimeEnd, string? Remark, bool? IsActive);
+record CreateVATRateDto(string VATRateCode, decimal Rate, string VATDesc, string? Remark, bool? IsActive);
+record UpdateVATRateDto(decimal Rate, string VATDesc, string? Remark, bool? IsActive);
+record CalcVatDto(decimal NetAmount, string? VATRateCode);
 

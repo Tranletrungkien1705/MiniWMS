@@ -3101,3 +3101,60 @@ public record CurrencyValuationRow(
     decimal NetPriceInCurrency,
     decimal AppliedRate
 );
+
+// ==================== QUẢN LÝ DANH MỤC THUẾ SUẤT VAT HÀNG HÓA KHO (OS_PrdCenter_Mst_VATRate / Mst_VATRate Skycic) ====================
+
+/// <summary>Danh mục thuế suất VAT hàng hóa kho (port từ OS_PrdCenter_Mst_VATRate & Mst_VATRate Skycic: VATRateCode, VATRate, VATDesc, FlagActive, Remark).</summary>
+public class VATRate : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string VATRateCode { get; set; } = "";          // Mã thuế suất VAT (VATRateCode, vd: VAT0, VAT5, VAT8, VAT10, KCT)
+    public decimal Rate { get; set; } = 0m;                // Tỷ lệ % thuế suất (VATRate: 0, 5, 8, 10...)
+    public string VATDesc { get; set; } = "";              // Mô tả / Tên thuế suất (VATDesc, vd: Thuế suất GTGT chuẩn 10%)
+    public bool IsActive { get; set; } = true;             // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Tạm dừng)
+    public string? Remark { get; set; }                    // Căn cứ pháp lý / Ghi chú chính sách thuế (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Dòng thông tin hiển thị danh mục thuế suất VAT kèm số lượng bảng giá quy cách và chứng từ liên kết.</summary>
+public record VATRateRow(
+    int Id,
+    string VATRateCode,
+    decimal Rate,
+    string VATDesc,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    int MappedSpecPriceCount
+);
+
+/// <summary>Báo cáo / Danh sách thuế suất VAT tổng hợp kèm 4 thẻ KPI.</summary>
+public record VATRateReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalRates,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalMappedSpecs,
+    List<VATRateRow> Rows
+);
+
+/// <summary>Chi tiết Thuế suất VAT kèm danh sách bảng giá quy cách đang áp dụng mức thuế này.</summary>
+public record VATRateDetailDto(
+    VATRate Item,
+    List<SpecPrice> MappedPrices,
+    int TotalMappedPrices
+);
+
+/// <summary>Kết quả tính toán nhanh thuế VAT và tổng thanh toán sau thuế.</summary>
+public record VatCalculationResult(
+    decimal NetAmount,
+    string VATRateCode,
+    decimal Rate,
+    decimal VatAmount,
+    decimal TotalAmount
+);
+
