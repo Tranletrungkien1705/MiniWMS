@@ -493,6 +493,50 @@ public class InventoryBalanceMonthController(IWmsService svc) : Controller
     }
 }
 
+public class InventoryBalanceByPeriodController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, DateTime? asOfDate, string? q)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+
+        var asOf = asOfDate ?? DateTime.Today;
+        ViewBag.AsOfDate = asOf.ToString("yyyy-MM-dd");
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.InventoryBalanceByPeriodReportAsync(warehouseId, asOf, q);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? asOfDate, string? q)
+    {
+        var asOf = asOfDate ?? DateTime.Today;
+        var report = await svc.InventoryBalanceByPeriodReportAsync(warehouseId, asOf, q);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM để Excel hiển thị đúng tiếng Việt
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO THEO THỜI ĐIỂM");
+        sb.AppendLine($"Kho:;{report.WarehouseName}");
+        sb.AppendLine($"Mốc báo cáo:;{report.AsOfDate:dd/MM/yyyy}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã hàng;Tên hàng hoá;ĐVT;Kho hàng;Tồn tại thời điểm;Tồn bị khóa;Tồn khả dụng;Số bút toán;Giao dịch gần nhất");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.WarehouseName}\";{r.QtyTotalOK};{r.QtyBlockOK};{r.QtyAvailOK};{r.TxnCount};{(r.LastTxnAt.HasValue ? r.LastTxnAt.Value.ToString("dd/MM/yyyy HH:mm") : "")}");
+        }
+
+        sb.AppendLine($";;;;TỔNG CỘNG;{report.TotalQtyTotalOK};{report.TotalQtyBlockOK};{report.TotalQtyAvailOK};{report.TotalTxnCount};");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoTheoThoiDiem_{report.AsOfDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
 public class OrgController(AppDbContext db) : Controller
 {
     public async Task<IActionResult> Index()

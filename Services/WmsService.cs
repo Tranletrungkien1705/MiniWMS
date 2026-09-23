@@ -44,6 +44,7 @@ public interface IWmsService
     Task<WarehouseCardReport> WarehouseCardAsync(int productId, int? warehouseId, DateTime? fromDate, DateTime? toDate);
     Task<InventoryInOutReport> InventoryInOutReportAsync(int? warehouseId, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<InventoryBalanceMonthReport> InventoryBalanceMonthReportAsync(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? keyword);
+    Task<InventoryBalanceByPeriodReport> InventoryBalanceByPeriodReportAsync(int? warehouseId, DateTime? asOfDate, string? keyword);
     Task<StockMinimumReport> StockMinimumReportAsync(int? warehouseId, bool onlyBelowMin = true, string? keyword = null);
     Task<StockLotExpiryReport> StockLotExpiryReportAsync(int? warehouseId, LotExpiryStatus? status, string? keyword);
     Task<StorageTimeReport> StorageTimeReportAsync(int? warehouseId, StorageTimeAgingBracket? bracket, string? keyword, DateTime? asOfDate = null);
@@ -1072,6 +1073,103 @@ public class WmsService(AppDbContext db) : IWmsService
             rows.Sum(r => r.InQty),
             rows.Sum(r => r.OutQty),
             rows.Sum(r => r.ClosingQty),
+            rows
+        );
+    }
+
+    /// <summary>Báo cáo Tồn kho theo thời điểm (Historical Inventory Balance As-Of Date - port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic).
+    /// Tái dựng số dư tồn kho của từng mặt hàng theo kho tại một mốc thời gian quá khứ bằng cách cộng dồn
+    /// toàn bộ bút toán biến động tồn (Inv_InventoryTransaction) có thời điểm ghi sổ &lt;= mốc báo cáo.</summary>
+    public async Task<InventoryBalanceByPeriodReport> InventoryBalanceByPeriodReportAsync(int? warehouseId, DateTime? asOfDate, string? keyword)
+    {
+        // Mốc báo cáo: lấy hết ngày của AsOfDate (00:00 ngày kế tiếp là biên trên)
+        var asOf = (asOfDate ?? DateTime.Today).Date;
+        var asOfEnd = asOf.AddDays(1);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var whDict = allWarehouses.ToDictionary(w => w.Id, w => w.Name);
+
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.ToListAsync();
+        var productIds = products.Select(p => p.Id).ToHashSet();
+
+        // Lấy toàn bộ bút toán biến động tồn đến mốc báo cáo (lũy kế)
+        var txnQuery = db.InventoryTransactions
+            .Where(t => t.CreatedAt < asOfEnd && productIds.Contains(t.ProductId));
+        if (warehouseId.HasValue) txnQuery = txnQuery.Where(t => t.WarehouseId == warehouseId.Value);
+        var txns = await txnQuery.ToListAsync();
+
+        // Tổng hợp lũy kế theo (WarehouseId, ProductId)
+        var statMap = new Dictionary<(int whId, int prodId), (int qtyTotal, int qtyBlock, int count, DateTime? lastAt)>();
+        foreach (var t in txns)
+        {
+            if (!whDict.ContainsKey(t.WarehouseId) || !productIds.Contains(t.ProductId)) continue;
+            statMap.TryGetValue((t.WarehouseId, t.ProductId), out var cur);
+            var lastAt = cur.lastAt;
+            if (lastAt == null || t.CreatedAt > lastAt) lastAt = t.CreatedAt;
+            statMap[(t.WarehouseId, t.ProductId)] = (
+                cur.qtyTotal + t.QtyChTotalOK,
+                cur.qtyBlock + t.QtyChBlockOK,
+                cur.count + 1,
+                lastAt);
+        }
+
+        var rows = new List<InventoryBalanceByPeriodRow>();
+        var whTargetList = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        foreach (var w in whTargetList)
+        {
+            foreach (var p in products)
+            {
+                statMap.TryGetValue((w.Id, p.Id), out var stat);
+                int qtyAvail = stat.qtyTotal - stat.qtyBlock;
+
+                // Chỉ hiển thị dòng có tồn khác 0 hoặc có phát sinh (hoặc khi tìm kiếm theo từ khóa)
+                if (stat.qtyTotal != 0 || stat.qtyBlock != 0 || stat.count != 0 || !string.IsNullOrWhiteSpace(keyword))
+                {
+                    rows.Add(new InventoryBalanceByPeriodRow(
+                        w.Id,
+                        w.Name,
+                        p.Id,
+                        p.Code,
+                        p.Name,
+                        p.Uom,
+                        stat.qtyTotal,
+                        stat.qtyBlock,
+                        qtyAvail,
+                        stat.count,
+                        stat.lastAt
+                    ));
+                }
+            }
+        }
+
+        rows = rows.OrderBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
+
+        return new InventoryBalanceByPeriodReport(
+            warehouseId,
+            whName,
+            asOf,
+            keyword,
+            rows.Count,
+            rows.Sum(r => r.QtyTotalOK),
+            rows.Sum(r => r.QtyBlockOK),
+            rows.Sum(r => r.QtyAvailOK),
+            rows.Sum(r => r.TxnCount),
             rows
         );
     }

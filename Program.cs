@@ -93,6 +93,14 @@ app.MapGet("/api/reports/inventory-balance-month", async (int? warehouseId, Date
     return Results.Ok(report);
 });
 
+// API Báo cáo Tồn kho theo thời điểm (Historical Inventory Balance As-Of Date - port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic)
+app.MapGet("/api/reports/inventory-balance-by-period", async (int? warehouseId, DateTime? asOfDate, string? q, IWmsService svc) =>
+{
+    var asOf = asOfDate ?? DateTime.Today;
+    var report = await svc.InventoryBalanceByPeriodReportAsync(warehouseId, asOf, q);
+    return Results.Ok(report);
+});
+
 // API Báo cáo Chạm tồn kho tối thiểu & Cảnh báo an toàn kho (Stock Minimum Alert - port từ Rpt_Inv_InventoryBalance_Minimum Skycic)
 app.MapGet("/api/reports/min-stock-alert", async (int? warehouseId, bool? onlyBelowMin, string? q, IWmsService svc) =>
 {

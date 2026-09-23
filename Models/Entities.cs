@@ -389,6 +389,38 @@ public record InventoryBalanceMonthReport(
     List<InventoryBalanceMonthRow> Rows
 );
 
+/// <summary>Dòng chi tiết Báo cáo Tồn kho theo thời điểm (port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic).
+/// Tồn tại thời điểm = tổng lũy kế các bút toán biến động tồn (QtyChTotalOK) có thời điểm ghi sổ &lt;= mốc báo cáo.</summary>
+public record InventoryBalanceByPeriodRow(
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    int QtyTotalOK,          // Tồn kho tại thời điểm báo cáo (QtyTotalOK)
+    int QtyBlockOK,          // Tồn bị khóa / giữ chỗ tại thời điểm báo cáo (QtyChBlockOK lũy kế)
+    int QtyAvailOK,          // Tồn khả dụng = QtyTotalOK - QtyBlockOK
+    int TxnCount,            // Số bút toán biến động đã ghi nhận đến mốc báo cáo
+    DateTime? LastTxnAt      // Thời điểm bút toán gần nhất (<= mốc báo cáo)
+);
+
+/// <summary>Báo cáo Tồn kho theo thời điểm (Historical Inventory Balance As-Of Date - port từ Rpt_Inv_InventoryBalance_ByPeriod Skycic).
+/// Tái dựng số dư tồn kho của từng mặt hàng theo kho tại một mốc thời gian quá khứ bằng cách cộng dồn
+/// toàn bộ bút toán biến động tồn (Inv_InventoryTransaction) có thời điểm ghi sổ &lt;= mốc báo cáo.</summary>
+public record InventoryBalanceByPeriodReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime AsOfDate,
+    string? Keyword,
+    int TotalItems,
+    int TotalQtyTotalOK,
+    int TotalQtyBlockOK,
+    int TotalQtyAvailOK,
+    int TotalTxnCount,
+    List<InventoryBalanceByPeriodRow> Rows
+);
+
 /// <summary>Dòng chi tiết Báo cáo Tổng hợp Nhập mua & Trả hàng nhà cung cấp (port từ Rpt_Summary_InAndReturnSup Skycic).</summary>
 public record SummaryInReturnSupRow(
     string SupplierCode,
