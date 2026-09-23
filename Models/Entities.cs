@@ -4401,4 +4401,50 @@ public record InvoiceTypeDetailDto(
     InvoiceType Item,
     List<PurchaseReceipt> MappedReceipts,
     int TotalMappedReceipts
+);/// <summary>Danh mục Loại mã định danh container vận chuyển SSCC (SSCC Type - port từ Mst_SSCCType Skycic).
+/// SSCC (Serial Shipping Container Code) là mã định danh duy nhất theo chuẩn GS1 gắn cho pallet/thùng/kien hàng
+/// để theo dõi và truy xuất trong suốt chuỗi cung ứng kho vận.</summary>
+public class SSCCType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã loại SSCC (SSCCType, vd: SSCC_PALLET, SSCC_CARTON, SSCC_BOX)
+    public string Name { get; set; } = "";          // Tên loại SSCC (SSCCTypeName, vd: Pallet gỗ tiêu chuẩn, Thùng carton xuất khẩu)
+    public string? NetworkID { get; set; }          // Mạng / đại lý sở hữu danh mục (NetworkID)
+    public bool FlagActive { get; set; } = true;    // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngưng)
+    public string? Remark { get; set; }             // Ghi chú / quy cách đóng gói & tiêu chuẩn GS1 (Remark)
+    public string? CreatedBy { get; set; }          // Người tạo (LogLUBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }        // Thời điểm cập nhật cuối (LogLUDTimeUTC)
+}
+
+/// <summary>Dòng hiển thị danh mục Loại SSCC kèm số thùng carton đang gắn loại SSCC này.</summary>
+public record SSCCTypeRow(
+    int Id,
+    string Code,                 // Mã loại SSCC (SSCCType)
+    string Name,                 // Tên loại SSCC (SSCCTypeName)
+    string? NetworkID,           // Mạng / đại lý (NetworkID)
+    bool FlagActive,             // Trạng thái áp dụng (FlagActive)
+    string? Remark,              // Ghi chú
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    int MappedCartonCount        // Số thùng carton đang dùng loại SSCC này
+);
+
+/// <summary>Báo cáo / Danh sách Loại SSCC tổng hợp kèm 4 thẻ KPI (port từ Mst_SSCCType Skycic).</summary>
+public record SSCCTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalTypes,              // Tổng số loại SSCC
+    int ActiveCount,             // Số loại đang áp dụng
+    int InactiveCount,           // Số loại ngưng áp dụng
+    int TotalMappedCartons,      // Tổng số thùng carton tham chiếu
+    List<SSCCTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại SSCC kèm danh sách thùng carton đang sử dụng loại SSCC này.</summary>
+public record SSCCTypeDetailDto(
+    SSCCType Item,
+    List<InventoryCarton> MappedCartons,
+    int TotalMappedCartons
 );

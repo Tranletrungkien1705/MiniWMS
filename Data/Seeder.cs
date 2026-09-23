@@ -4450,13 +4450,67 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+
+        // ==================== SEED DANH MỤC LOẠI MÃ ĐỊNH DANH CONTAINER VẬN CHUYỂN SSCC (Mst_SSCCType Skycic) ====================
+        if (!await db.SSCCTypes.AnyAsync())
+        {
+            var now = DateTime.Now;
+            db.SSCCTypes.AddRange(
+                new SSCCType
+                {
+                    Code = "SSCC_PALLET",
+                    Name = "Pallet gỗ tiêu chuẩn",
+                    NetworkID = "WMS",
+                    FlagActive = true,
+                    Remark = "Mã SSCC 18 số theo chuẩn GS1 gắn cho pallet gỗ 1.2x1.0m dùng gom lô hàng xuất kho",
+                    CreatedAt = now.AddMonths(-6)
+                },
+                new SSCCType
+                {
+                    Code = "SSCC_CARTON",
+                    Name = "Thùng carton xuất khẩu",
+                    NetworkID = "WMS",
+                    FlagActive = true,
+                    Remark = "Mã SSCC gắn cho thùng carton đóng kiện hàng xuất khẩu, in tem nhãn logistics",
+                    CreatedAt = now.AddMonths(-6)
+                },
+                new SSCCType
+                {
+                    Code = "SSCC_BOX",
+                    Name = "Hộp đóng gói nội bộ",
+                    NetworkID = "WMS",
+                    FlagActive = true,
+                    Remark = "Mã SSCC gắn cho hộp đóng gói hàng hóa luân chuyển nội bộ giữa các kho",
+                    CreatedAt = now.AddMonths(-5)
+                },
+                new SSCCType
+                {
+                    Code = "SSCC_CONTAINER",
+                    Name = "Container vận chuyển",
+                    NetworkID = "WMS",
+                    FlagActive = true,
+                    Remark = "Mã SSCC gắn cho container/kiện hàng lớn vận chuyển đường biển, đường bộ",
+                    CreatedAt = now.AddMonths(-4)
+                },
+                new SSCCType
+                {
+                    Code = "SSCC_RETURN",
+                    Name = "Kiện hàng hoàn trả",
+                    NetworkID = "WMS",
+                    FlagActive = false,
+                    Remark = "Mã SSCC gắn cho kiện hàng hoàn trả nhà cung cấp/khách hàng (tạm ngưng áp dụng)",
+                    CreatedAt = now.AddMonths(-2)
+                }
+            );
+            await db.SaveChangesAsync();
+        }
     }
 
     private static async Task MigratePostgresAsync(AppDbContext db)
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Wards", "Agents", "PurchaseReceipts", "PurchaseReceiptLines", "InventoryOutHists", "InventoryOutHistLines", "InventoryOutHistSerials", "InvoiceTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Wards", "Agents", "PurchaseReceipts", "PurchaseReceiptLines", "InventoryOutHists", "InventoryOutHistLines", "InventoryOutHistSerials", "InvoiceTypes", "SSCCTypes" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4566,6 +4620,8 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHistSerials_OrgId_InventoryOutHistId_ProductId_SerialNo\" ON miniwms.\"InventoryOutHistSerials\" (\"OrgId\", \"InventoryOutHistId\", \"ProductId\", \"SerialNo\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"InvoiceTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"NetworkID\" text NULL, \"TTType\" text NULL, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InvoiceTypes_OrgId_Code\" ON miniwms.\"InvoiceTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"SSCCTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"NetworkID\" text NULL, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SSCCTypes_OrgId_Code\" ON miniwms.\"SSCCTypes\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"PurchaseReceipts\" ADD COLUMN IF NOT EXISTS \"InvoiceTypeCode\" text NULL");
@@ -5441,6 +5497,8 @@ public static class Seeder
         sql.Add("ALTER TABLE \"PurchaseReceipts\" ADD COLUMN \"InvoiceTypeName\" TEXT NULL;");
         sql.Add("CREATE TABLE IF NOT EXISTS \"InvoiceTypes\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL DEFAULT '', \"NetworkID\" TEXT NULL, \"TTType\" TEXT NULL, \"FlagActive\" INTEGER NOT NULL DEFAULT 1, \"Remark\" TEXT NULL, \"CreatedBy\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL, \"UpdatedAt\" TEXT NULL);");
         sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InvoiceTypes_OrgId_Code\" ON \"InvoiceTypes\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"SSCCTypes\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL DEFAULT '', \"NetworkID\" TEXT NULL, \"FlagActive\" INTEGER NOT NULL DEFAULT 1, \"Remark\" TEXT NULL, \"CreatedBy\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL, \"UpdatedAt\" TEXT NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_SSCCTypes_OrgId_Code\" ON \"SSCCTypes\" (\"OrgId\", \"Code\");");
         foreach (var s in sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(s); } catch { }

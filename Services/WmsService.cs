@@ -442,6 +442,18 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateInvoiceTypeAsync(int id, InvoiceType item);
     Task<(bool ok, string msg)> ToggleInvoiceTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteInvoiceTypeAsync(int id);
+
+    // Danh mục Loại mã định danh container vận chuyển SSCC (Mst_SSCCType Skycic)
+    Task<SSCCTypeReport> SSCCTypesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<SSCCType>> SSCCTypesAsync(bool? activeOnly = null);
+    Task<SSCCType?> GetSSCCTypeAsync(int id);
+    Task<SSCCType?> GetSSCCTypeByCodeAsync(string code);
+    Task<SSCCTypeDetailDto?> GetSSCCTypeDetailAsync(int id);
+    Task<int> CreateSSCCTypeAsync(SSCCType item);
+    Task<(bool ok, string msg)> UpdateSSCCTypeAsync(int id, SSCCType item);
+    Task<(bool ok, string msg)> ToggleSSCCTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteSSCCTypeAsync(int id);
+
     Task<WmsDash> DashboardAsync();
 }
 
@@ -13561,6 +13573,145 @@ public class WmsService(AppDbContext db) : IWmsService
         return (true, $"Đã xóa loại hóa đơn '{existing.Code}' thành công.");
     }
         return (true, $"ÄÃ£ xÃ³a thuáº¿ suáº¥t '{existing.VATRateCode}' thÃ nh cÃ´ng.");
+    }
+
+    // ==================== QUẢN LÝ DANH MỤC LOẠI MÃ ĐỊNH DANH CONTAINER VẬN CHUYỂN SSCC (Mst_SSCCType Skycic) ====================
+    public async Task<SSCCTypeReport> SSCCTypesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.SSCCTypes.AsNoTracking().AsQueryable();
+
+        if (activeOnly.HasValue)
+            query = query.Where(t => t.FlagActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.NetworkID != null && t.NetworkID.ToLower().Contains(kw)) ||
+                                     (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderBy(t => t.Code).ToListAsync();
+
+        // Đếm số thùng carton đang gắn loại SSCC này (InventoryCarton.CartonType lưu mã/tên loại SSCC).
+        var mappedCartons = await db.InventoryCartons.AsNoTracking()
+            .GroupBy(c => c.CartonType)
+            .Select(g => new { Type = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Type, x => x.Count, StringComparer.OrdinalIgnoreCase);
+
+        var rows = list.Select(t => new SSCCTypeRow(
+            t.Id,
+            t.Code,
+            t.Name,
+            t.NetworkID,
+            t.FlagActive,
+            t.Remark,
+            t.CreatedAt,
+            t.UpdatedAt,
+            (mappedCartons.TryGetValue(t.Code, out var c1) ? c1 : 0) +
+            (mappedCartons.TryGetValue(t.Name, out var c2) ? c2 : 0)
+        )).ToList();
+
+        var totalTypes = await db.SSCCTypes.CountAsync();
+        var activeCount = await db.SSCCTypes.CountAsync(t => t.FlagActive);
+
+        return new SSCCTypeReport(
+            q,
+            activeOnly,
+            totalTypes,
+            activeCount,
+            totalTypes - activeCount,
+            rows.Sum(r => r.MappedCartonCount),
+            rows);
+    }
+
+    public Task<List<SSCCType>> SSCCTypesAsync(bool? activeOnly = null)
+    {
+        var query = db.SSCCTypes.AsNoTracking().AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.FlagActive == activeOnly.Value);
+        return query.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<SSCCType?> GetSSCCTypeAsync(int id) => db.SSCCTypes.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<SSCCType?> GetSSCCTypeByCodeAsync(string code) =>
+        db.SSCCTypes.FirstOrDefaultAsync(t => t.Code.ToUpper() == code.Trim().ToUpper());
+
+    public async Task<SSCCTypeDetailDto?> GetSSCCTypeDetailAsync(int id)
+    {
+        var item = await db.SSCCTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (item == null) return null;
+
+        var cartons = await db.InventoryCartons.AsNoTracking()
+            .Include(c => c.Warehouse)
+            .Include(c => c.Product)
+            .Where(c => c.CartonType == item.Code || c.CartonType == item.Name)
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(50)
+            .ToListAsync();
+
+        return new SSCCTypeDetailDto(item, cartons, cartons.Count);
+    }
+
+    public async Task<int> CreateSSCCTypeAsync(SSCCType item)
+    {
+        item.Code = item.Code.Trim().ToUpper();
+        item.Name = item.Name.Trim();
+
+        bool exists = await db.SSCCTypes.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã loại SSCC '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.SSCCTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateSSCCTypeAsync(int id, SSCCType item)
+    {
+        var existing = await db.SSCCTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại SSCC.");
+
+        existing.Name = item.Name.Trim();
+        existing.NetworkID = item.NetworkID?.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.FlagActive = item.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật loại SSCC '{existing.Code}' thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleSSCCTypeStatusAsync(int id)
+    {
+        var existing = await db.SSCCTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại SSCC.");
+
+        existing.FlagActive = !existing.FlagActive;
+        existing.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var status = existing.FlagActive ? "kích hoạt áp dụng" : "ngưng áp dụng";
+        return (true, $"Đã {status} loại SSCC '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteSSCCTypeAsync(int id)
+    {
+        var existing = await db.SSCCTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại SSCC.");
+
+        int inUse = await db.InventoryCartons.CountAsync(c => c.CartonType == existing.Code || c.CartonType == existing.Name);
+        if (inUse > 0)
+        {
+            return (false, $"Không thể xóa loại SSCC '{existing.Code}' vì đang được {inUse} thùng carton tham chiếu.");
+        }
+
+        db.SSCCTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại SSCC '{existing.Code}' thành công.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

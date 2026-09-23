@@ -8037,4 +8037,153 @@ public class InvoiceTypeController(IWmsService svc) : Controller
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"DanhMucLoaiHoaDonKho_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
+}// ==================== QUẢN LÝ DANH MỤC LOẠI MÃ ĐỊNH DANH CONTAINER VẬN CHUYỂN SSCC (Mst_SSCCType Skycic) ====================
+public class SSCCTypeController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q;
+        ViewBag.ActiveOnly = activeOnly;
+
+        var report = await svc.SSCCTypesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetSSCCTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy loại SSCC." });
+        return Json(new
+        {
+            id = detail.Item.Id,
+            code = detail.Item.Code,
+            name = detail.Item.Name,
+            networkId = detail.Item.NetworkID,
+            remark = detail.Item.Remark,
+            flagActive = detail.Item.FlagActive,
+            totalMappedCartons = detail.TotalMappedCartons,
+            cartons = detail.MappedCartons.Select(c => new
+            {
+                c.Id,
+                c.CartonCode,
+                c.CartonType,
+                WarehouseName = c.Warehouse != null ? c.Warehouse.Name : "",
+                ProductCode = c.Product != null ? c.Product.Code : null,
+                ProductName = c.Product != null ? c.Product.Name : null,
+                c.Quantity,
+                c.Capacity,
+                Status = c.Status.ToString(),
+                c.ShelfLocation,
+                c.CreatedAt
+            })
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? networkId, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập đầy đủ mã và tên loại SSCC.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var item = new SSCCType
+            {
+                Code = code.Trim().ToUpper(),
+                Name = name.Trim(),
+                NetworkID = networkId?.Trim(),
+                Remark = remark?.Trim(),
+                FlagActive = flagActive,
+                CreatedBy = "web"
+            };
+            await svc.CreateSSCCTypeAsync(item);
+            TempData["Success"] = $"Đã thêm loại SSCC '{item.Code}' thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? networkId, string? remark, bool flagActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên loại SSCC.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new SSCCType
+        {
+            Name = name.Trim(),
+            NetworkID = networkId?.Trim(),
+            Remark = remark?.Trim(),
+            FlagActive = flagActive
+        };
+
+        var (ok, msg) = await svc.UpdateSSCCTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleSSCCTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteSSCCTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.SSCCTypesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+
+        // UTF-8 BOM
+        sb.Append('\uFEFF');
+
+        sb.AppendLine("DANH MỤC LOẠI MÃ ĐỊNH DANH CONTAINER VẬN CHUYỂN SSCC (MST_SSCCTYPE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Tổng số loại:;{report.TotalTypes};Đang áp dụng:;{report.ActiveCount};Ngưng áp dụng:;{report.InactiveCount};Tổng thùng carton tham chiếu:;{report.TotalMappedCartons}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã loại SSCC;Tên loại SSCC;Mạng/Đại lý;Số thùng carton tham chiếu;Trạng thái;Ghi chú;Ngày tạo;Cập nhật lần cuối");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.FlagActive ? "Đang áp dụng" : "Ngưng áp dụng";
+            var updatedStr = r.UpdatedAt.HasValue ? r.UpdatedAt.Value.ToString("dd/MM/yyyy HH:mm") : "-";
+
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.NetworkID ?? ""}\";{r.MappedCartonCount};\"{statusStr}\";\"{r.Remark?.Replace("\"", "\"\"") ?? ""}\";{r.CreatedAt:dd/MM/yyyy HH:mm};{updatedStr}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG LOẠI SSCC:;{report.TotalTypes};;;;;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;;;;");
+        sb.AppendLine($";;TỔNG THÙNG CARTON THAM CHIẾU:;{report.TotalMappedCartons};;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"DanhMucLoaiSSCC_WMS_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
 }
