@@ -2014,6 +2014,53 @@ public record InventoryInTypeDetailDto(
     int TotalQtyIn
 );
 
+/// <summary>Danh mục Loại hình / Lý do Xuất kho (Outbound Type - port từ Mst_InvOutType Skycic: InvOutType, InvOutTypeName, FlagActive, FlagStatistic, Remark).</summary>
+public class InventoryOutType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã loại xuất kho (InvOutType, vd: OUT_SALE, OUT_PROD, OUT_TRANSFER, OUT_RETURN_SUP, OUT_AUDIT, OUT_DISPOSAL, OUT_SAMPLE, OUT_OTHER)
+    public string Name { get; set; } = "";          // Tên loại xuất kho (InvOutTypeName, vd: Xuất bán hàng đại lý, Xuất NVL sản xuất...)
+    public bool FlagStatistic { get; set; } = true; // Cờ tính vào thống kê sản lượng xuất / doanh thu (FlagStatistic: 1 - Tính, 0 - Không tính)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Quy trình chứng từ xuất kho (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị loại xuất kho kèm số lượng chứng từ phát sinh và tổng số lượng xuất.</summary>
+public record InventoryOutTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    bool FlagStatistic,
+    bool IsActive,
+    string? Remark,
+    DateTime CreatedAt,
+    int TotalDocsCount,
+    int TotalQtyOut
+);
+
+/// <summary>Báo cáo / Danh sách loại xuất kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record InventoryOutTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    bool? StatisticFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int StatisticCount,
+    int InactiveCount,
+    int TotalOutDocsCount,
+    List<InventoryOutTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại xuất kho kèm thông tin và chứng từ xuất kho liên quan.</summary>
+public record InventoryOutTypeDetailDto(
+    InventoryOutType Item,
+    List<StockDoc> Docs,
+    int TotalDocs,
+    int TotalQtyOut
+);
+
 
 
 

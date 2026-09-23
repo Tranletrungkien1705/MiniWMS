@@ -67,6 +67,20 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.InventoryOutTypes.AnyAsync())
+        {
+            db.InventoryOutTypes.AddRange(
+                new InventoryOutType { Code = "OUT_SALE", Name = "Xuất bán hàng / Phân phối đại lý", FlagStatistic = true, IsActive = true, Remark = "Xuất hàng thương mại cho khách hàng hoặc đại lý theo hợp đồng bán buôn, đơn hàng phân phối" },
+                new InventoryOutType { Code = "OUT_PROD", Name = "Xuất cấp phát nguyên vật liệu sản xuất", FlagStatistic = true, IsActive = true, Remark = "Cấp phát nguyên liệu, phụ tùng và vật tư cho các phân xưởng sản xuất theo lệnh sản xuất" },
+                new InventoryOutType { Code = "OUT_TRANSFER", Name = "Xuất điều chuyển kho đi", FlagStatistic = false, IsActive = true, Remark = "Xuất luân chuyển hàng hóa sang kho chi nhánh hoặc trung tâm phân phối khác theo lệnh điều chuyển" },
+                new InventoryOutType { Code = "OUT_RETURN_SUP", Name = "Xuất trả hàng Nhà cung cấp", FlagStatistic = false, IsActive = true, Remark = "Xuất trả hàng lỗi hỏng, sai quy cách hoặc dư thừa cho nhà cung cấp theo phiếu trả NCC" },
+                new InventoryOutType { Code = "OUT_AUDIT", Name = "Xuất cân bằng kiểm kê thiếu", FlagStatistic = false, IsActive = true, Remark = "Phiếu xuất điều chỉnh giảm số dư khi thực tế kiểm đếm nhỏ hơn tồn sổ sách sau kiểm kê" },
+                new InventoryOutType { Code = "OUT_DISPOSAL", Name = "Xuất hủy / Thanh lý hàng hỏng hóc", FlagStatistic = false, IsActive = true, Remark = "Tiêu hủy hàng hóa quá hạn sử dụng, biến chất, lỗi kỹ thuật hoặc thanh lý thu hồi phế liệu" },
+                new InventoryOutType { Code = "OUT_SAMPLE", Name = "Xuất hàng mẫu / Quảng bá / Khuyến mại", FlagStatistic = false, IsActive = true, Remark = "Xuất hàng phục vụ chào hàng đối tác, trưng bày hội chợ triển lãm hoặc tặng kèm khuyến mại" },
+                new InventoryOutType { Code = "OUT_OTHER", Name = "Xuất kho điều chỉnh khác", FlagStatistic = false, IsActive = true, Remark = "Các giao dịch xuất kho phát sinh ngoài danh mục tiêu chuẩn" }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.PartTypes.AnyAsync())
         {
             db.PartTypes.AddRange(
@@ -2161,7 +2175,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryInTypes" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryInTypes", "InventoryOutTypes" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2185,6 +2199,8 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryTypes_OrgId_Code\" ON miniwms.\"InventoryTypes\" (\"OrgId\", \"Code\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryInTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"FlagStatistic\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryInTypes_OrgId_Code\" ON miniwms.\"InventoryInTypes\" (\"OrgId\", \"Code\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryOutTypes\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"FlagStatistic\" boolean NOT NULL DEFAULT true, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryOutTypes_OrgId_Code\" ON miniwms.\"InventoryOutTypes\" (\"OrgId\", \"Code\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");

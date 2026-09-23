@@ -2062,6 +2062,88 @@ app.MapDelete("/api/inventory-in-types/{id:int}", async (int id, IWmsService svc
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Loại hình & Lý do Xuất kho (port từ Mst_InvOutType Skycic)
+app.MapGet("/api/inventory-out-types", async (string? q, bool? activeOnly, bool? statisticOnly, IWmsService svc) =>
+{
+    var report = await svc.InventoryOutTypesReportAsync(q, activeOnly, statisticOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-out-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryOutTypeAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy loại xuất kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-out-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryOutTypeByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy loại xuất kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-out-types/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetInventoryOutTypeDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy loại xuất kho." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/inventory-out-types", async (CreateInventoryOutTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên loại xuất kho." });
+    try
+    {
+        var item = new InventoryOutType
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            FlagStatistic = dto.FlagStatistic ?? true,
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateInventoryOutTypeAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/inventory-out-types/{id:int}", async (int id, UpdateInventoryOutTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên loại xuất kho." });
+    var item = new InventoryOutType
+    {
+        Name = dto.Name.Trim(),
+        FlagStatistic = dto.FlagStatistic ?? true,
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateInventoryOutTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-out-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInventoryOutTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-out-types/{id:int}/toggle-statistic", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInventoryOutTypeStatisticAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-out-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInventoryOutTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2120,3 +2202,5 @@ record CreateInventoryTypeDto(string? Code, string Name, string? Remark, bool? I
 record UpdateInventoryTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateInventoryInTypeDto(string? Code, string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
 record UpdateInventoryInTypeDto(string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
+record CreateInventoryOutTypeDto(string? Code, string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
+record UpdateInventoryOutTypeDto(string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
