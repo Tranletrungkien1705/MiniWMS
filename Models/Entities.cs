@@ -3974,4 +3974,145 @@ public record FGOutSumReport(
     int DistinctProductsCount,  // Số mặt hàng thành phẩm phân biệt
     int DistinctWarehousesCount,// Số kho có phát sinh xuất thành phẩm
     List<FGOutSumRow> Rows
+);// ===== Phiếu xuất kho theo lịch sử / Xuất kho lịch sử (port từ InvF_InventoryOutHist Skycic) =====
+
+/// <summary>Hình thức xuất kho theo lịch sử (FormOutType - port từ Const.Main.BE.cs Skycic).</summary>
+public enum OutHistFormType
+{
+    Barcode = 0,     // MAVACH - Xuất theo mã vạch / Serial
+    NoBarcode = 1    // KHONGMAVACH - Xuất theo số lượng
+}
+
+/// <summary>Nghiệp vụ xuất kho theo lịch sử (InvFOutType - port từ Const.Main.BE.cs Skycic).</summary>
+public enum OutHistOutType
+{
+    Commercial = 0,  // OUTTHUONGMAI - Xuất thương mại
+    EndCustomer = 1  // OUTENDCUS - Xuất khách lẻ / cuối chuỗi
+}
+
+/// <summary>Trạng thái phiếu xuất kho theo lịch sử (IF_InvOutHistStatus - port từ Const.Main.BE.cs Skycic).</summary>
+public enum OutHistStatus
+{
+    Pending = 0,     // PENDING - Chờ duyệt
+    Approved = 1,    // APPROVE - Đã duyệt
+    Cancelled = 2    // CANCEL - Đã hủy
+}
+
+/// <summary>Phiếu xuất kho theo lịch sử (port từ InvF_InventoryOutHist Skycic).
+/// Ghi nhận xuất kho theo lịch sử phát sinh (thương mại / khách lẻ) kèm thông tin vận chuyển,
+/// đại lý nhận hàng và danh sách Serial/IMEI xuất kèm.</summary>
+public class InventoryOutHist : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";                                 // Mã phiếu xuất lịch sử (IF_InvOutHistNo, vd: IFOH2603-001)
+    public int WarehouseId { get; set; }                                   // Kho xuất (InvCode)
+    public OutHistFormType FormType { get; set; } = OutHistFormType.NoBarcode; // Hình thức xuất (FormOutType)
+    public OutHistOutType OutType { get; set; } = OutHistOutType.Commercial;   // Nghiệp vụ xuất (InvFOutType)
+    public string? InvOutType { get; set; }                                // Loại hình xuất kho (InvOutType)
+    public string? PMType { get; set; }                                    // Nhóm chất liệu / loại hàng (PMType)
+    public string? PlateNo { get; set; }                                   // Biển số xe vận chuyển (PlateNo)
+    public string? MoocNo { get; set; }                                    // Biển số rơ-moóc / Container (MoocNo)
+    public string? DriverName { get; set; }                                // Tên lái xe giao nhận (DriverName)
+    public string? DriverPhone { get; set; }                               // SĐT lái xe (DriverPhoneNo)
+    public string? AgentCode { get; set; }                                 // Mã đại lý / khách hàng nhận (AgentCode)
+    public string CustomerName { get; set; } = "";                         // Tên khách hàng / đại lý nhận hàng (CustomerName)
+    public DateTime Date { get; set; } = DateTime.Now;                     // Ngày xuất kho
+    public string CreatedBy { get; set; } = "";                            // Người lập phiếu
+    public OutHistStatus Status { get; set; } = OutHistStatus.Pending;     // Trạng thái phiếu
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }                              // Thời điểm phê duyệt
+    public string? ApprovedBy { get; set; }                                // Người phê duyệt
+    public string? Remark { get; set; }                                    // Diễn giải / Ghi chú
+    public int? StockDocId { get; set; }                                   // Phiếu xuất kho tự động sinh khi duyệt (StockDoc.Type = Out)
+
+    public Warehouse Warehouse { get; set; } = null!;
+    public StockDoc? StockDoc { get; set; }
+    public List<InventoryOutHistLine> Lines { get; set; } = [];
+    public List<InventoryOutHistSerial> Serials { get; set; } = [];
+
+    public int TotalQty => Lines.Sum(l => l.Qty);
+    public int TotalSerialsCount => Serials.Count;
+    public int TotalItemsCount => Lines.Count;
+}
+
+/// <summary>Dòng chi tiết mặt hàng trong phiếu xuất kho theo lịch sử (port từ InvF_InventoryOutHistDtl Skycic).</summary>
+public class InventoryOutHistLine : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryOutHistId { get; set; }
+    public int ProductId { get; set; }
+    public int Qty { get; set; }                                           // Số lượng xuất kho (Qty)
+    public string? Note { get; set; }                                      // Ghi chú chi tiết
+
+    public InventoryOutHist InventoryOutHist { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Danh sách Barcode / Serial / IMEI gắn với phiếu xuất kho theo lịch sử (port từ InvF_InventoryOutHistInstSerial Skycic).</summary>
+public class InventoryOutHistSerial : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public int InventoryOutHistId { get; set; }
+    public int ProductId { get; set; }
+    public string SerialNo { get; set; } = "";                             // Số Barcode / Serial / IMEI xuất kho (SerialNo)
+    public string? Note { get; set; }                                      // Ghi chú
+
+    public InventoryOutHist InventoryOutHist { get; set; } = null!;
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>Dòng hiển thị danh sách phiếu xuất kho theo lịch sử.</summary>
+public record InventoryOutHistRow(
+    int Id,
+    string Code,
+    int WarehouseId,
+    string WarehouseName,
+    OutHistFormType FormType,
+    string FormTypeLabel,
+    OutHistOutType OutType,
+    string OutTypeLabel,
+    string? InvOutType,
+    string? PMType,
+    string? PlateNo,
+    string? MoocNo,
+    string? DriverName,
+    string? DriverPhone,
+    string? AgentCode,
+    string CustomerName,
+    DateTime Date,
+    OutHistStatus Status,
+    string StatusLabel,
+    string BadgeClass,
+    int TotalQty,
+    int TotalSerialsCount,
+    int TotalItemsCount,
+    int? StockDocId,
+    string? StockDocCode,
+    string? Remark,
+    string CreatedBy,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    string? ApprovedBy
+);
+
+/// <summary>Báo cáo & Tổng hợp danh sách Phiếu xuất kho theo lịch sử (port từ InvF_InventoryOutHist Skycic).</summary>
+public record InventoryOutHistReport(
+    int? WarehouseId,
+    string WarehouseName,
+    OutHistStatus? StatusFilter,
+    OutHistOutType? OutTypeFilter,
+    OutHistFormType? FormTypeFilter,
+    DateTime? FromDate,
+    DateTime? ToDate,
+    string? Keyword,
+    int TotalOrders,
+    int PendingCount,
+    int ApprovedCount,
+    int CancelledCount,
+    int TotalQty,
+    int TotalSerialsCount,
+    List<InventoryOutHistRow> Rows
 );

@@ -73,6 +73,9 @@ public class AppDbContext : DbContext
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
     public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
+    public DbSet<InventoryOutHist> InventoryOutHists => Set<InventoryOutHist>();
+    public DbSet<InventoryOutHistLine> InventoryOutHistLines => Set<InventoryOutHistLine>();
+    public DbSet<InventoryOutHistSerial> InventoryOutHistSerials => Set<InventoryOutHistSerial>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -491,6 +494,30 @@ public class AppDbContext : DbContext
             e.Ignore(x => x.VATAmount);
             e.Ignore(x => x.AmountAfterVAT);
             e.HasOne(x => x.PurchaseReceipt).WithMany(x => x.Lines).HasForeignKey(x => x.PurchaseReceiptId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryOutHist>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.WarehouseId, x.Status });
+            e.Ignore(x => x.TotalQty);
+            e.Ignore(x => x.TotalSerialsCount);
+            e.Ignore(x => x.TotalItemsCount);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.StockDoc).WithMany().HasForeignKey(x => x.StockDocId).OnDelete(DeleteBehavior.SetNull);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryOutHistLine>(e =>
+        {
+            e.HasOne(x => x.InventoryOutHist).WithMany(x => x.Lines).HasForeignKey(x => x.InventoryOutHistId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<InventoryOutHistSerial>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.InventoryOutHistId, x.ProductId, x.SerialNo });
+            e.HasOne(x => x.InventoryOutHist).WithMany(x => x.Serials).HasForeignKey(x => x.InventoryOutHistId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });

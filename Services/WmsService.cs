@@ -400,6 +400,11 @@ public interface IWmsService
     Task<int> CreatePurchaseReceiptAsync(PurchaseReceipt doc, List<(int productId, int qty, decimal unitPrice, double vatRate, string? unitCode, string? note)> lines);
     Task<(bool ok, string msg)> ApprovePurchaseReceiptAsync(int id);
     Task<(bool ok, string msg)> CancelPurchaseReceiptAsync(int id);
+    Task<InventoryOutHistReport> InventoryOutHistsAsync(int? warehouseId, OutHistStatus? status, OutHistOutType? outType, OutHistFormType? formType, DateTime? fromDate, DateTime? toDate, string? q);
+    Task<InventoryOutHist?> GetInventoryOutHistAsync(int id);
+    Task<int> CreateInventoryOutHistAsync(InventoryOutHist doc, List<(int productId, int qty, string? note)> lines, List<(int productId, string serialNo, string? note)> serials);
+    Task<(bool ok, string msg)> ApproveInventoryOutHistAsync(int id);
+    Task<(bool ok, string msg)> CancelInventoryOutHistAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -13413,6 +13418,302 @@ public class WmsService(AppDbContext db) : IWmsService
         doc.Status = PurchaseReceiptStatus.Cancelled;
         await db.SaveChangesAsync();
         return (true, $"Đã hủy phiếu nhập kho mua hàng {doc.Code}.");
+    }
+
+    // ===== Phiếu xuất kho theo lịch sử (port từ InvF_InventoryOutHist Skycic) =====
+
+    public async Task<InventoryOutHistReport> InventoryOutHistsAsync(int? warehouseId, OutHistStatus? status, OutHistOutType? outType, OutHistFormType? formType, DateTime? fromDate, DateTime? toDate, string? q)
+    {
+        var query = db.InventoryOutHists
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .AsQueryable();
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            query = query.Where(f => f.WarehouseId == warehouseId.Value);
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        if (status.HasValue) query = query.Where(f => f.Status == status.Value);
+        if (outType.HasValue) query = query.Where(f => f.OutType == outType.Value);
+        if (formType.HasValue) query = query.Where(f => f.FormType == formType.Value);
+
+        if (fromDate.HasValue)
+        {
+            var f = fromDate.Value.Date;
+            query = query.Where(x => x.Date >= f);
+        }
+        if (toDate.HasValue)
+        {
+            var t = toDate.Value.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(x => x.Date <= t);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(f => f.Code.ToLower().Contains(kw) ||
+                                     f.CustomerName.ToLower().Contains(kw) ||
+                                     (f.AgentCode != null && f.AgentCode.ToLower().Contains(kw)) ||
+                                     (f.PlateNo != null && f.PlateNo.ToLower().Contains(kw)) ||
+                                     (f.MoocNo != null && f.MoocNo.ToLower().Contains(kw)) ||
+                                     (f.DriverName != null && f.DriverName.ToLower().Contains(kw)) ||
+                                     (f.Remark != null && f.Remark.ToLower().Contains(kw)) ||
+                                     f.Lines.Any(l => l.Product.Code.ToLower().Contains(kw) || l.Product.Name.ToLower().Contains(kw)));
+        }
+
+        var list = await query.OrderByDescending(f => f.Date).ThenByDescending(f => f.Id).ToListAsync();
+
+        int totalOrders = list.Count;
+        int pendingCount = list.Count(f => f.Status == OutHistStatus.Pending);
+        int approvedCount = list.Count(f => f.Status == OutHistStatus.Approved);
+        int cancelledCount = list.Count(f => f.Status == OutHistStatus.Cancelled);
+        int totalQty = list.Sum(f => f.TotalQty);
+        int totalSerials = list.Sum(f => f.TotalSerialsCount);
+
+        var rows = list.Select(f =>
+        {
+            var (outLabel, _) = f.OutType switch
+            {
+                OutHistOutType.Commercial => ("Xuất thương mại", "bg-primary"),
+                OutHistOutType.EndCustomer => ("Xuất khách lẻ / cuối chuỗi", "bg-info text-dark"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            var (formLabel, _) = f.FormType switch
+            {
+                OutHistFormType.Barcode => ("Quét Barcode/Serial", "bg-primary-subtle text-primary border border-primary-subtle"),
+                OutHistFormType.NoBarcode => ("Theo số lượng", "bg-light text-dark border"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            var (statusLabel, badgeClass) = f.Status switch
+            {
+                OutHistStatus.Pending => ("Chờ duyệt xuất", "bg-warning text-dark"),
+                OutHistStatus.Approved => ("Đã xuất kho", "bg-success"),
+                OutHistStatus.Cancelled => ("Đã hủy", "bg-secondary"),
+                _ => ("Khác", "bg-light text-dark")
+            };
+
+            return new InventoryOutHistRow(
+                f.Id,
+                f.Code,
+                f.WarehouseId,
+                f.Warehouse.Name,
+                f.FormType,
+                formLabel,
+                f.OutType,
+                outLabel,
+                f.InvOutType,
+                f.PMType,
+                f.PlateNo,
+                f.MoocNo,
+                f.DriverName,
+                f.DriverPhone,
+                f.AgentCode,
+                f.CustomerName,
+                f.Date,
+                f.Status,
+                statusLabel,
+                badgeClass,
+                f.TotalQty,
+                f.TotalSerialsCount,
+                f.TotalItemsCount,
+                f.StockDocId,
+                f.StockDoc?.Code,
+                f.Remark,
+                f.CreatedBy,
+                f.CreatedAt,
+                f.ApprovedAt,
+                f.ApprovedBy
+            );
+        }).ToList();
+
+        return new InventoryOutHistReport(
+            warehouseId,
+            whName,
+            status,
+            outType,
+            formType,
+            fromDate,
+            toDate,
+            q,
+            totalOrders,
+            pendingCount,
+            approvedCount,
+            cancelledCount,
+            totalQty,
+            totalSerials,
+            rows
+        );
+    }
+
+    public Task<InventoryOutHist?> GetInventoryOutHistAsync(int id) =>
+        db.InventoryOutHists
+            .Include(f => f.Warehouse)
+            .Include(f => f.StockDoc)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+    public async Task<int> CreateInventoryOutHistAsync(
+        InventoryOutHist doc,
+        List<(int productId, int qty, string? note)> lines,
+        List<(int productId, string serialNo, string? note)> serials)
+    {
+        if (doc.WarehouseId <= 0) throw new InvalidOperationException("Vui lòng chọn kho xuất hàng.");
+        if (string.IsNullOrWhiteSpace(doc.CustomerName)) throw new InvalidOperationException("Vui lòng nhập tên khách hàng / đại lý nhận hàng.");
+        if (lines.Count == 0 || !lines.Any(l => l.productId > 0 && l.qty > 0))
+            throw new InvalidOperationException("Cần ít nhất 1 dòng mặt hàng có số lượng xuất > 0.");
+
+        if (string.IsNullOrWhiteSpace(doc.Code))
+        {
+            doc.Code = $"IFOH{DateTime.Now:yyMMdd}-{await db.InventoryOutHists.CountAsync() + 1:D3}";
+        }
+
+        doc.Status = OutHistStatus.Pending;
+        doc.CreatedAt = DateTime.Now;
+
+        foreach (var l in lines.Where(x => x.productId > 0 && x.qty > 0))
+        {
+            doc.Lines.Add(new InventoryOutHistLine
+            {
+                ProductId = l.productId,
+                Qty = l.qty,
+                Note = l.note?.Trim()
+            });
+        }
+
+        foreach (var s in serials.Where(x => x.productId > 0 && !string.IsNullOrWhiteSpace(x.serialNo)))
+        {
+            doc.Serials.Add(new InventoryOutHistSerial
+            {
+                ProductId = s.productId,
+                SerialNo = s.serialNo.Trim(),
+                Note = s.note?.Trim()
+            });
+        }
+
+        db.InventoryOutHists.Add(doc);
+        await db.SaveChangesAsync();
+        return doc.Id;
+    }
+
+    public async Task<(bool ok, string msg)> ApproveInventoryOutHistAsync(int id)
+    {
+        var doc = await db.InventoryOutHists
+            .Include(f => f.Warehouse)
+            .Include(f => f.Lines).ThenInclude(l => l.Product)
+            .Include(f => f.Serials).ThenInclude(s => s.Product)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (doc == null) return (false, "Không tìm thấy phiếu xuất kho theo lịch sử.");
+        if (doc.Status != OutHistStatus.Pending) return (false, "Phiếu không ở trạng thái Chờ duyệt.");
+        if (doc.Lines.Count == 0 || !doc.Lines.Any(l => l.Qty > 0))
+            return (false, "Phiếu không có mặt hàng nào hợp lệ.");
+
+        // Kiểm tra tồn khả dụng tại kho xuất trước khi trừ
+        var bal = await BalancesAsync(doc.WarehouseId);
+        foreach (var line in doc.Lines.Where(l => l.Qty > 0))
+        {
+            var have = bal.FirstOrDefault(x => x.ProductId == line.ProductId)?.Qty ?? 0;
+            if (line.Qty > have)
+            {
+                return (false, $"Kho {doc.Warehouse.Name} không đủ tồn cho sản phẩm '{line.Product.Name}' (Cần {line.Qty}, tồn thực tế {have}).");
+            }
+        }
+
+        // Tạo StockDoc (Phiếu xuất kho) để ghi sổ và giảm tồn kho
+        var stockDoc = new StockDoc
+        {
+            Type = DocType.Out,
+            FromWarehouseId = doc.WarehouseId,
+            Date = doc.Date,
+            RefNo = doc.Code,
+            Note = $"Xuất kho theo lịch sử theo phiếu {doc.Code} cho {doc.CustomerName} - Xe: {doc.PlateNo ?? "—"}",
+            CreatedBy = doc.CreatedBy ?? "system",
+            Status = DocStatus.Draft,
+            CreatedAt = DateTime.Now
+        };
+
+        foreach (var line in doc.Lines.Where(l => l.Qty > 0))
+        {
+            stockDoc.Lines.Add(new StockDocLine
+            {
+                ProductId = line.ProductId,
+                Quantity = line.Qty
+            });
+        }
+
+        db.Docs.Add(stockDoc);
+        await db.SaveChangesAsync();
+
+        // Ghi sổ phiếu xuất kho
+        var (postOk, postMsg) = await PostDocAsync(stockDoc.Id);
+        if (!postOk)
+        {
+            return (false, $"Lỗi ghi sổ phiếu xuất kho: {postMsg}");
+        }
+
+        doc.StockDocId = stockDoc.Id;
+        doc.Status = OutHistStatus.Approved;
+        doc.ApprovedAt = DateTime.Now;
+        doc.ApprovedBy = "admin";
+
+        // Cập nhật trạng thái Serial thành Exported (Đã xuất kho)
+        foreach (var s in doc.Serials)
+        {
+            var existingSerial = await db.StockSerials.FirstOrDefaultAsync(ss =>
+                ss.WarehouseId == doc.WarehouseId &&
+                ss.ProductId == s.ProductId &&
+                ss.SerialNo == s.SerialNo);
+
+            if (existingSerial != null)
+            {
+                existingSerial.Status = StockSerialStatus.Exported;
+                existingSerial.OutDate = doc.Date;
+                existingSerial.RefNo = doc.Code;
+                existingSerial.Note = $"Đã xuất cho {doc.CustomerName} (Xe {doc.PlateNo ?? "—"})";
+                existingSerial.UpdatedAt = DateTime.Now;
+            }
+            else
+            {
+                db.StockSerials.Add(new StockSerial
+                {
+                    WarehouseId = doc.WarehouseId,
+                    ProductId = s.ProductId,
+                    SerialNo = s.SerialNo,
+                    Status = StockSerialStatus.Exported,
+                    InDate = doc.Date,
+                    OutDate = doc.Date,
+                    RefNo = doc.Code,
+                    Note = $"Đã xuất cho {doc.CustomerName} (Xe {doc.PlateNo ?? "—"})",
+                    CreatedAt = DateTime.Now
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã duyệt và xuất kho thành công phiếu {doc.Code}. Tổng {doc.TotalQty} mặt hàng đã được xuất giao cho {doc.CustomerName}.");
+    }
+
+    public async Task<(bool ok, string msg)> CancelInventoryOutHistAsync(int id)
+    {
+        var doc = await db.InventoryOutHists.FirstOrDefaultAsync(f => f.Id == id);
+        if (doc == null) return (false, "Không tìm thấy phiếu xuất kho theo lịch sử.");
+        if (doc.Status == OutHistStatus.Approved)
+            return (false, "Phiếu xuất kho theo lịch sử đã được phê duyệt ghi sổ kho, không thể hủy bỏ.");
+        if (doc.Status == OutHistStatus.Cancelled)
+            return (false, "Phiếu này đã được hủy trước đó.");
+
+        doc.Status = OutHistStatus.Cancelled;
+        await db.SaveChangesAsync();
+        return (true, $"Đã hủy phiếu xuất kho theo lịch sử {doc.Code}.");
     }
 
 }

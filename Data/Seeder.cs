@@ -2799,6 +2799,74 @@ public static class Seeder
             }
         }
 
+        // Seed dữ liệu Phiếu xuất kho theo lịch sử (InventoryOutHist - port từ InvF_InventoryOutHist Skycic)
+        if (!await db.InventoryOutHists.AnyAsync())
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Code == "KHO01") ?? await db.Warehouses.FirstAsync();
+            var ao = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP01");
+            var quan = await db.Products.FirstOrDefaultAsync(p => p.Code == "SP02");
+
+            if (ao != null && quan != null)
+            {
+                // 1. Phiếu ĐÃ DUYỆT XUẤT KHO (Approved)
+                var hist1 = new InventoryOutHist
+                {
+                    Code = "IFOH260328-001",
+                    WarehouseId = wh.Id,
+                    FormType = OutHistFormType.Barcode,
+                    OutType = OutHistOutType.Commercial,
+                    InvOutType = "OUT_SALE",
+                    PMType = "HHTM",
+                    PlateNo = "29C-777.55",
+                    MoocNo = "29R-045.67",
+                    DriverName = "Lê Văn Tài Xế",
+                    DriverPhone = "0903.111.222",
+                    AgentCode = "DL-HN-002",
+                    CustomerName = "Công ty TNHH Bán lẻ Thời trang Miền Bắc",
+                    Date = DateTime.Today.AddDays(-3),
+                    CreatedBy = "admin",
+                    Status = OutHistStatus.Approved,
+                    CreatedAt = DateTime.Now.AddDays(-3),
+                    ApprovedAt = DateTime.Now.AddDays(-3).AddHours(1),
+                    ApprovedBy = "admin",
+                    Remark = "Xuất kho theo lịch sử phát sinh đơn bán buôn đại lý miền Bắc"
+                };
+
+                hist1.Lines.Add(new InventoryOutHistLine { ProductId = ao.Id, Qty = 12, Note = "Áo sơ mi nam" });
+                hist1.Lines.Add(new InventoryOutHistLine { ProductId = quan.Id, Qty = 8, Note = "Quần jeans nam" });
+                hist1.Serials.Add(new InventoryOutHistSerial { ProductId = ao.Id, SerialNo = "AO2603-011", Note = "Xuất cho DL-HN-002" });
+                hist1.Serials.Add(new InventoryOutHistSerial { ProductId = quan.Id, SerialNo = "QJ2603-011", Note = "Xuất cho DL-HN-002" });
+
+                db.InventoryOutHists.Add(hist1);
+
+                // 2. Phiếu ĐANG CHỜ DUYỆT XUẤT (Pending)
+                var hist2 = new InventoryOutHist
+                {
+                    Code = "IFOH260330-002",
+                    WarehouseId = wh.Id,
+                    FormType = OutHistFormType.NoBarcode,
+                    OutType = OutHistOutType.EndCustomer,
+                    InvOutType = "OUT_SALE",
+                    PMType = "HHTM",
+                    PlateNo = "30E-123.45",
+                    DriverName = "Phạm Văn Giao",
+                    DriverPhone = "0977.333.444",
+                    AgentCode = "KH-LE-003",
+                    CustomerName = "Khách lẻ - Cửa hàng Thời trang Sao Việt",
+                    Date = DateTime.Today,
+                    CreatedBy = "admin",
+                    Status = OutHistStatus.Pending,
+                    CreatedAt = DateTime.Now,
+                    Remark = "Xuất kho theo lịch sử cho khách lẻ, chờ duyệt xuất"
+                };
+
+                hist2.Lines.Add(new InventoryOutHistLine { ProductId = ao.Id, Qty = 5, Note = "Áo sơ mi nam" });
+
+                db.InventoryOutHists.Add(hist2);
+                await db.SaveChangesAsync();
+            }
+        }
+
         // Seed dữ liệu Phiếu nhập kho mua hàng (PurchaseReceipt - port từ InvF_InventoryIn Skycic)
         if (!await db.PurchaseReceipts.AnyAsync())
         {
@@ -4261,7 +4329,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines", "InventoryOutHists", "InventoryOutHistLines", "InventoryOutHistSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4359,6 +4427,13 @@ public static class Seeder
             "CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_WarehouseId_Status\" ON miniwms.\"PurchaseReceipts\" (\"OrgId\", \"WarehouseId\", \"Status\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"PurchaseReceiptLines\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"PurchaseReceiptId\" integer NOT NULL, \"ProductId\" integer NOT NULL, \"Quantity\" integer NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"VATRate\" double precision NOT NULL DEFAULT 0, \"UnitCode\" text NULL, \"Note\" text NULL)",
             "CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceiptLines_OrgId_PurchaseReceiptId\" ON miniwms.\"PurchaseReceiptLines\" (\"OrgId\", \"PurchaseReceiptId\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryOutHists\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"WarehouseId\" integer NOT NULL, \"FormType\" integer NOT NULL DEFAULT 0, \"OutType\" integer NOT NULL DEFAULT 0, \"InvOutType\" text NULL, \"PMType\" text NULL, \"PlateNo\" text NULL, \"MoocNo\" text NULL, \"DriverName\" text NULL, \"DriverPhone\" text NULL, \"AgentCode\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"Date\" timestamp NOT NULL DEFAULT now(), \"CreatedBy\" text NOT NULL DEFAULT '', \"Status\" integer NOT NULL DEFAULT 0, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedAt\" timestamp NULL, \"ApprovedBy\" text NULL, \"Remark\" text NULL, \"StockDocId\" integer NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryOutHists_OrgId_Code\" ON miniwms.\"InventoryOutHists\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHists_OrgId_WarehouseId_Status\" ON miniwms.\"InventoryOutHists\" (\"OrgId\", \"WarehouseId\", \"Status\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryOutHistLines\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"InventoryOutHistId\" integer NOT NULL, \"ProductId\" integer NOT NULL, \"Qty\" integer NOT NULL DEFAULT 0, \"Note\" text NULL)",
+            "CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHistLines_OrgId_InventoryOutHistId\" ON miniwms.\"InventoryOutHistLines\" (\"OrgId\", \"InventoryOutHistId\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"InventoryOutHistSerials\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"InventoryOutHistId\" integer NOT NULL, \"ProductId\" integer NOT NULL, \"SerialNo\" text NOT NULL, \"Note\" text NULL)",
+            "CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHistSerials_OrgId_InventoryOutHistId_ProductId_SerialNo\" ON miniwms.\"InventoryOutHistSerials\" (\"OrgId\", \"InventoryOutHistId\", \"ProductId\", \"SerialNo\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"SpecCode\" text NULL");
@@ -5218,6 +5293,13 @@ public static class Seeder
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceipts_OrgId_WarehouseId_Status\" ON \"PurchaseReceipts\" (\"OrgId\", \"WarehouseId\", \"Status\");");
         sql.Add("CREATE TABLE IF NOT EXISTS \"PurchaseReceiptLines\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"PurchaseReceiptId\" INTEGER NOT NULL, \"ProductId\" INTEGER NOT NULL, \"Quantity\" INTEGER NOT NULL DEFAULT 0, \"UnitPrice\" NUMERIC NOT NULL DEFAULT 0, \"VATRate\" REAL NOT NULL DEFAULT 0, \"UnitCode\" TEXT NULL, \"Note\" TEXT NULL, CONSTRAINT \"FK_PurchaseReceiptLines_PurchaseReceipts_PurchaseReceiptId\" FOREIGN KEY (\"PurchaseReceiptId\") REFERENCES \"PurchaseReceipts\" (\"Id\") ON DELETE CASCADE, CONSTRAINT \"FK_PurchaseReceiptLines_Products_ProductId\" FOREIGN KEY (\"ProductId\") REFERENCES \"Products\" (\"Id\") ON DELETE RESTRICT);");
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_PurchaseReceiptLines_OrgId_PurchaseReceiptId\" ON \"PurchaseReceiptLines\" (\"OrgId\", \"PurchaseReceiptId\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"InventoryOutHists\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"WarehouseId\" INTEGER NOT NULL, \"FormType\" INTEGER NOT NULL DEFAULT 0, \"OutType\" INTEGER NOT NULL DEFAULT 0, \"InvOutType\" TEXT NULL, \"PMType\" TEXT NULL, \"PlateNo\" TEXT NULL, \"MoocNo\" TEXT NULL, \"DriverName\" TEXT NULL, \"DriverPhone\" TEXT NULL, \"AgentCode\" TEXT NULL, \"CustomerName\" TEXT NOT NULL DEFAULT '', \"Date\" TEXT NOT NULL, \"CreatedBy\" TEXT NOT NULL DEFAULT '', \"Status\" INTEGER NOT NULL DEFAULT 0, \"CreatedAt\" TEXT NOT NULL, \"ApprovedAt\" TEXT NULL, \"ApprovedBy\" TEXT NULL, \"Remark\" TEXT NULL, \"StockDocId\" INTEGER NULL, CONSTRAINT \"FK_InventoryOutHists_Warehouses_WarehouseId\" FOREIGN KEY (\"WarehouseId\") REFERENCES \"Warehouses\" (\"Id\") ON DELETE RESTRICT, CONSTRAINT \"FK_InventoryOutHists_Docs_StockDocId\" FOREIGN KEY (\"StockDocId\") REFERENCES \"Docs\" (\"Id\") ON DELETE SET NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_InventoryOutHists_OrgId_Code\" ON \"InventoryOutHists\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHists_OrgId_WarehouseId_Status\" ON \"InventoryOutHists\" (\"OrgId\", \"WarehouseId\", \"Status\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"InventoryOutHistLines\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"InventoryOutHistId\" INTEGER NOT NULL, \"ProductId\" INTEGER NOT NULL, \"Qty\" INTEGER NOT NULL DEFAULT 0, \"Note\" TEXT NULL, CONSTRAINT \"FK_InventoryOutHistLines_InventoryOutHists_InventoryOutHistId\" FOREIGN KEY (\"InventoryOutHistId\") REFERENCES \"InventoryOutHists\" (\"Id\") ON DELETE CASCADE, CONSTRAINT \"FK_InventoryOutHistLines_Products_ProductId\" FOREIGN KEY (\"ProductId\") REFERENCES \"Products\" (\"Id\") ON DELETE RESTRICT);");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHistLines_OrgId_InventoryOutHistId\" ON \"InventoryOutHistLines\" (\"OrgId\", \"InventoryOutHistId\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"InventoryOutHistSerials\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"InventoryOutHistId\" INTEGER NOT NULL, \"ProductId\" INTEGER NOT NULL, \"SerialNo\" TEXT NOT NULL, \"Note\" TEXT NULL, CONSTRAINT \"FK_InventoryOutHistSerials_InventoryOutHists_InventoryOutHistId\" FOREIGN KEY (\"InventoryOutHistId\") REFERENCES \"InventoryOutHists\" (\"Id\") ON DELETE CASCADE, CONSTRAINT \"FK_InventoryOutHistSerials_Products_ProductId\" FOREIGN KEY (\"ProductId\") REFERENCES \"Products\" (\"Id\") ON DELETE RESTRICT);");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_InventoryOutHistSerials_OrgId_InventoryOutHistId_ProductId_SerialNo\" ON \"InventoryOutHistSerials\" (\"OrgId\", \"InventoryOutHistId\", \"ProductId\", \"SerialNo\");");
         foreach (var s in sql)
         {
             try { await db.Database.ExecuteSqlRawAsync(s); } catch { }

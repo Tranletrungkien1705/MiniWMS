@@ -4301,6 +4301,99 @@ app.MapPost("/api/purchase-receipts/{id:int}/cancel", async (int id, IWmsService
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Phiếu xuất kho theo lịch sử (Inventory Out History - port từ InvF_InventoryOutHist Skycic)
+app.MapGet("/api/inventory-out-hists", async (int? warehouseId, OutHistStatus? status, OutHistOutType? outType, OutHistFormType? formType, DateTime? fromDate, DateTime? toDate, string? q, IWmsService svc) =>
+{
+    var report = await svc.InventoryOutHistsAsync(warehouseId, status, outType, formType, fromDate, toDate, q);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-out-hists/{id:int}", async (int id, IWmsService svc) =>
+{
+    var doc = await svc.GetInventoryOutHistAsync(id);
+    if (doc == null) return Results.NotFound(new { error = "Không tìm thấy phiếu xuất kho theo lịch sử." });
+    return Results.Ok(new
+    {
+        doc.Id,
+        doc.Code,
+        Warehouse = doc.Warehouse.Name,
+        doc.WarehouseId,
+        FormType = doc.FormType.ToString(),
+        OutType = doc.OutType.ToString(),
+        doc.InvOutType,
+        doc.PMType,
+        doc.PlateNo,
+        doc.MoocNo,
+        doc.DriverName,
+        doc.DriverPhone,
+        doc.AgentCode,
+        doc.CustomerName,
+        Date = doc.Date.ToString("yyyy-MM-dd"),
+        Status = doc.Status.ToString(),
+        doc.TotalQty,
+        doc.TotalSerialsCount,
+        doc.TotalItemsCount,
+        doc.StockDocId,
+        StockDocCode = doc.StockDoc?.Code,
+        doc.Remark,
+        doc.CreatedBy,
+        doc.CreatedAt,
+        ApprovedAt = doc.ApprovedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+        doc.ApprovedBy,
+        Lines = doc.Lines.Select(l => new { l.Id, ProductCode = l.Product.Code, ProductName = l.Product.Name, l.Product.Uom, l.ProductId, l.Qty, l.Note }),
+        Serials = doc.Serials.Select(s => new { s.Id, ProductCode = s.Product.Code, ProductName = s.Product.Name, s.ProductId, s.SerialNo, s.Note })
+    });
+});
+
+app.MapPost("/api/inventory-out-hists", async (CreateInventoryOutHistDto dto, IWmsService svc) =>
+{
+    if (dto.WarehouseId <= 0) return Results.BadRequest(new { error = "Cần WarehouseId." });
+    if (string.IsNullOrWhiteSpace(dto.CustomerName)) return Results.BadRequest(new { error = "Cần CustomerName." });
+    if (dto.Lines == null || dto.Lines.Count == 0) return Results.BadRequest(new { error = "Cần ít nhất 1 dòng hàng." });
+
+    try
+    {
+        var doc = new InventoryOutHist
+        {
+            WarehouseId = dto.WarehouseId,
+            FormType = dto.FormType ?? OutHistFormType.NoBarcode,
+            OutType = dto.OutType ?? OutHistOutType.Commercial,
+            InvOutType = dto.InvOutType?.Trim(),
+            PMType = dto.PMType?.Trim(),
+            PlateNo = dto.PlateNo?.Trim(),
+            MoocNo = dto.MoocNo?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            AgentCode = dto.AgentCode?.Trim(),
+            CustomerName = dto.CustomerName.Trim(),
+            Date = dto.Date ?? DateTime.Today,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = "api"
+        };
+        var lines = dto.Lines.Select(l => (l.ProductId, l.Qty, l.Note)).ToList();
+        var serials = (dto.Serials ?? new List<InventoryOutHistSerialDto>())
+            .Select(s => (s.ProductId, s.SerialNo, s.Note)).ToList();
+        var id = await svc.CreateInventoryOutHistAsync(doc, lines, serials);
+        return Results.Ok(new { id, code = doc.Code, status = doc.Status.ToString() });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/inventory-out-hists/{id:int}/approve", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ApproveInventoryOutHistAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-out-hists/{id:int}/cancel", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.CancelInventoryOutHistAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -4406,6 +4499,9 @@ record CalcVatDto(decimal NetAmount, string? VATRateCode);
 record CreateInventoryTransactionDto(int WarehouseId, int ProductId, InventoryTxnType TxnType, InventoryTxnQuality Quality, string? FunctionName, int QtyChTotalOK, int QtyChBlockOK, int QtyChTotalNG, int QtyChBlockNG, string? RefType, string? RefCode00, string? RefCode01, string? Remark);
 record CreatePurchaseReceiptDto(int WarehouseId, string? InvInTypeCode, string? InvInTypeName, string SupplierName, string? SupplierCode, string? InvoiceNo, DateTime? InvoiceDate, string? OrderNo, string? UserDeliver, string? VehicleNo, string? ContainerNo, string? ContractNo, DateTime? Date, string? Remark, List<PurchaseReceiptItemDto> Lines);
 record PurchaseReceiptItemDto(int ProductId, int Quantity, decimal UnitPrice, double VATRate, string? UnitCode, string? Note);
+record CreateInventoryOutHistDto(int WarehouseId, OutHistFormType? FormType, OutHistOutType? OutType, string? InvOutType, string? PMType, string? PlateNo, string? MoocNo, string? DriverName, string? DriverPhone, string? AgentCode, string CustomerName, DateTime? Date, string? Remark, List<InventoryOutHistItemDto> Lines, List<InventoryOutHistSerialDto>? Serials = null);
+record InventoryOutHistItemDto(int ProductId, int Qty, string? Note);
+record InventoryOutHistSerialDto(int ProductId, string SerialNo, string? Note);
 record CreateGovTaxOfficeDto(string? Code, string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
 record UpdateGovTaxOfficeDto(string Name, string? ParentCode, string? ProvinceCode, string? DistrictCode, string? Address, string? ContactEmail, string? ContactPhone, bool? IsActive);
 
