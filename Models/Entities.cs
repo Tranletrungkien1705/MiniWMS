@@ -24,6 +24,7 @@ public class Warehouse : IOrgOwned
     public string Name { get; set; } = "";
     public string? Address { get; set; }
     public string? InvTypeCode { get; set; } // Phân loại Loại kho (port từ Mst_InventoryType Skycic: KHO_TONG, KHO_NVL, KHO_TP, KHO_TC, KHO_BH, KHO_DL)
+    public string? InvLevelTypeCode { get; set; } // Phân loại Cấp kho (port từ Mst_InventoryLevelType Skycic: CAP_1, CAP_2, CAP_3, HUB, KHO_DAILY)
     public string? Remark { get; set; }      // Ghi chú / Mục đích sử dụng kho
 }
 
@@ -2060,6 +2061,50 @@ public record InventoryOutTypeDetailDto(
     int TotalDocs,
     int TotalQtyOut
 );
+
+/// <summary>Danh mục Cấp kho / Phân cấp quản lý kho hàng (port từ Mst_InventoryLevelType Skycic: InvLevelType, InvLevelTypeName, FlagActive, Remark).</summary>
+public class InventoryLevelType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã cấp kho (InvLevelType, vd: CAP_1, CAP_2, CAP_3, HUB, KHO_DAILY)
+    public string Name { get; set; } = "";          // Tên cấp kho (InvLevelTypeName, vd: Kho Cấp 1 - Tổng kho trung ương, Kho Cấp 2...)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Phạm vi & thẩm quyền điều phối kho (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị cấp kho kèm số lượng kho trực thuộc và tổng tồn kho thực tế.</summary>
+public record InventoryLevelTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int WarehouseCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách cấp kho tổng hợp kèm 4 thẻ KPI.</summary>
+public record InventoryLevelTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalLevels,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalWarehousesMapped,
+    List<InventoryLevelTypeRow> Rows
+);
+
+/// <summary>Chi tiết Cấp kho kèm danh sách các kho trực thuộc cấp này.</summary>
+public record InventoryLevelTypeDetailDto(
+    InventoryLevelType Item,
+    List<Warehouse> Warehouses,
+    int TotalWarehouses,
+    int TotalStockQty
+);
+
 
 
 

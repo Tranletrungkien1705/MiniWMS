@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0, int TotalInventoryTypes = 0, int TotalInventoryLevelTypes = 0);
 
 public interface IWmsService
 {
@@ -175,6 +175,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateInventoryTypeAsync(int id, InventoryType item);
     Task<(bool ok, string msg)> ToggleInventoryTypeStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteInventoryTypeAsync(int id);
+    Task<InventoryLevelTypeReport> InventoryLevelTypesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<InventoryLevelType>> InventoryLevelTypesAsync(string? q = null, bool? activeOnly = null);
+    Task<InventoryLevelType?> GetInventoryLevelTypeAsync(int id);
+    Task<InventoryLevelType?> GetInventoryLevelTypeByCodeAsync(string code);
+    Task<InventoryLevelTypeDetailDto?> GetInventoryLevelTypeDetailAsync(int id);
+    Task<int> CreateInventoryLevelTypeAsync(InventoryLevelType item);
+    Task<(bool ok, string msg)> UpdateInventoryLevelTypeAsync(int id, InventoryLevelType item);
+    Task<(bool ok, string msg)> ToggleInventoryLevelTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteInventoryLevelTypeAsync(int id);
     Task<InventoryInTypeReport> InventoryInTypesReportAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null);
     Task<List<InventoryInType>> InventoryInTypesAsync(string? q = null, bool? activeOnly = null, bool? statisticOnly = null);
     Task<InventoryInType?> GetInventoryInTypeAsync(int id);
@@ -1448,6 +1457,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var pendingOutFGs = await db.InventoryOutFGs.CountAsync(f => f.Status == InvOutFGStatus.Pending);
         var totalPartTypes = await db.PartTypes.CountAsync(p => p.IsActive);
         var totalInventoryTypes = await db.InventoryTypes.CountAsync(t => t.IsActive);
+        var totalInventoryLevelTypes = await db.InventoryLevelTypes.CountAsync(t => t.IsActive);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1471,7 +1481,8 @@ public class WmsService(AppDbContext db) : IWmsService
             pendingInFGs,
             pendingOutFGs,
             totalPartTypes,
-            totalInventoryTypes);
+            totalInventoryTypes,
+            totalInventoryLevelTypes);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -6464,6 +6475,160 @@ public class WmsService(AppDbContext db) : IWmsService
         db.InventoryTypes.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa loại kho '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Cấp kho / Phân cấp quản lý kho hàng tổng hợp kèm 4 thẻ KPI (port từ Mst_InventoryLevelType Skycic: InvLevelType, InvLevelTypeName, FlagActive, Remark).</summary>
+    public async Task<InventoryLevelTypeReport> InventoryLevelTypesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.InventoryLevelTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) ||
+                                     t.Name.ToLower().Contains(kw) ||
+                                     (t.Remark != null && t.Remark.ToLower().Contains(kw)));
+        }
+
+        var levels = await query.OrderBy(t => t.Code).ToListAsync();
+        var allWarehouses = await db.Warehouses.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var whGroup = allWarehouses
+            .Where(w => !string.IsNullOrEmpty(w.InvLevelTypeCode))
+            .GroupBy(w => w.InvLevelTypeCode!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = levels.Select(t =>
+        {
+            var wList = new List<Warehouse>();
+            if (whGroup.TryGetValue(t.Code, out var listByCode)) wList.AddRange(listByCode);
+            if (whGroup.TryGetValue(t.Name, out var listByName))
+            {
+                foreach (var w in listByName)
+                {
+                    if (!wList.Any(x => x.Id == w.Id)) wList.Add(w);
+                }
+            }
+            int wCount = wList.Count;
+            var wIds = wList.Select(w => w.Id).ToHashSet();
+            int totalStock = balances.Where(bal => wIds.Contains(bal.WarehouseId)).Sum(bal => bal.Qty);
+            return new InventoryLevelTypeRow(t.Id, t.Code, t.Name, t.Remark, t.IsActive, t.CreatedAt, wCount, totalStock);
+        }).ToList();
+
+        int totalLevels = await db.InventoryLevelTypes.CountAsync();
+        int activeCount = await db.InventoryLevelTypes.CountAsync(t => t.IsActive);
+        int inactiveCount = totalLevels - activeCount;
+
+        var levelCodes = (await db.InventoryLevelTypes.Select(t => t.Code).ToListAsync())
+            .Select(c => c.ToLowerInvariant()).ToHashSet();
+        int mappedWhs = allWarehouses.Count(w => !string.IsNullOrEmpty(w.InvLevelTypeCode) && levelCodes.Contains(w.InvLevelTypeCode.Trim().ToLowerInvariant()));
+
+        return new InventoryLevelTypeReport(q, activeOnly, totalLevels, activeCount, inactiveCount, mappedWhs, rows);
+    }
+
+    public Task<List<InventoryLevelType>> InventoryLevelTypesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.InventoryLevelTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(t => t.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(t => t.Code.ToLower().Contains(kw) || t.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(t => t.Code).ToListAsync();
+    }
+
+    public Task<InventoryLevelType?> GetInventoryLevelTypeAsync(int id) =>
+        db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
+
+    public Task<InventoryLevelType?> GetInventoryLevelTypeByCodeAsync(string code) =>
+        db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<InventoryLevelTypeDetailDto?> GetInventoryLevelTypeDetailAsync(int id)
+    {
+        var item = await db.InventoryLevelTypes.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var warehouses = allWarehouses
+            .Where(w => string.Equals(w.InvLevelTypeCode, item.Code, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(w.InvLevelTypeCode, item.Name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var balances = await BalancesAsync(null);
+        var wIds = warehouses.Select(w => w.Id).ToHashSet();
+        int totalStock = balances.Where(bal => wIds.Contains(bal.WarehouseId)).Sum(bal => bal.Qty);
+
+        return new InventoryLevelTypeDetailDto(item, warehouses, warehouses.Count, totalStock);
+    }
+
+    public async Task<int> CreateInventoryLevelTypeAsync(InventoryLevelType item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên cấp kho không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"CAP_{await db.InventoryLevelTypes.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.InventoryLevelTypes.AnyAsync(t => t.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã cấp kho '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.InventoryLevelTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateInventoryLevelTypeAsync(int id, InventoryLevelType item)
+    {
+        var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên cấp kho không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin cấp kho '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleInventoryLevelTypeStatusAsync(int id)
+    {
+        var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng cấp kho '{existing.Code}'." : $"Đã chuyển cấp kho '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteInventoryLevelTypeAsync(int id)
+    {
+        var existing = await db.InventoryLevelTypes.FirstOrDefaultAsync(t => t.Id == id);
+        if (existing == null) return (false, "Không tìm thấy cấp kho.");
+
+        bool isUsed = await db.Warehouses.AnyAsync(w => w.InvLevelTypeCode != null && (w.InvLevelTypeCode.ToLower() == existing.Code.ToLower() || w.InvLevelTypeCode.ToLower() == existing.Name.ToLower()));
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Cấp kho '{existing.Code}' đang được gán cho kho trong hệ thống nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.InventoryLevelTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa cấp kho '{existing.Code}'.");
     }
 
     /// <summary>Báo cáo danh mục Loại hình / Lý do Nhập kho tổng hợp kèm 4 thẻ KPI (port từ Mst_InvInType Skycic: InvInType, InvInTypeName, FlagActive, FlagStatistic, Remark).</summary>

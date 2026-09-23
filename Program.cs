@@ -1980,6 +1980,80 @@ app.MapDelete("/api/inventory-types/{id:int}", async (int id, IWmsService svc) =
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+// API Quản lý Cấp kho / Phân cấp quản lý kho hàng (port từ Mst_InventoryLevelType Skycic)
+app.MapGet("/api/inventory-level-types", async (string? q, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.InventoryLevelTypesReportAsync(q, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/inventory-level-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryLevelTypeAsync(id);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy cấp kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-level-types/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetInventoryLevelTypeByCodeAsync(code);
+    if (item == null) return Results.NotFound(new { error = "Không tìm thấy cấp kho." });
+    return Results.Ok(item);
+});
+
+app.MapGet("/api/inventory-level-types/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetInventoryLevelTypeDetailAsync(id);
+    if (detail == null) return Results.NotFound(new { error = "Không tìm thấy cấp kho." });
+    return Results.Ok(detail);
+});
+
+app.MapPost("/api/inventory-level-types", async (CreateInventoryLevelTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên cấp kho." });
+    try
+    {
+        var item = new InventoryLevelType
+        {
+            Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+            Name = dto.Name.Trim(),
+            Remark = dto.Remark?.Trim(),
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateInventoryLevelTypeAsync(item);
+        return Results.Ok(new { id, code = item.Code, name = item.Name });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/inventory-level-types/{id:int}", async (int id, UpdateInventoryLevelTypeDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần tên cấp kho." });
+    var item = new InventoryLevelType
+    {
+        Name = dto.Name.Trim(),
+        Remark = dto.Remark?.Trim(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateInventoryLevelTypeAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/inventory-level-types/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleInventoryLevelTypeStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/inventory-level-types/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteInventoryLevelTypeAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Quản lý Loại hình & Lý do Nhập kho (port từ Mst_InvInType Skycic)
 app.MapGet("/api/inventory-in-types", async (string? q, bool? activeOnly, bool? statisticOnly, IWmsService svc) =>
 {
@@ -2200,6 +2274,8 @@ record CreateProductModelDto(string? Code, string Name, string? BrandCode, strin
 record UpdateProductModelDto(string Name, string? BrandCode, string? OrgModelCode, string? Remark, bool? IsActive);
 record CreateInventoryTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
 record UpdateInventoryTypeDto(string Name, string? Remark, bool? IsActive);
+record CreateInventoryLevelTypeDto(string? Code, string Name, string? Remark, bool? IsActive);
+record UpdateInventoryLevelTypeDto(string Name, string? Remark, bool? IsActive);
 record CreateInventoryInTypeDto(string? Code, string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
 record UpdateInventoryInTypeDto(string Name, bool? FlagStatistic, string? Remark, bool? IsActive);
 record CreateInventoryOutTypeDto(string? Code, string Name, bool? FlagStatistic, string? Remark, bool? IsActive);

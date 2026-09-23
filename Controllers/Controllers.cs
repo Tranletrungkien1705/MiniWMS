@@ -16,11 +16,12 @@ public class WarehouseController(IWmsService svc) : Controller
     public async Task<IActionResult> Index()
     {
         ViewBag.InventoryTypes = await svc.InventoryTypesAsync(activeOnly: true);
+        ViewBag.InventoryLevelTypes = await svc.InventoryLevelTypesAsync(activeOnly: true);
         return View(await svc.WarehousesAsync());
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? address, string? invTypeCode, string? remark)
+    public async Task<IActionResult> Create(string name, string? code, string? address, string? invTypeCode, string? invLevelTypeCode, string? remark)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên kho."; return RedirectToAction(nameof(Index)); }
         await svc.CreateWarehouseAsync(new Warehouse
@@ -29,6 +30,7 @@ public class WarehouseController(IWmsService svc) : Controller
             Code = code ?? "",
             Address = address?.Trim(),
             InvTypeCode = string.IsNullOrWhiteSpace(invTypeCode) ? null : invTypeCode.Trim().ToUpperInvariant(),
+            InvLevelTypeCode = string.IsNullOrWhiteSpace(invLevelTypeCode) ? null : invLevelTypeCode.Trim().ToUpperInvariant(),
             Remark = remark?.Trim()
         });
         TempData["Success"] = "Đã tạo kho.";
@@ -3326,6 +3328,140 @@ public class InventoryTypeController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"LoaiKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class InventoryLevelTypeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.InventoryLevelTypesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetInventoryLevelTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy cấp kho." });
+        return Json(new
+        {
+            item = new
+            {
+                detail.Item.Id,
+                detail.Item.Code,
+                detail.Item.Name,
+                detail.Item.Remark,
+                detail.Item.IsActive,
+                CreatedAt = detail.Item.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            totalWarehouses = detail.TotalWarehouses,
+            totalStockQty = detail.TotalStockQty,
+            warehouses = detail.Warehouses.Select(w => new
+            {
+                w.Id,
+                w.Code,
+                w.Name,
+                w.Address,
+                w.Remark
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên cấp kho.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new InventoryLevelType
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive,
+            CreatedAt = DateTime.Now
+        };
+
+        try
+        {
+            await svc.CreateInventoryLevelTypeAsync(item);
+            TempData["Success"] = $"Đã tạo cấp kho '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên cấp kho.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new InventoryLevelType
+        {
+            Name = name.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateInventoryLevelTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleInventoryLevelTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteInventoryLevelTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.InventoryLevelTypesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC PHÂN CẤP CẤP KHO (MST_INVENTORYLEVELTYPE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã cấp kho;Tên cấp kho;Trạng thái;Số lượng kho trực thuộc;Tổng tồn kho thực tế;Ghi chú / Quy mô thẩm quyền;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{statusStr}\";{r.WarehouseCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ CẤP KHO:;{report.TotalLevels};;;;");
+        sb.AppendLine($";;TỔNG KHO ĐÃ PHÂN CẤP:;{report.TotalWarehousesMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"CapKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 
