@@ -31,6 +31,7 @@ public class Product : IOrgOwned
     public Guid OrgId { get; set; }
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
+    public string? PartTypeCode { get; set; } // Phân loại loại mặt hàng (port từ Mst_PartType: TP, BTP, NVL, PTLK, BBDG, CCDC, HHTM)
     public string Uom { get; set; } = "cái";
     public int MinStock { get; set; }
     public int MaxStock { get; set; }
@@ -1689,6 +1690,50 @@ public record CustomerDetailDto(
     int TotalOutQty,
     int TotalReturnQty
 );
+
+/// <summary>Danh mục Loại mặt hàng / Phân loại hàng hóa kho (port từ Mst_PartType Skycic: PartType, PartTypeName, FlagActive, Remark).</summary>
+public class PartType : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";          // Mã loại mặt hàng (PartType, vd: TP, BTP, NVL, PTLK, BBDG, CCDC, HHTM)
+    public string Name { get; set; } = "";          // Tên loại mặt hàng (PartTypeName)
+    public bool IsActive { get; set; } = true;      // Trạng thái áp dụng (FlagActive: 1 - Áp dụng, 0 - Ngừng áp dụng)
+    public string? Remark { get; set; }             // Ghi chú / Mô tả đặc tính hàng hóa (Remark)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị loại mặt hàng kèm số lượng sản phẩm liên kết và tổng tồn.</summary>
+public record PartTypeRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Remark,
+    bool IsActive,
+    DateTime CreatedAt,
+    int ProductCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách loại mặt hàng tổng hợp kèm 4 thẻ KPI.</summary>
+public record PartTypeReport(
+    string? Keyword,
+    bool? ActiveFilter,
+    int TotalTypes,
+    int ActiveCount,
+    int InactiveCount,
+    int TotalProductsMapped,
+    List<PartTypeRow> Rows
+);
+
+/// <summary>Chi tiết Loại mặt hàng kèm danh sách sản phẩm thuộc loại.</summary>
+public record PartTypeDetailDto(
+    PartType Item,
+    List<Product> Products,
+    int TotalProducts,
+    int TotalStockQty
+);
+
 
 
 

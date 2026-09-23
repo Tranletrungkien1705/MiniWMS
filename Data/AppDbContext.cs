@@ -37,11 +37,13 @@ public class AppDbContext : DbContext
     public DbSet<InventoryOutFGSerial> InventoryOutFGSerials => Set<InventoryOutFGSerial>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<PartType> PartTypes => Set<PartType>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         if (Database.IsNpgsql()) b.HasDefaultSchema("miniwms");
         b.Entity<Org>().HasIndex(x => x.ApiKey).IsUnique();
+        b.Entity<PartType>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Supplier>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Customer>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });
         b.Entity<Warehouse>(e => { e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique(); e.HasQueryFilter(x => x.OrgId == _orgId); });

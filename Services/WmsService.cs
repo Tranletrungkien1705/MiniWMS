@@ -5,7 +5,7 @@ using MiniWMS.Models;
 namespace MiniWMS.Services;
 
 public record BalanceRow(int WarehouseId, string Warehouse, int ProductId, string ProductCode, string ProductName, string Uom, int Qty, int MinStock);
-public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0);
+public record WmsDash(int Warehouses, int Products, int PostedDocs, int DraftDocs, int TotalOnHand, int LowStock, int PendingAudits, int PendingMoveOrders, int PendingReturns, int PendingCustomerReturns, int ExpiringLots = 0, int StagnantItems = 0, int DamagedSerials = 0, int TotalBlocks = 0, int TotalCostPrices = 0, int ClosedPeriods = 0, int TotalCartons = 0, int TotalBoxes = 0, int PendingInFGs = 0, int PendingOutFGs = 0, int TotalPartTypes = 0);
 
 public interface IWmsService
 {
@@ -121,6 +121,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> ToggleCustomerStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteCustomerAsync(int id);
     Task<CustomerDetailDto?> GetCustomerDetailAsync(int id);
+    Task<PartTypeReport> PartTypesReportAsync(string? q = null, bool? activeOnly = null);
+    Task<List<PartType>> PartTypesAsync(string? q = null, bool? activeOnly = null);
+    Task<PartType?> GetPartTypeAsync(int id);
+    Task<PartType?> GetPartTypeByCodeAsync(string code);
+    Task<PartTypeDetailDto?> GetPartTypeDetailAsync(int id);
+    Task<int> CreatePartTypeAsync(PartType item);
+    Task<(bool ok, string msg)> UpdatePartTypeAsync(int id, PartType item);
+    Task<(bool ok, string msg)> TogglePartTypeStatusAsync(int id);
+    Task<(bool ok, string msg)> DeletePartTypeAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -137,6 +146,8 @@ public class WmsService(AppDbContext db) : IWmsService
     public async Task<int> CreateProductAsync(Product p)
     {
         if (string.IsNullOrWhiteSpace(p.Code)) p.Code = $"SP{await db.Products.CountAsync() + 1:D4}";
+        p.Code = p.Code.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(p.PartTypeCode)) p.PartTypeCode = p.PartTypeCode.Trim().ToUpperInvariant();
         db.Products.Add(p); await db.SaveChangesAsync(); return p.Id;
     }
 
@@ -1368,6 +1379,7 @@ public class WmsService(AppDbContext db) : IWmsService
         var totalBoxes = await db.InventoryBoxes.CountAsync();
         var pendingInFGs = await db.InventoryInFGs.CountAsync(f => f.Status == InvInFGStatus.Pending);
         var pendingOutFGs = await db.InventoryOutFGs.CountAsync(f => f.Status == InvOutFGStatus.Pending);
+        var totalPartTypes = await db.PartTypes.CountAsync(p => p.IsActive);
 
         return new WmsDash(
             await db.Warehouses.CountAsync(),
@@ -1389,7 +1401,8 @@ public class WmsService(AppDbContext db) : IWmsService
             totalCartons,
             totalBoxes,
             pendingInFGs,
-            pendingOutFGs);
+            pendingOutFGs,
+            totalPartTypes);
     }
 
     public Task<List<StockSerial>> StockSerialsAsync(int? warehouseId, int? productId, StockSerialStatus? status)
@@ -5449,6 +5462,147 @@ public class WmsService(AppDbContext db) : IWmsService
             classCVal,
             rows
         );
+    }
+
+    /// <summary>Báo cáo danh mục Loại mặt hàng tổng hợp kèm KPI (port từ Mst_PartType Skycic).</summary>
+    public async Task<PartTypeReport> PartTypesReportAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(p => p.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(p => p.Code.ToLower().Contains(kw) ||
+                                     p.Name.ToLower().Contains(kw) ||
+                                     (p.Remark != null && p.Remark.ToLower().Contains(kw)));
+        }
+
+        var partTypes = await query.OrderBy(p => p.Code).ToListAsync();
+        var allProducts = await db.Products.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var prodGroup = allProducts
+            .Where(p => !string.IsNullOrEmpty(p.PartTypeCode))
+            .GroupBy(p => p.PartTypeCode!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var rows = partTypes.Select(pt =>
+        {
+            int pCount = prodGroup.TryGetValue(pt.Code, out var pList) ? pList.Count : 0;
+            var pIds = pList?.Select(p => p.Id).ToHashSet() ?? [];
+            int totalStock = balances.Where(b => pIds.Contains(b.ProductId)).Sum(b => b.Qty);
+            return new PartTypeRow(pt.Id, pt.Code, pt.Name, pt.Remark, pt.IsActive, pt.CreatedAt, pCount, totalStock);
+        }).ToList();
+
+        int totalTypes = await db.PartTypes.CountAsync();
+        int activeCount = await db.PartTypes.CountAsync(p => p.IsActive);
+        int inactiveCount = totalTypes - activeCount;
+        int mappedProds = allProducts.Count(p => !string.IsNullOrEmpty(p.PartTypeCode));
+
+        return new PartTypeReport(q, activeOnly, totalTypes, activeCount, inactiveCount, mappedProds, rows);
+    }
+
+    public Task<List<PartType>> PartTypesAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.PartTypes.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(p => p.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(p => p.Code).ToListAsync();
+    }
+
+    public Task<PartType?> GetPartTypeAsync(int id) =>
+        db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
+
+    public Task<PartType?> GetPartTypeByCodeAsync(string code) =>
+        db.PartTypes.FirstOrDefaultAsync(p => p.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<PartTypeDetailDto?> GetPartTypeDetailAsync(int id)
+    {
+        var pt = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
+        if (pt == null) return null;
+
+        var products = await db.Products
+            .Where(p => p.PartTypeCode != null && p.PartTypeCode.ToLower() == pt.Code.ToLower())
+            .OrderBy(p => p.Code)
+            .ToListAsync();
+
+        var balances = await BalancesAsync(null);
+        var pIds = products.Select(p => p.Id).ToHashSet();
+        int totalStock = balances.Where(b => pIds.Contains(b.ProductId)).Sum(b => b.Qty);
+
+        return new PartTypeDetailDto(pt, products, products.Count, totalStock);
+    }
+
+    public async Task<int> CreatePartTypeAsync(PartType item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên loại mặt hàng không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"PT{await db.PartTypes.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        bool exists = await db.PartTypes.AnyAsync(p => p.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã loại mặt hàng '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.PartTypes.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdatePartTypeAsync(int id, PartType item)
+    {
+        var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên loại mặt hàng không được để trống.");
+
+        existing.Name = item.Name.Trim();
+        existing.Remark = item.Remark?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin loại mặt hàng '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> TogglePartTypeStatusAsync(int id)
+    {
+        var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng loại mặt hàng '{existing.Code}'." : $"Đã chuyển loại mặt hàng '{existing.Code}' sang trạng thái Ngừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeletePartTypeAsync(int id)
+    {
+        var existing = await db.PartTypes.FirstOrDefaultAsync(p => p.Id == id);
+        if (existing == null) return (false, "Không tìm thấy loại mặt hàng.");
+
+        bool isUsed = await db.Products.AnyAsync(p => p.PartTypeCode != null && p.PartTypeCode.ToLower() == existing.Code.ToLower());
+        if (isUsed)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            return (true, $"Loại mặt hàng '{existing.Code}' đang được gán cho sản phẩm trong kho nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.PartTypes.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa loại mặt hàng '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

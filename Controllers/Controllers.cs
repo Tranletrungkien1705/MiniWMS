@@ -26,12 +26,25 @@ public class WarehouseController(IWmsService svc) : Controller
 
 public class ProductController(IWmsService svc) : Controller
 {
-    public async Task<IActionResult> Index() => View(await svc.ProductsAsync());
+    public async Task<IActionResult> Index()
+    {
+        ViewBag.PartTypes = await svc.PartTypesAsync(activeOnly: true);
+        return View(await svc.ProductsAsync());
+    }
+
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string uom, int minStock, int maxStock = 0)
+    public async Task<IActionResult> Create(string name, string? code, string? partTypeCode, string uom, int minStock, int maxStock = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên hàng."; return RedirectToAction(nameof(Index)); }
-        await svc.CreateProductAsync(new Product { Name = name.Trim(), Code = code ?? "", Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom, MinStock = minStock, MaxStock = maxStock });
+        await svc.CreateProductAsync(new Product
+        {
+            Name = name.Trim(),
+            Code = code ?? "",
+            PartTypeCode = string.IsNullOrWhiteSpace(partTypeCode) ? null : partTypeCode.Trim().ToUpperInvariant(),
+            Uom = string.IsNullOrWhiteSpace(uom) ? "cái" : uom,
+            MinStock = minStock,
+            MaxStock = maxStock
+        });
         TempData["Success"] = "Đã tạo mặt hàng.";
         return RedirectToAction(nameof(Index));
     }
@@ -2468,6 +2481,142 @@ public class InventoryValuationController(IWmsService svc) : Controller
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         var fileName = $"BaoCao_DinhGiaTonKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
         return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+}
+
+public class PartTypeController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? q, bool? activeOnly)
+    {
+        ViewBag.Keyword = q ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        var report = await svc.PartTypesReportAsync(q, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetPartTypeDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy loại mặt hàng." });
+        return Json(new
+        {
+            item = new
+            {
+                detail.Item.Id,
+                detail.Item.Code,
+                detail.Item.Name,
+                detail.Item.Remark,
+                detail.Item.IsActive,
+                CreatedAt = detail.Item.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            },
+            totalProducts = detail.TotalProducts,
+            totalStockQty = detail.TotalStockQty,
+            products = detail.Products.Select(p => new
+            {
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Uom,
+                p.MinStock,
+                p.MaxStock,
+                p.CostPrice
+            })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string code, string name, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên loại mặt hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new PartType
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive,
+            CreatedAt = DateTime.Now
+        };
+
+        try
+        {
+            await svc.CreatePartTypeAsync(item);
+            TempData["Success"] = $"Đã tạo loại mặt hàng '{item.Name}' ({item.Code}).";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? remark, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên loại mặt hàng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new PartType
+        {
+            Name = name.Trim(),
+            Remark = remark?.Trim(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdatePartTypeAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.TogglePartTypeStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeletePartTypeAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, bool? activeOnly)
+    {
+        var report = await svc.PartTypesReportAsync(q, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC PHÂN LOẠI LOẠI MẶT HÀNG KHO (MST_PARTTYPE)");
+        sb.AppendLine($"Ngày xuất:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Ngừng áp dụng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã loại;Tên loại mặt hàng;Trạng thái;Số lượng SP;Tổng tồn kho;Ghi chú / Mô tả;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Ngừng áp dụng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{statusStr}\";{r.ProductCount};{r.TotalStockQty};\"{r.Remark?.Replace("\"", "\"\"")}\";{r.CreatedAt:dd/MM/yyyy}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ LOẠI MẶT HÀNG:;{report.TotalTypes};;;;");
+        sb.AppendLine($";;TỔNG MẶT HÀNG ĐÃ PHÂN LOẠI:;{report.TotalProductsMapped};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"LoaiMatHang_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 
