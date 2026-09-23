@@ -1,0 +1,583 @@
+@model AreaReport
+@{
+    ViewData["Title"] = "Vùng & Khu vực kho";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var parentCodeFilter = (string)(ViewBag.ParentCode ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var rootAreas = ViewBag.RootAreas as List<Area> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-geo-alt text-primary me-2"></i>Danh mục Vùng thị trường & Khu vực địa bàn kho</h5>
+        <div class="text-muted small">Port từ <code>Mst_Area</code> & <code>Mst_CustomerInArea</code> (Skycic) — Quản lý danh mục vùng thị trường & khu vực địa bàn kho theo phân cấp cây cha-con (AreaCode, AreaName, AreaDesc, AreaCodeParent, FlagActive), liên kết phân bổ kho hàng vật lý và hệ thống khách hàng / đại lý, thống kê số kho, số khách hàng và tổng tồn kho thực tế theo từng khu vực</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Area/ExportCsv?q=@keyword&parentCode=@parentCodeFilter&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-printer me-1"></i> In danh mục
+        </button>
+        <a href="/Warehouse" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-building me-1"></i> Kho hàng
+        </a>
+        <a href="/Customer" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-people me-1"></i> Khách hàng / Đại lý
+        </a>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createAreaModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Vùng / Khu vực
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ KHU VỰC</span>
+                    <i class="bi bi-geo-alt text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalAreas</div>
+                <div class="small text-muted">Vùng thị trường & địa bàn trong hệ thống</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">VÙNG GỐC (CẤP 1)</span>
+                    <i class="bi bi-diagram-2 text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.RootAreasCount</div>
+                <div class="small text-muted">Vùng thị trường chiến lược trọng điểm</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHU VỰC NHÁNH (CẤP 2)</span>
+                    <i class="bi bi-diagram-3 text-info fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-info">@Model.SubAreasCount</div>
+                <div class="small text-muted">Địa bàn / Chi nhánh trực thuộc vùng</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">KHO & ĐẠI LÝ PHÂN BỔ</span>
+                    <i class="bi bi-boxes text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.TotalWarehousesAssigned <span class="fs-6 fw-normal text-muted">kho</span> / @Model.TotalCustomersAssigned <span class="fs-6 fw-normal text-muted">khách</span></div>
+                <div class="small text-muted">Tổng tồn kho: <strong>@Model.TotalStockQty.ToString("N0")</strong> đơn vị sp</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã khu vực, tên vùng, mô tả địa bàn..." />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="parentCode" class="form-select form-select-sm">
+                    <option value="">-- Tất cả vùng cha --</option>
+                    <option value="ROOT" selected="@(parentCodeFilter == "ROOT")">★ Chỉ hiển thị Vùng gốc (Cấp 1)</option>
+                    @foreach (var ra in rootAreas)
+                    {
+                        <!option value="@ra.Code" @(string.Equals(parentCodeFilter, ra.Code, StringComparison.OrdinalIgnoreCase) ? "selected" : "")>Khu vực con của: @ra.Name (@ra.Code)</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="bi bi-funnel me-1"></i>Lọc</button>
+                <a href="/Area" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Vùng & Khu vực -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width: 50px;">STT</th>
+                    <th style="width: 120px;">Mã khu vực</th>
+                    <th>Tên Vùng / Khu vực</th>
+                    <th style="width: 130px;">Cấp bậc</th>
+                    <th style="width: 180px;">Vùng trực thuộc cha</th>
+                    <th>Mô tả phạm vi logistics</th>
+                    <th class="text-center" style="width: 110px;">Kho trực thuộc</th>
+                    <th class="text-center" style="width: 120px;">Khách hàng / ĐL</th>
+                    <th class="text-end" style="width: 130px;">Tồn thực tế</th>
+                    <th class="text-center" style="width: 120px;">Trạng thái</th>
+                    <th class="text-end" style="width: 150px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ int idx = 1; }
+                @foreach (var r in Model.Rows)
+                {
+                    <tr>
+                        <td class="text-center text-muted small">@idx</td>
+                        <td>
+                            <span class="badge bg-light text-dark border font-monospace">@r.Code</span>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-dark">
+                                @if (r.Level == 2)
+                                {
+                                    <span class="text-muted me-1">↳</span>
+                                }
+                                @r.Name
+                            </div>
+                        </td>
+                        <td>
+                            @if (r.Level == 1)
+                            {
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                    <i class="bi bi-diagram-2 me-1"></i>Cấp 1 (Gốc)
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-info-subtle text-info border border-info-subtle">
+                                    <i class="bi bi-diagram-3 me-1"></i>Cấp 2 (Nhánh)
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.ParentCode))
+                            {
+                                <span class="badge bg-light text-dark border">
+                                    <i class="bi bi-arrow-return-right me-1 text-muted"></i>@(r.ParentName ?? r.ParentCode)
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small"><em>(Vùng chính)</em></span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-muted text-truncate" style="max-width: 250px;" title="@r.Description">
+                                @(r.Description ?? "—")
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            @if (r.WarehouseCount > 0)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold">
+                                    <i class="bi bi-building me-1"></i>@r.WarehouseCount kho
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0</span>
+                            }
+                        </td>
+                        <td class="text-center">
+                            @if (r.CustomerCount > 0)
+                            {
+                                <span class="badge bg-info-subtle text-info border border-info-subtle fw-semibold">
+                                    <i class="bi bi-people me-1"></i>@r.CustomerCount khách
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">0</span>
+                            }
+                        </td>
+                        <td class="text-end fw-semibold text-dark">
+                            @r.TotalStockQty.ToString("N0")
+                        </td>
+                        <td class="text-center">
+                            @if (r.IsActive)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="bi bi-check-circle me-1"></i>Đang áp dụng
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                                    <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                </span>
+                            }
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" title="Xem chi tiết phân cấp, kho và khách hàng" onclick="openDetailModal(@r.Id)">
+                                    <i class="bi bi-info-circle"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@r.Id, '@Html.Raw(r.Code)', '@Html.Raw(r.Name)', '@Html.Raw(r.Description ?? "")', '@Html.Raw(r.ParentCode ?? "")', @(r.IsActive ? "true" : "false"))">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form asp-action="Toggle" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-secondary" title="@(r.IsActive ? "Tạm dừng áp dụng" : "Kích hoạt áp dụng")">
+                                        <i class="bi @(r.IsActive ? "bi-toggle-on text-success" : "bi-toggle-off text-muted")"></i>
+                                    </button>
+                                </form>
+                                <form asp-action="Delete" method="post" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa hoặc ngừng áp dụng khu vực \'@r.Name\' (@r.Code)?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@r.Id" />
+                                    <button type="submit" class="btn btn-outline-danger" title="Xóa khu vực">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    idx++;
+                }
+                @if (Model.Rows.Count == 0)
+                {
+                    <tr>
+                        <td colspan="11" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                            Không tìm thấy Vùng / Khu vực nào phù hợp với bộ lọc tìm kiếm.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Thêm mới Vùng / Khu vực -->
+<div class="modal fade" id="createAreaModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="Create" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <div class="modal-header bg-light">
+                <h6 class="modal-title fw-bold text-primary mb-0">
+                    <i class="bi bi-plus-circle me-1"></i> Thêm mới Vùng / Khu vực thị trường
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Mã khu vực <span class="text-danger">*</span></label>
+                        <input type="text" name="code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="vd: AREA_MB, AREA_HN..." required />
+                        <div class="form-text small" style="font-size: 11px;">Mã chuẩn hóa (AreaCode)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Vùng trực thuộc cha</label>
+                        <select name="parentCode" class="form-select form-select-sm">
+                            <option value="">-- Là Vùng gốc (Cấp 1) --</option>
+                            @foreach (var ra in rootAreas)
+                            {
+                                <option value="@ra.Code">@ra.Name (@ra.Code)</option>
+                            }
+                        </select>
+                        <div class="form-text small" style="font-size: 11px;">Để trống nếu là vùng cấp 1</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Tên Vùng / Khu vực <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-sm" placeholder="vd: Vùng Miền Bắc, Khu vực Hà Nội..." required />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Mô tả phạm vi & Logistics</label>
+                        <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Mô tả phạm vi địa lý giao nhận, các tỉnh thành phụ trách..."></textarea>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch mt-1">
+                            <input class="form-check-input" type="checkbox" name="isActive" value="true" id="createIsActive" checked />
+                            <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Lưu khu vực</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Chỉnh sửa Vùng / Khu vực -->
+<div class="modal fade" id="editAreaModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="Update" method="post" class="modal-content">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="editId" />
+            <div class="modal-header bg-light">
+                <h6 class="modal-title fw-bold text-primary mb-0">
+                    <i class="bi bi-pencil-square me-1"></i> Cập nhật Vùng / Khu vực thị trường
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Mã khu vực</label>
+                        <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold text-muted">Vùng trực thuộc cha</label>
+                        <select name="parentCode" id="editParentCode" class="form-select form-select-sm">
+                            <option value="">-- Là Vùng gốc (Cấp 1) --</option>
+                            @foreach (var ra in rootAreas)
+                            {
+                                <option value="@ra.Code">@ra.Name (@ra.Code)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Tên Vùng / Khu vực <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editName" class="form-control form-control-sm" required />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold text-muted">Mô tả phạm vi & Logistics</label>
+                        <textarea name="description" id="editDescription" class="form-control form-control-sm" rows="2"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch mt-1">
+                            <input class="form-check-input" type="checkbox" name="isActive" value="true" id="editIsActive" />
+                            <label class="form-check-label small fw-semibold" for="editIsActive">Đang áp dụng</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i> Lưu thay đổi</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Chi tiết Vùng / Khu vực -->
+<div class="modal fade" id="areaDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <div>
+                    <h6 class="modal-title fw-bold text-primary mb-0" id="detailAreaTitle">
+                        <i class="bi bi-geo-alt-fill me-1"></i> Chi tiết Vùng / Khu vực kho
+                    </h6>
+                    <div class="text-muted small" id="detailAreaSub"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <!-- Thống kê nhanh của khu vực -->
+                <div class="row g-2 mb-3">
+                    <div class="col-3">
+                        <div class="border rounded p-2 text-center bg-light">
+                            <div class="text-muted small" style="font-size: 11px;">Khu vực con</div>
+                            <div class="fw-bold text-primary fs-5" id="detailSubAreaCount">0</div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 text-center bg-light">
+                            <div class="text-muted small" style="font-size: 11px;">Kho hàng</div>
+                            <div class="fw-bold text-success fs-5" id="detailWarehouseCount">0</div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 text-center bg-light">
+                            <div class="text-muted small" style="font-size: 11px;">Khách hàng / ĐL</div>
+                            <div class="fw-bold text-info fs-5" id="detailCustomerCount">0</div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 text-center bg-light">
+                            <div class="text-muted small" style="font-size: 11px;">Tổng tồn thực tế</div>
+                            <div class="fw-bold text-dark fs-5" id="detailStockQty">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs danh sách chi tiết -->
+                <ul class="nav nav-tabs nav-tabs-bordered mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active btn-sm" data-bs-toggle="tab" data-bs-target="#tab-subareas" type="button">
+                            <i class="bi bi-diagram-3 me-1"></i>Khu vực con (<span id="tabBadgeSubAreas">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link btn-sm" data-bs-toggle="tab" data-bs-target="#tab-warehouses" type="button">
+                            <i class="bi bi-building me-1"></i>Kho hàng trực thuộc (<span id="tabBadgeWarehouses">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link btn-sm" data-bs-toggle="tab" data-bs-target="#tab-customers" type="button">
+                            <i class="bi bi-people me-1"></i>Khách hàng & Đại lý (<span id="tabBadgeCustomers">0</span>)
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="tab-subareas">
+                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Mã khu vực</th>
+                                        <th>Tên khu vực nhánh</th>
+                                        <th class="text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodySubAreas">
+                                    <tr><td colspan="3" class="text-center text-muted py-3">Không có khu vực nhánh trực thuộc.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="tab-warehouses">
+                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Mã kho</th>
+                                        <th>Tên kho hàng</th>
+                                        <th>Địa chỉ kho</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodyWarehouses">
+                                    <tr><td colspan="3" class="text-center text-muted py-3">Không có kho hàng trực thuộc.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="tab-customers">
+                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Mã KH</th>
+                                        <th>Tên khách hàng / Đại lý</th>
+                                        <th>Phân loại</th>
+                                        <th>Tỉnh / Thành</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBodyCustomers">
+                                    <tr><td colspan="4" class="text-center text-muted py-3">Không có khách hàng trực thuộc khu vực này.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function openEditModal(id, code, name, description, parentCode, isActive) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editCode').value = code;
+    document.getElementById('editName').value = name;
+    document.getElementById('editDescription').value = description;
+    document.getElementById('editParentCode').value = parentCode;
+    document.getElementById('editIsActive').checked = isActive;
+    new bootstrap.Modal(document.getElementById('editAreaModal')).show();
+}
+
+async function openDetailModal(id) {
+    const modalEl = document.getElementById('areaDetailModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+
+    document.getElementById('tableBodySubAreas').innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>';
+    document.getElementById('tableBodyWarehouses').innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>';
+    document.getElementById('tableBodyCustomers').innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Đang tải dữ liệu...</td></tr>';
+
+    try {
+        const res = await fetch(`/Area/Detail/${id}`);
+        if (!res.ok) throw new Error('Không thể tải thông tin khu vực.');
+        const data = await res.json();
+
+        document.getElementById('detailAreaTitle').innerHTML = `<i class="bi bi-geo-alt-fill me-1"></i> ${data.name} <span class="badge bg-primary ms-1">${data.code}</span>`;
+        document.getElementById('detailAreaSub').innerText = `${data.parentName ? 'Trực thuộc: ' + data.parentName + ' (' + data.parentCode + ') · ' : 'Vùng gốc Cấp 1 · '}${data.description || 'Chưa có mô tả'}`;
+
+        document.getElementById('detailSubAreaCount').innerText = (data.subAreas || []).length;
+        document.getElementById('detailWarehouseCount').innerText = data.totalWarehouses;
+        document.getElementById('detailCustomerCount').innerText = data.totalCustomers;
+        document.getElementById('detailStockQty').innerText = Number(data.totalStockQty).toLocaleString();
+
+        document.getElementById('tabBadgeSubAreas').innerText = (data.subAreas || []).length;
+        document.getElementById('tabBadgeWarehouses').innerText = data.totalWarehouses;
+        document.getElementById('tabBadgeCustomers').innerText = data.totalCustomers;
+
+        // Populate Sub-areas
+        const subTbody = document.getElementById('tableBodySubAreas');
+        if (data.subAreas && data.subAreas.length > 0) {
+            subTbody.innerHTML = data.subAreas.map(s => `
+                <tr>
+                    <td><code>${s.code}</code></td>
+                    <td class="fw-semibold">${s.name}</td>
+                    <td class="text-center"><span class="badge ${s.isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}">${s.isActive ? 'Áp dụng' : 'Tạm dừng'}</span></td>
+                </tr>
+            `).join('');
+        } else {
+            subTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Không có khu vực con trực thuộc.</td></tr>';
+        }
+
+        // Populate Warehouses
+        const whTbody = document.getElementById('tableBodyWarehouses');
+        if (data.warehouses && data.warehouses.length > 0) {
+            whTbody.innerHTML = data.warehouses.map(w => `
+                <tr>
+                    <td><code>${w.code}</code></td>
+                    <td class="fw-semibold">${w.name}</td>
+                    <td class="small text-muted">${w.address || '—'}</td>
+                </tr>
+            `).join('');
+        } else {
+            whTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Chưa có kho hàng nào được gắn vào khu vực này.</td></tr>';
+        }
+
+        // Populate Customers
+        const custTbody = document.getElementById('tableBodyCustomers');
+        if (data.customers && data.customers.length > 0) {
+            custTbody.innerHTML = data.customers.map(c => `
+                <tr>
+                    <td><code>${c.code}</code></td>
+                    <td class="fw-semibold">${c.name}</td>
+                    <td><span class="badge bg-light text-dark border">${c.customerType}</span></td>
+                    <td class="small text-muted">${c.province || '—'}</td>
+                </tr>
+            `).join('');
+        } else {
+            custTbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Chưa có khách hàng/đại lý nào được gắn vào khu vực này.</td></tr>';
+        }
+    } catch (e) {
+        document.getElementById('tableBodySubAreas').innerHTML = `<tr><td colspan="3" class="text-center text-danger py-3">${e.message}</td></tr>`;
+        document.getElementById('tableBodyWarehouses').innerHTML = `<tr><td colspan="3" class="text-center text-danger py-3">${e.message}</td></tr>`;
+        document.getElementById('tableBodyCustomers').innerHTML = `<tr><td colspan="4" class="text-center text-danger py-3">${e.message}</td></tr>`;
+    }
+}
+</script>
+}

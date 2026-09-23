@@ -19,8 +19,8 @@ public static class Seeder
         if (!await db.Warehouses.AnyAsync())
         {
             db.Warehouses.AddRange(
-                new Warehouse { Code = "KHO-HN", Name = "Kho Hà Nội", Address = "KCN Bắc Thăng Long", InvTypeCode = "KHO_TONG", InvLevelTypeCode = "CAP_1", Remark = "Tổng kho trung tâm miền Bắc điều phối hàng hóa toàn quốc" },
-                new Warehouse { Code = "KHO-HCM", Name = "Kho TP.HCM", Address = "KCN Tân Bình", InvTypeCode = "KHO_TC", InvLevelTypeCode = "CAP_2", Remark = "Kho trung chuyển và cung ứng khu vực miền Nam" });
+                new Warehouse { Code = "KHO-HN", Name = "Kho Hà Nội", Address = "KCN Bắc Thăng Long", InvTypeCode = "KHO_TONG", InvLevelTypeCode = "CAP_1", AreaCode = "AREA_HN", Remark = "Tổng kho trung tâm miền Bắc điều phối hàng hóa toàn quốc" },
+                new Warehouse { Code = "KHO-HCM", Name = "Kho TP.HCM", Address = "KCN Tân Bình", InvTypeCode = "KHO_TC", InvLevelTypeCode = "CAP_2", AreaCode = "AREA_HCM", Remark = "Kho trung chuyển và cung ứng khu vực miền Nam" });
             await db.SaveChangesAsync();
         }
         else
@@ -46,6 +46,16 @@ public static class Seeder
                         "KHO-HN" => "CAP_1",
                         "KHO-HCM" => "CAP_2",
                         _ => "CAP_3"
+                    };
+                    whChanged = true;
+                }
+                if (string.IsNullOrWhiteSpace(w.AreaCode))
+                {
+                    w.AreaCode = w.Code switch
+                    {
+                        "KHO-HN" => "AREA_HN",
+                        "KHO-HCM" => "AREA_HCM",
+                        _ => "AREA_HN"
                     };
                     whChanged = true;
                 }
@@ -304,6 +314,22 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.Areas.AnyAsync())
+        {
+            db.Areas.AddRange(
+                // Vùng gốc Cấp 1 (Root Market Regions)
+                new Area { Code = "AREA_MB", Name = "Vùng Miền Bắc", Description = "Vùng thị trường & mạng lưới logistics kho Miền Bắc (Hà Nội, Hải Phòng, Bắc Ninh...)", ParentCode = null, IsActive = true },
+                new Area { Code = "AREA_MT", Name = "Vùng Miền Trung & Tây Nguyên", Description = "Vùng thị trường & mạng lưới logistics kho Miền Trung (Đà Nẵng, Quảng Nam, Huế...)", ParentCode = null, IsActive = true },
+                new Area { Code = "AREA_MN", Name = "Vùng Miền Nam", Description = "Vùng thị trường & mạng lưới logistics kho Miền Nam (TP.HCM, Cần Thơ, Bình Dương...)", ParentCode = null, IsActive = true },
+                // Khu vực nhánh Cấp 2 (Sub-areas / Branch territories)
+                new Area { Code = "AREA_HN", Name = "Khu vực Hà Nội & Vùng phụ cận", Description = "Đầu mối phân phối trung tâm thủ đô Hà Nội, Bắc Ninh, Hưng Yên", ParentCode = "AREA_MB", IsActive = true },
+                new Area { Code = "AREA_HP", Name = "Khu vực Duyên hải Hải Phòng - Quảng Ninh", Description = "Khu vực cảng biển và chuỗi phân phối duyên hải phía Bắc", ParentCode = "AREA_MB", IsActive = true },
+                new Area { Code = "AREA_DN", Name = "Khu vực Đà Nẵng & Trung Trung Bộ", Description = "Trung tâm phân phối logistics và đại lý khu vực Đà Nẵng, Quảng Nam", ParentCode = "AREA_MT", IsActive = true },
+                new Area { Code = "AREA_HCM", Name = "Khu vực TP. Hồ Chí Minh & Đông Nam Bộ", Description = "Trung tâm tiêu thụ lớn nhất, phân phối TP.HCM, Bình Dương, Đồng Nai", ParentCode = "AREA_MN", IsActive = true },
+                new Area { Code = "AREA_CT", Name = "Khu vực Cần Thơ & Tây Nam Bộ", Description = "Đầu mối giao nhận kho và phân phối khu vực Đồng bằng Sông Cửu Long", ParentCode = "AREA_MN", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Products.AnyAsync())
         {
             db.Products.AddRange(
@@ -482,6 +508,7 @@ public static class Seeder
                     Email = "khohang@fptshop.com.vn",
                     Address = "261 Khánh Hội, Phường 2, Quận 4, TP.HCM",
                     Province = "TP.HCM",
+                    AreaCode = "AREA_HCM",
                     TaxCode = "0105777650",
                     IsActive = true,
                     Note = "Hệ thống đại lý phân phối thiết bị & thời trang cao cấp",
@@ -498,6 +525,7 @@ public static class Seeder
                     Email = "giaonhan@thegioididong.com",
                     Address = "Lô T2-1.2, Đường D1, Khu Công nghệ cao, TP. Thủ Đức, TP.HCM",
                     Province = "TP.HCM",
+                    AreaCode = "AREA_HCM",
                     TaxCode = "0303217354",
                     IsActive = true,
                     Note = "Chuỗi siêu thị phân phối bán lẻ quy mô toàn quốc",
@@ -514,6 +542,7 @@ public static class Seeder
                     Email = "vattu@vnpt.vn",
                     Address = "57 Huỳnh Thúc Kháng, Đống Đa, Hà Nội",
                     Province = "Hà Nội",
+                    AreaCode = "AREA_HN",
                     TaxCode = "0106869738",
                     IsActive = true,
                     Note = "Hợp đồng dự án cấp phát đồng phục & vật tư định kỳ",
@@ -530,6 +559,7 @@ public static class Seeder
                     Email = "kinhdoanh@bachhoamienbac.vn",
                     Address = "18 Tam Trinh, Hoàng Mai, Hà Nội",
                     Province = "Hà Nội",
+                    AreaCode = "AREA_HN",
                     TaxCode = "0107896541",
                     IsActive = true,
                     Note = "Đối tác lấy buôn phân phối cho mạng lưới cửa hàng bán buôn",
@@ -546,6 +576,7 @@ public static class Seeder
                     Email = "anphucorp@gmail.com",
                     Address = "220 Nguyễn Văn Linh, Q. Hải Châu, TP. Đà Nẵng",
                     Province = "Đà Nẵng",
+                    AreaCode = "AREA_DN",
                     TaxCode = "0401889922",
                     IsActive = true,
                     Note = "Đại lý ủy quyền độc quyền khu vực Miền Trung",
@@ -562,6 +593,7 @@ public static class Seeder
                     Email = "khachle@miniwms.vn",
                     Address = "Tại quầy nhận hàng kho trung tâm",
                     Province = "Hà Nội",
+                    AreaCode = "AREA_HN",
                     TaxCode = "",
                     IsActive = true,
                     Note = "Khách mua lẻ trực tiếp thanh toán ngay",
@@ -569,6 +601,28 @@ public static class Seeder
                 }
             );
             await db.SaveChangesAsync();
+        }
+        else
+        {
+            var existingCusts = await db.Customers.ToListAsync();
+            bool custChanged = false;
+            foreach (var c in existingCusts)
+            {
+                if (string.IsNullOrWhiteSpace(c.AreaCode))
+                {
+                    c.AreaCode = c.Code switch
+                    {
+                        "KH-FPT" => "AREA_HCM",
+                        "KH-MWG" => "AREA_HCM",
+                        "KH-VNPT" => "AREA_HN",
+                        "KH-BACHHOA" => "AREA_HN",
+                        "KH-ANPHU" => "AREA_DN",
+                        _ => "AREA_HN"
+                    };
+                    custChanged = true;
+                }
+            }
+            if (custChanged) await db.SaveChangesAsync();
         }
         if (!await db.Docs.AnyAsync())
         {
@@ -2342,7 +2396,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -2377,11 +2431,16 @@ public static class Seeder
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_Code\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_ParentCode\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"ParentCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_ProductGroups_OrgId_BrandCode\" ON miniwms.\"ProductGroups\" (\"OrgId\", \"BrandCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Areas\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL, \"Description\" text NULL, \"ParentCode\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Areas_OrgId_Code\" ON miniwms.\"Areas\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Areas_OrgId_ParentCode\" ON miniwms.\"Areas\" (\"OrgId\", \"ParentCode\")",
         };
         foreach (var t in tables) sql.Add($"ALTER TABLE miniwms.\"{t}\" ADD COLUMN IF NOT EXISTS \"OrgId\" uuid NOT NULL DEFAULT '{def}'");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvTypeCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"InvLevelTypeCode\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"AreaCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Warehouses\" ADD COLUMN IF NOT EXISTS \"Remark\" text NULL");
+        sql.Add("ALTER TABLE miniwms.\"Customers\" ADD COLUMN IF NOT EXISTS \"AreaCode\" text NULL");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"MaxStock\" integer NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"CostPrice\" numeric NOT NULL DEFAULT 0");
         sql.Add("ALTER TABLE miniwms.\"Products\" ADD COLUMN IF NOT EXISTS \"PartTypeCode\" text NULL");
@@ -2941,7 +3000,21 @@ public static class Seeder
             );",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_Code"" ON ""ProductGroups"" (""OrgId"", ""Code"");",
             @"CREATE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_ParentCode"" ON ""ProductGroups"" (""OrgId"", ""ParentCode"");",
-            @"CREATE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_BrandCode"" ON ""ProductGroups"" (""OrgId"", ""BrandCode"");"
+            @"CREATE INDEX IF NOT EXISTS ""IX_ProductGroups_OrgId_BrandCode"" ON ""ProductGroups"" (""OrgId"", ""BrandCode"");",
+            @"ALTER TABLE ""Warehouses"" ADD COLUMN ""AreaCode"" TEXT NULL;",
+            @"ALTER TABLE ""Customers"" ADD COLUMN ""AreaCode"" TEXT NULL;",
+            @"CREATE TABLE IF NOT EXISTS ""Areas"" (
+                ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                ""OrgId"" TEXT NOT NULL,
+                ""Code"" TEXT NOT NULL,
+                ""Name"" TEXT NOT NULL,
+                ""Description"" TEXT NULL,
+                ""ParentCode"" TEXT NULL,
+                ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                ""CreatedAt"" TEXT NOT NULL
+            );",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Areas_OrgId_Code"" ON ""Areas"" (""OrgId"", ""Code"");",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Areas_OrgId_ParentCode"" ON ""Areas"" (""OrgId"", ""ParentCode"");"
         };
         foreach (var s in sql)
         {

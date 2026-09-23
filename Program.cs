@@ -2454,6 +2454,82 @@ app.MapDelete("/api/product-groups/{id:int}", async (int id, IWmsService svc) =>
     return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
 });
 
+app.MapGet("/api/areas", async (string? q, string? parentCode, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.AreasReportAsync(q, parentCode, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/areas/{id:int}", async (int id, IWmsService svc) =>
+{
+    var item = await svc.GetAreaAsync(id);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy vùng / khu vực." });
+});
+
+app.MapGet("/api/areas/by-code/{code}", async (string code, IWmsService svc) =>
+{
+    var item = await svc.GetAreaByCodeAsync(code);
+    return item != null ? Results.Ok(item) : Results.NotFound(new { error = "Không tìm thấy vùng / khu vực." });
+});
+
+app.MapGet("/api/areas/{id:int}/detail", async (int id, IWmsService svc) =>
+{
+    var detail = await svc.GetAreaDetailAsync(id);
+    return detail != null ? Results.Ok(detail) : Results.NotFound(new { error = "Không tìm thấy vùng / khu vực." });
+});
+
+app.MapPost("/api/areas", async (CreateAreaDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên vùng / khu vực." });
+
+    var item = new Area
+    {
+        Code = dto.Code?.Trim().ToUpperInvariant() ?? "",
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        IsActive = dto.IsActive ?? true
+    };
+    try
+    {
+        var id = await svc.CreateAreaAsync(item);
+        return Results.Ok(new { success = true, id, code = item.Code });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/areas/{id:int}", async (int id, UpdateAreaDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name))
+        return Results.BadRequest(new { error = "Cần tên vùng / khu vực." });
+
+    var item = new Area
+    {
+        Name = dto.Name.Trim(),
+        Description = dto.Description?.Trim(),
+        ParentCode = string.IsNullOrWhiteSpace(dto.ParentCode) ? null : dto.ParentCode.Trim().ToUpperInvariant(),
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateAreaAsync(id, item);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/areas/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleAreaStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/areas/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteAreaAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
 app.Run();
 
@@ -2521,3 +2597,5 @@ record UpdateUserMapInventoryDto(string UserName, string? UserRole, string? Emai
 record BatchMapUserDto(int WarehouseId, List<BatchMapUserItemDto> Users, string? AssignedBy);
 record CreateProductGroupDto(string? Code, string Name, string? Description, string? ParentCode, string? BrandCode, bool? IsActive);
 record UpdateProductGroupDto(string Name, string? Description, string? ParentCode, string? BrandCode, bool? IsActive);
+record CreateAreaDto(string? Code, string Name, string? Description, string? ParentCode, bool? IsActive);
+record UpdateAreaDto(string Name, string? Description, string? ParentCode, bool? IsActive);

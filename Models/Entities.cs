@@ -25,6 +25,7 @@ public class Warehouse : IOrgOwned
     public string? Address { get; set; }
     public string? InvTypeCode { get; set; } // Phân loại Loại kho (port từ Mst_InventoryType Skycic: KHO_TONG, KHO_NVL, KHO_TP, KHO_TC, KHO_BH, KHO_DL)
     public string? InvLevelTypeCode { get; set; } // Phân loại Cấp kho (port từ Mst_InventoryLevelType Skycic: CAP_1, CAP_2, CAP_3, HUB, KHO_DAILY)
+    public string? AreaCode { get; set; }    // Phân loại Vùng / Khu vực kho (port từ Mst_Area Skycic: AREA_MB, AREA_MN, AREA_MT...)
     public string? Remark { get; set; }      // Ghi chú / Mục đích sử dụng kho
 }
 
@@ -228,6 +229,7 @@ public class Customer : IOrgOwned
     public string? Email { get; set; }                 // Email (CustomerEmail)
     public string? Address { get; set; }               // Địa chỉ nhận hàng / giao hàng (CustomerAddress)
     public string? Province { get; set; }              // Tỉnh / Thành phố (ProvinceCode)
+    public string? AreaCode { get; set; }              // Vùng / Khu vực thị trường (port từ Mst_Area / Mst_CustomerInArea Skycic)
     public string? ContactName { get; set; }           // Người đại diện / liên hệ (ContactName)
     public string? ContactPhone { get; set; }          // Điện thoại người liên hệ (ContactPhone)
     public string? TaxCode { get; set; }               // Mã số thuế (TaxCode)
@@ -2228,6 +2230,61 @@ public record ProductGroupDetailDto(
     List<ProductGroup> SubGroups,
     List<Product> Products,
     int TotalProducts,
+    int TotalStockQty
+);
+
+/// <summary>Danh mục Vùng thị trường & Khu vực địa bàn kho (port từ Mst_Area Skycic: AreaCode, AreaName, AreaDesc, AreaCodeParent, FlagActive).</summary>
+public class Area : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã khu vực (AreaCode, vd: AREA_MB, AREA_MT, AREA_MN, AREA_HN, AREA_HCM...)
+    public string Name { get; set; } = "";             // Tên khu vực (AreaName, vd: Vùng Miền Bắc, Khu vực Hà Nội & Vùng phụ cận...)
+    public string? Description { get; set; }          // Mô tả địa bàn / phạm vi logistics (AreaDesc)
+    public string? ParentCode { get; set; }           // Mã khu vực cha (AreaCodeParent) - phân cấp cây vùng Cấp 1 / Cấp 2
+    public bool IsActive { get; set; } = true;         // Trạng thái hoạt động (FlagActive: 1 - Đang áp dụng, 0 - Tạm dừng)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Dòng thông tin hiển thị khu vực kèm thông tin khu vực cha, số lượng kho, số khách hàng/đại lý và tổng tồn kho thực tế.</summary>
+public record AreaRow(
+    int Id,
+    string Code,
+    string Name,
+    string? Description,
+    string? ParentCode,
+    string? ParentName,
+    bool IsActive,
+    DateTime CreatedAt,
+    int Level, // 1 = Vùng gốc (Root), 2 = Khu vực con / Chi nhánh địa bàn (Sub-area)
+    int WarehouseCount,
+    int CustomerCount,
+    int TotalStockQty
+);
+
+/// <summary>Báo cáo / Danh sách vùng & khu vực thị trường tổng hợp kèm 4 thẻ KPI.</summary>
+public record AreaReport(
+    string? Keyword,
+    string? ParentFilter,
+    bool? ActiveFilter,
+    int TotalAreas,
+    int RootAreasCount,
+    int SubAreasCount,
+    int TotalWarehousesAssigned,
+    int TotalCustomersAssigned,
+    int TotalStockQty,
+    List<AreaRow> Rows
+);
+
+/// <summary>Chi tiết Vùng / Khu vực kèm danh sách các khu vực con, kho hàng và khách hàng trực thuộc.</summary>
+public record AreaDetailDto(
+    Area Area,
+    Area? ParentArea,
+    List<Area> SubAreas,
+    List<Warehouse> Warehouses,
+    List<Customer> Customers,
+    int TotalWarehouses,
+    int TotalCustomers,
     int TotalStockQty
 );
 

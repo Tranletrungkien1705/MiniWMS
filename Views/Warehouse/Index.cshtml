@@ -5,13 +5,18 @@
     var invTypeDict = invTypes.ToDictionary(t => t.Code, t => t.Name, StringComparer.OrdinalIgnoreCase);
     var invLevelTypes = ViewBag.InventoryLevelTypes as List<InventoryLevelType> ?? [];
     var invLevelTypeDict = invLevelTypes.ToDictionary(t => t.Code, t => t.Name, StringComparer.OrdinalIgnoreCase);
+    var areas = ViewBag.Areas as List<Area> ?? [];
+    var areaDict = areas.ToDictionary(a => a.Code, a => a.Name, StringComparer.OrdinalIgnoreCase);
 }
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h5 class="fw-bold mb-1"><i class="bi bi-building text-primary me-2"></i>Quản lý Danh sách Kho hàng</h5>
-        <div class="text-muted small">Cấu hình các kho hàng vật lý, chi nhánh, phân loại theo <code>Mst_InventoryType</code> & <code>Mst_InventoryLevelType</code> và quản lý vị trí sơ đồ khay kệ</div>
+        <div class="text-muted small">Cấu hình các kho hàng vật lý, chi nhánh, phân loại theo <code>Mst_Area</code>, <code>Mst_InventoryType</code> & <code>Mst_InventoryLevelType</code> và quản lý vị trí sơ đồ khay kệ</div>
     </div>
     <div class="d-flex gap-2">
+        <a href="/Area" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-geo-alt me-1"></i> Danh mục Vùng kho
+        </a>
         <a href="/InventoryLevelType" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-layers-half me-1"></i> Danh mục Cấp kho
         </a>
@@ -42,6 +47,14 @@
                     }
                 </select>
             </div>
+            <div class="mb-2">
+                <select name="areaCode" class="form-select form-select-sm">
+                    <option value="">-- Chọn Vùng / Khu vực kho (Mst_Area) --</option>
+                    @foreach (var ar in areas) {
+                        <option value="@ar.Code">@ar.Name (@ar.Code)</option>
+                    }
+                </select>
+            </div>
             <div class="mb-2"><input name="address" class="form-control form-control-sm" placeholder="Địa chỉ kho" /></div>
             <div class="mb-3"><input name="remark" class="form-control form-control-sm" placeholder="Ghi chú / Mục đích sử dụng" /></div>
             <button class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-lg me-1"></i>Tạo kho</button>
@@ -54,22 +67,33 @@
                     <tr>
                         <th style="width: 100px;">Mã kho</th>
                         <th>Tên kho</th>
-                        <th style="width: 150px;">Cấp kho</th>
-                        <th style="width: 150px;">Loại kho</th>
+                        <th style="width: 130px;">Vùng / Khu vực</th>
+                        <th style="width: 140px;">Cấp kho</th>
+                        <th style="width: 140px;">Loại kho</th>
                         <th>Địa chỉ</th>
-                        <th class="text-end" style="width: 130px;">Sơ đồ kho</th>
+                        <th class="text-end" style="width: 120px;">Sơ đồ kho</th>
                     </tr>
                 </thead>
                 <tbody>
                 @foreach (var w in Model) {
                     var typeName = !string.IsNullOrEmpty(w.InvTypeCode) && invTypeDict.TryGetValue(w.InvTypeCode, out var tn) ? tn : w.InvTypeCode;
                     var levelName = !string.IsNullOrEmpty(w.InvLevelTypeCode) && invLevelTypeDict.TryGetValue(w.InvLevelTypeCode, out var ln) ? ln : w.InvLevelTypeCode;
+                    var areaName = !string.IsNullOrEmpty(w.AreaCode) && areaDict.TryGetValue(w.AreaCode, out var an) ? an : w.AreaCode;
                     <tr>
                         <td class="fw-semibold"><code>@w.Code</code></td>
                         <td>
                             <div class="fw-bold">@w.Name</div>
                             @if (!string.IsNullOrEmpty(w.Remark)) {
                                 <div class="text-muted small"><i class="bi bi-info-circle me-1"></i>@w.Remark</div>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(w.AreaCode)) {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                    <i class="bi bi-geo-alt me-1"></i>@areaName
+                                </span>
+                            } else {
+                                <span class="text-muted small">—</span>
                             }
                         </td>
                         <td>
@@ -98,7 +122,7 @@
                         </td>
                     </tr>
                 }
-                @if (Model.Count == 0) { <tr><td colspan="6" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
+                @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Chưa có kho.</td></tr> }
                 </tbody>
             </table>
         </div>

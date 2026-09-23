@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryOutType> InventoryOutTypes => Set<InventoryOutType>();
     public DbSet<UserMapInventory> UserMapInventories => Set<UserMapInventory>();
     public DbSet<ProductGroup> ProductGroups => Set<ProductGroup>();
+    public DbSet<Area> Areas => Set<Area>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -58,6 +59,12 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
             e.HasIndex(x => new { x.OrgId, x.ParentCode });
             e.HasIndex(x => new { x.OrgId, x.BrandCode });
+            e.HasQueryFilter(x => x.OrgId == _orgId);
+        });
+        b.Entity<Area>(e =>
+        {
+            e.HasIndex(x => new { x.OrgId, x.Code }).IsUnique();
+            e.HasIndex(x => new { x.OrgId, x.ParentCode });
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
         b.Entity<UserMapInventory>(e =>

@@ -225,6 +225,15 @@ public interface IWmsService
     Task<(bool ok, string msg)> UpdateProductGroupAsync(int id, ProductGroup item);
     Task<(bool ok, string msg)> ToggleProductGroupStatusAsync(int id);
     Task<(bool ok, string msg)> DeleteProductGroupAsync(int id);
+    Task<AreaReport> AreasReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null);
+    Task<List<Area>> AreasAsync(string? q = null, bool? activeOnly = null);
+    Task<Area?> GetAreaAsync(int id);
+    Task<Area?> GetAreaByCodeAsync(string code);
+    Task<AreaDetailDto?> GetAreaDetailAsync(int id);
+    Task<int> CreateAreaAsync(Area item);
+    Task<(bool ok, string msg)> UpdateAreaAsync(int id, Area item);
+    Task<(bool ok, string msg)> ToggleAreaStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteAreaAsync(int id);
     Task<WmsDash> DashboardAsync();
 }
 
@@ -7447,6 +7456,250 @@ public class WmsService(AppDbContext db) : IWmsService
         db.ProductGroups.Remove(existing);
         await db.SaveChangesAsync();
         return (true, $"Đã xóa nhóm hàng '{existing.Code}'.");
+    }
+
+    /// <summary>Báo cáo danh mục Vùng & Khu vực thị trường kèm 4 thẻ KPI (port từ Mst_Area Skycic).</summary>
+    public async Task<AreaReport> AreasReportAsync(string? q = null, string? parentCode = null, bool? activeOnly = null)
+    {
+        var query = db.Areas.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(parentCode))
+        {
+            if (parentCode.Equals("ROOT", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(a => string.IsNullOrEmpty(a.ParentCode));
+            else
+                query = query.Where(a => a.ParentCode != null && a.ParentCode.ToLower() == parentCode.Trim().ToLower());
+        }
+
+        if (activeOnly.HasValue)
+            query = query.Where(a => a.IsActive == activeOnly.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) ||
+                                     a.Name.ToLower().Contains(kw) ||
+                                     (a.Description != null && a.Description.ToLower().Contains(kw)));
+        }
+
+        var allAreas = await db.Areas.ToListAsync();
+        var areas = await query.ToListAsync();
+        var warehouses = await db.Warehouses.ToListAsync();
+        var customers = await db.Customers.ToListAsync();
+        var balances = await BalancesAsync(null);
+
+        var areaDict = allAreas.ToDictionary(a => a.Code.ToUpperInvariant(), a => a.Name);
+
+        var rows = areas.Select(a =>
+        {
+            var codeUpper = a.Code.ToUpperInvariant();
+            var parentUpper = a.ParentCode?.ToUpperInvariant();
+
+            int level = string.IsNullOrWhiteSpace(a.ParentCode) ? 1 : 2;
+            string? parentName = (parentUpper != null && areaDict.TryGetValue(parentUpper, out var pName)) ? pName : null;
+
+            var assignedWarehouses = warehouses.Where(w => !string.IsNullOrEmpty(w.AreaCode) && w.AreaCode.Equals(a.Code, StringComparison.OrdinalIgnoreCase)).ToList();
+            int warehouseCount = assignedWarehouses.Count;
+
+            var childAreaCodes = allAreas.Where(sub => sub.ParentCode != null && sub.ParentCode.Equals(a.Code, StringComparison.OrdinalIgnoreCase)).Select(sub => sub.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var allRelevantWarehouses = warehouses.Where(w => !string.IsNullOrEmpty(w.AreaCode) && (w.AreaCode.Equals(a.Code, StringComparison.OrdinalIgnoreCase) || childAreaCodes.Contains(w.AreaCode))).ToList();
+            var allWhIds = allRelevantWarehouses.Select(w => w.Id).ToHashSet();
+            int totalStockQty = balances.Where(bal => allWhIds.Contains(bal.WarehouseId)).Sum(bal => bal.Qty);
+
+            var assignedCustomers = customers.Where(c => !string.IsNullOrEmpty(c.AreaCode) && (c.AreaCode.Equals(a.Code, StringComparison.OrdinalIgnoreCase) || childAreaCodes.Contains(c.AreaCode))).ToList();
+            int customerCount = assignedCustomers.Count;
+
+            return new AreaRow(
+                a.Id,
+                a.Code,
+                a.Name,
+                a.Description,
+                a.ParentCode,
+                parentName,
+                a.IsActive,
+                a.CreatedAt,
+                level,
+                warehouseCount,
+                customerCount,
+                totalStockQty
+            );
+        }).OrderBy(r => string.IsNullOrWhiteSpace(r.ParentCode) ? r.Code : r.ParentCode)
+          .ThenBy(r => r.Level)
+          .ThenBy(r => r.Code)
+          .ToList();
+
+        int totalAreas = allAreas.Count;
+        int rootAreasCount = allAreas.Count(a => string.IsNullOrWhiteSpace(a.ParentCode));
+        int subAreasCount = totalAreas - rootAreasCount;
+
+        var allAssignedWarehouses = warehouses.Where(w => !string.IsNullOrEmpty(w.AreaCode)).ToList();
+        int totalWarehousesAssigned = allAssignedWarehouses.Count;
+
+        var allAssignedCustomers = customers.Where(c => !string.IsNullOrEmpty(c.AreaCode)).ToList();
+        int totalCustomersAssigned = allAssignedCustomers.Count;
+
+        var assignedWhIds = allAssignedWarehouses.Select(w => w.Id).ToHashSet();
+        int grandTotalStock = balances.Where(bal => assignedWhIds.Contains(bal.WarehouseId)).Sum(bal => bal.Qty);
+
+        return new AreaReport(
+            q,
+            parentCode,
+            activeOnly,
+            totalAreas,
+            rootAreasCount,
+            subAreasCount,
+            totalWarehousesAssigned,
+            totalCustomersAssigned,
+            grandTotalStock,
+            rows
+        );
+    }
+
+    public Task<List<Area>> AreasAsync(string? q = null, bool? activeOnly = null)
+    {
+        var query = db.Areas.AsQueryable();
+        if (activeOnly.HasValue) query = query.Where(a => a.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLowerInvariant();
+            query = query.Where(a => a.Code.ToLower().Contains(kw) || a.Name.ToLower().Contains(kw));
+        }
+        return query.OrderBy(a => string.IsNullOrWhiteSpace(a.ParentCode) ? a.Code : a.ParentCode)
+                    .ThenBy(a => a.Code)
+                    .ToListAsync();
+    }
+
+    public Task<Area?> GetAreaAsync(int id) =>
+        db.Areas.FirstOrDefaultAsync(a => a.Id == id);
+
+    public Task<Area?> GetAreaByCodeAsync(string code) =>
+        db.Areas.FirstOrDefaultAsync(a => a.Code.ToLower() == code.Trim().ToLower());
+
+    public async Task<AreaDetailDto?> GetAreaDetailAsync(int id)
+    {
+        var item = await db.Areas.FirstOrDefaultAsync(x => x.Id == id);
+        if (item == null) return null;
+
+        var parent = !string.IsNullOrWhiteSpace(item.ParentCode)
+            ? await db.Areas.FirstOrDefaultAsync(a => a.Code.ToLower() == item.ParentCode.Trim().ToLower())
+            : null;
+
+        var subAreas = await db.Areas
+            .Where(a => a.ParentCode != null && a.ParentCode.ToLower() == item.Code.Trim().ToLower())
+            .OrderBy(a => a.Code)
+            .ToListAsync();
+
+        var childAreaCodes = subAreas.Select(s => s.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var warehouses = await db.Warehouses
+            .Where(w => !string.IsNullOrEmpty(w.AreaCode) && (w.AreaCode.ToLower() == item.Code.Trim().ToLower() || childAreaCodes.Contains(w.AreaCode)))
+            .OrderBy(w => w.Code)
+            .ToListAsync();
+
+        var customers = await db.Customers
+            .Where(c => !string.IsNullOrEmpty(c.AreaCode) && (c.AreaCode.ToLower() == item.Code.Trim().ToLower() || childAreaCodes.Contains(c.AreaCode)))
+            .OrderBy(c => c.Code)
+            .ToListAsync();
+
+        var balances = await BalancesAsync(null);
+        var whIds = warehouses.Select(w => w.Id).ToHashSet();
+        int totalStock = balances.Where(bal => whIds.Contains(bal.WarehouseId)).Sum(bal => bal.Qty);
+
+        return new AreaDetailDto(item, parent, subAreas, warehouses, customers, warehouses.Count, customers.Count, totalStock);
+    }
+
+    public async Task<int> CreateAreaAsync(Area item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+            throw new ArgumentException("Tên vùng / khu vực không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"AREA_{await db.Areas.CountAsync() + 1:D2}";
+        }
+        else
+        {
+            item.Code = item.Code.Trim().ToUpperInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            item.ParentCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (item.ParentCode.Equals(item.Code, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Vùng cha không thể là chính khu vực này.");
+        }
+
+        bool exists = await db.Areas.AnyAsync(a => a.Code == item.Code);
+        if (exists)
+            throw new InvalidOperationException($"Mã khu vực '{item.Code}' đã tồn tại trong hệ thống.");
+
+        item.CreatedAt = DateTime.Now;
+        db.Areas.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateAreaAsync(int id, Area item)
+    {
+        var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+            return (false, "Tên vùng / khu vực không được để trống.");
+
+        if (!string.IsNullOrWhiteSpace(item.ParentCode))
+        {
+            var pCode = item.ParentCode.Trim().ToUpperInvariant();
+            if (pCode.Equals(existing.Code, StringComparison.OrdinalIgnoreCase))
+                return (false, "Vùng cha không thể là chính khu vực này.");
+            existing.ParentCode = pCode;
+        }
+        else
+        {
+            existing.ParentCode = null;
+        }
+
+        existing.Name = item.Name.Trim();
+        existing.Description = item.Description?.Trim();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật thông tin khu vực '{existing.Code}'.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleAreaStatusAsync(int id)
+    {
+        var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt áp dụng khu vực '{existing.Code}'." : $"Đã chuyển khu vực '{existing.Code}' sang trạng thái Tạm dừng áp dụng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteAreaAsync(int id)
+    {
+        var existing = await db.Areas.FirstOrDefaultAsync(a => a.Id == id);
+        if (existing == null) return (false, "Không tìm thấy vùng / khu vực.");
+
+        bool hasWarehouses = await db.Warehouses.AnyAsync(w => w.AreaCode != null && w.AreaCode.ToUpper() == existing.Code.ToUpper());
+        bool hasCustomers = await db.Customers.AnyAsync(c => c.AreaCode != null && c.AreaCode.ToUpper() == existing.Code.ToUpper());
+        bool hasSubAreas = await db.Areas.AnyAsync(a => a.ParentCode != null && a.ParentCode.ToUpper() == existing.Code.ToUpper());
+
+        if (hasWarehouses || hasCustomers || hasSubAreas)
+        {
+            existing.IsActive = false;
+            await db.SaveChangesAsync();
+            var reasons = new List<string>();
+            if (hasWarehouses) reasons.Add("kho hàng trực thuộc");
+            if (hasCustomers) reasons.Add("khách hàng/đại lý");
+            if (hasSubAreas) reasons.Add("khu vực nhánh trực thuộc");
+            return (true, $"Khu vực '{existing.Code}' đang có {string.Join(", ", reasons)} nên đã được chuyển sang trạng thái Ngừng áp dụng thay vì xóa hẳn.");
+        }
+
+        db.Areas.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa khu vực '{existing.Code}'.");
     }
 
     private static string Prefix(DocType t) => t switch { DocType.In => "PN", DocType.Out => "PX", DocType.Transfer => "PC", _ => "PK" };

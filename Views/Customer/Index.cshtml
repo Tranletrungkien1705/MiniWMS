@@ -4,6 +4,8 @@
     var keyword = (string)(ViewBag.Keyword ?? "");
     var selectedType = (string)(ViewBag.CustomerType ?? "");
     var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var areas = ViewBag.Areas as List<Area> ?? [];
+    var areaDict = areas.ToDictionary(a => a.Code, a => a.Name, StringComparer.OrdinalIgnoreCase);
 
     int totalCount = Model.Count;
     int agentCount = Model.Count(c => c.CustomerType == "Đại lý phân phối");
@@ -17,6 +19,9 @@
         <div class="text-muted small">Port từ <code>Mst_Customer</code> (Skycic) — Quản lý hồ sơ khách hàng, đại lý phân phối, liên kết xuất bán hàng và nhập hàng khách trả lại</div>
     </div>
     <div class="d-flex gap-2">
+        <a href="/Area" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-geo-alt me-1"></i> Vùng & Khu vực
+        </a>
         <a href="/Customer/ExportCsv?q=@keyword&customerType=@selectedType&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
             <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
         </a>
@@ -193,7 +198,12 @@
                             </div>
                             @if (!string.IsNullOrEmpty(c.Province))
                             {
-                                <div class="small text-muted"><i class="bi bi-geo-alt me-1 text-muted"></i>@c.Province</div>
+                                <div class="small text-muted"><i class="bi bi-geo me-1 text-muted"></i>@c.Province</div>
+                            }
+                            @if (!string.IsNullOrEmpty(c.AreaCode))
+                            {
+                                var aName = areaDict.TryGetValue(c.AreaCode, out var an) ? an : c.AreaCode;
+                                <div><span class="badge bg-success-subtle text-success border border-success-subtle mt-1" style="font-size: 11px;"><i class="bi bi-geo-alt me-1"></i>@aName</span></div>
                             }
                         </td>
                         <td class="text-center">
@@ -215,7 +225,7 @@
                                 <button type="button" class="btn btn-outline-info" title="Xem hồ sơ & Lịch sử xuất hàng" onclick="openDetailModal(@c.Id)">
                                     <i class="bi bi-clock-history"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
+                                <button type="button" class="btn btn-outline-primary" title="Chỉnh sửa thông tin" onclick="openEditModal(@c.Id, '@Html.Raw(c.Code)', '@Html.Raw(c.Name)', '@Html.Raw(c.CustomerType)', '@Html.Raw(c.ContactName ?? "")', '@Html.Raw(c.ContactPhone ?? "")', '@Html.Raw(c.Phone ?? "")', '@Html.Raw(c.Email ?? "")', '@Html.Raw(c.Address ?? "")', '@Html.Raw(c.Province ?? "")', '@Html.Raw(c.AreaCode ?? "")', '@Html.Raw(c.TaxCode ?? "")', '@Html.Raw(c.Note ?? "")', @(c.IsActive ? "true" : "false"))">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <form asp-action="Toggle" method="post" class="d-inline">
@@ -279,6 +289,16 @@
                     <div class="col-md-4">
                         <label class="form-label small fw-semibold text-muted">Tỉnh / Thành phố</label>
                         <input type="text" name="province" class="form-control form-control-sm" placeholder="vd: Hà Nội, TP.HCM..." />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Vùng / Khu vực (Mst_Area)</label>
+                        <select name="areaCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Vùng / Khu vực --</option>
+                            @foreach (var ar in areas)
+                            {
+                                <option value="@ar.Code">@ar.Name (@ar.Code)</option>
+                            }
+                        </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold text-muted">Người đại diện / liên hệ</label>
@@ -350,6 +370,16 @@
                     <div class="col-md-4">
                         <label class="form-label small fw-semibold text-muted">Tỉnh / Thành phố</label>
                         <input type="text" name="province" id="editProvince" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-muted">Vùng / Khu vực (Mst_Area)</label>
+                        <select name="areaCode" id="editAreaCode" class="form-select form-select-sm">
+                            <option value="">-- Chọn Vùng / Khu vực --</option>
+                            @foreach (var ar in areas)
+                            {
+                                <option value="@ar.Code">@ar.Name (@ar.Code)</option>
+                            }
+                        </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold text-muted">Người đại diện / liên hệ</label>
@@ -531,7 +561,7 @@
 
 @section Scripts {
 <script>
-function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, taxCode, note, isActive) {
+function openEditModal(id, code, name, type, contactName, contactPhone, phone, email, address, province, areaCode, taxCode, note, isActive) {
     document.getElementById('editId').value = id;
     document.getElementById('editCode').value = code;
     document.getElementById('editName').value = name;
@@ -542,6 +572,7 @@ function openEditModal(id, code, name, type, contactName, contactPhone, phone, e
     document.getElementById('editEmail').value = email;
     document.getElementById('editAddress').value = address;
     document.getElementById('editProvince').value = province;
+    document.getElementById('editAreaCode').value = areaCode || '';
     document.getElementById('editTaxCode').value = taxCode;
     document.getElementById('editNote').value = note;
     document.getElementById('editIsActive').checked = isActive;

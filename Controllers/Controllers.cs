@@ -17,11 +17,12 @@ public class WarehouseController(IWmsService svc) : Controller
     {
         ViewBag.InventoryTypes = await svc.InventoryTypesAsync(activeOnly: true);
         ViewBag.InventoryLevelTypes = await svc.InventoryLevelTypesAsync(activeOnly: true);
+        ViewBag.Areas = await svc.AreasAsync(activeOnly: true);
         return View(await svc.WarehousesAsync());
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? address, string? invTypeCode, string? invLevelTypeCode, string? remark)
+    public async Task<IActionResult> Create(string name, string? code, string? address, string? invTypeCode, string? invLevelTypeCode, string? areaCode, string? remark)
     {
         if (string.IsNullOrWhiteSpace(name)) { TempData["Error"] = "Cần tên kho."; return RedirectToAction(nameof(Index)); }
         await svc.CreateWarehouseAsync(new Warehouse
@@ -31,6 +32,7 @@ public class WarehouseController(IWmsService svc) : Controller
             Address = address?.Trim(),
             InvTypeCode = string.IsNullOrWhiteSpace(invTypeCode) ? null : invTypeCode.Trim().ToUpperInvariant(),
             InvLevelTypeCode = string.IsNullOrWhiteSpace(invLevelTypeCode) ? null : invLevelTypeCode.Trim().ToUpperInvariant(),
+            AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
             Remark = remark?.Trim()
         });
         TempData["Success"] = "Đã tạo kho.";
@@ -2086,12 +2088,13 @@ public class CustomerController(IWmsService svc) : Controller
         ViewBag.Keyword = q ?? "";
         ViewBag.CustomerType = customerType ?? "";
         ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Areas = await svc.AreasAsync(activeOnly: true);
         var list = await svc.CustomersAsync(q, customerType, activeOnly);
         return View(list);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? taxCode, string? note)
+    public async Task<IActionResult> Create(string name, string? code, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? taxCode, string? note)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2110,6 +2113,7 @@ public class CustomerController(IWmsService svc) : Controller
             Email = email?.Trim(),
             Address = address?.Trim(),
             Province = province?.Trim(),
+            AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = true
@@ -2121,7 +2125,7 @@ public class CustomerController(IWmsService svc) : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? taxCode, string? note, bool isActive = true)
+    public async Task<IActionResult> Update(int id, string name, string? customerType, string? contactName, string? contactPhone, string? phone, string? email, string? address, string? province, string? areaCode, string? taxCode, string? note, bool isActive = true)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -2139,6 +2143,7 @@ public class CustomerController(IWmsService svc) : Controller
             Email = email?.Trim(),
             Address = address?.Trim(),
             Province = province?.Trim(),
+            AreaCode = string.IsNullOrWhiteSpace(areaCode) ? null : areaCode.Trim().ToUpperInvariant(),
             TaxCode = taxCode?.Trim(),
             Note = note?.Trim(),
             IsActive = isActive
@@ -4132,6 +4137,147 @@ public class ProductGroupController(IWmsService svc) : Controller
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         return File(bytes, "text/csv; charset=utf-8", $"NhomHangHoa_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
+public class AreaController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(string? parentCode, bool? activeOnly, string? q)
+    {
+        var allAreas = await svc.AreasAsync();
+        ViewBag.RootAreas = allAreas.Where(a => string.IsNullOrWhiteSpace(a.ParentCode)).ToList();
+        ViewBag.ParentCode = parentCode ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+        ViewBag.Keyword = q ?? "";
+
+        var report = await svc.AreasReportAsync(q, parentCode, activeOnly);
+        return View(report);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var detail = await svc.GetAreaDetailAsync(id);
+        if (detail == null) return NotFound(new { error = "Không tìm thấy vùng / khu vực." });
+
+        return Json(new
+        {
+            id = detail.Area.Id,
+            code = detail.Area.Code,
+            name = detail.Area.Name,
+            description = detail.Area.Description,
+            parentCode = detail.Area.ParentCode,
+            parentName = detail.ParentArea?.Name,
+            isActive = detail.Area.IsActive,
+            createdAt = detail.Area.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            totalWarehouses = detail.TotalWarehouses,
+            totalCustomers = detail.TotalCustomers,
+            totalStockQty = detail.TotalStockQty,
+            subAreas = detail.SubAreas.Select(s => new { s.Id, s.Code, s.Name, s.IsActive }),
+            warehouses = detail.Warehouses.Select(w => new { w.Id, w.Code, w.Name, w.Address }),
+            customers = detail.Customers.Select(c => new { c.Id, c.Code, c.Name, c.CustomerType, c.Province })
+        });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? code, string name, string? description, string? parentCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên vùng / khu vực.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new Area
+        {
+            Code = code?.Trim().ToUpperInvariant() ?? "",
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        try
+        {
+            await svc.CreateAreaAsync(item);
+            TempData["Success"] = $"Đã tạo mới khu vực '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, string name, string? description, string? parentCode, bool isActive = true)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            TempData["Error"] = "Cần tên vùng / khu vực.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var item = new Area
+        {
+            Name = name.Trim(),
+            Description = description?.Trim(),
+            ParentCode = string.IsNullOrWhiteSpace(parentCode) ? null : parentCode.Trim().ToUpperInvariant(),
+            IsActive = isActive
+        };
+
+        var (ok, msg) = await svc.UpdateAreaAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var (ok, msg) = await svc.ToggleAreaStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteAreaAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? parentCode, bool? activeOnly, string? q)
+    {
+        var report = await svc.AreasReportAsync(q, parentCode, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC VÙNG THỊ TRƯỜNG & ĐỊA BÀN KHO (MST_AREA)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc vùng cha:;{(string.IsNullOrWhiteSpace(parentCode) ? "Tất cả" : parentCode)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã khu vực;Tên vùng - khu vực;Cấp bậc;Vùng trực thuộc cha;Mô tả phạm vi logistics;Số kho trực thuộc;Số khách hàng - đại lý;Tổng tồn kho thực tế;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var levelStr = r.Level == 1 ? "Cấp 1 (Gốc)" : "Cấp 2 (Nhánh)";
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{levelStr}\";\"{r.ParentName ?? r.ParentCode ?? ""}\";\"{r.Description?.Replace("\"", "\"\"")}\";{r.WarehouseCount};{r.CustomerCount};{r.TotalStockQty};\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ KHU VỰC:;{report.TotalAreas};;;;;;;;");
+        sb.AppendLine($";;VÙNG GỐC CẤP 1:;{report.RootAreasCount};;;;;;;;");
+        sb.AppendLine($";;KHU VỰC NHÁNH CẤP 2:;{report.SubAreasCount};;;;;;;;");
+        sb.AppendLine($";;TỔNG KHO PHÂN BỔ:;{report.TotalWarehousesAssigned};;;;;;;;");
+        sb.AppendLine($";;TỔNG KHÁCH HÀNG - ĐẠI LÝ:;{report.TotalCustomersAssigned};;;;;;;;");
+        sb.AppendLine($";;TỔNG TỒN KHO THỰC TẾ:;{report.TotalStockQty};;;;;;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"VungKhuVucKho_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
     }
 }
 
