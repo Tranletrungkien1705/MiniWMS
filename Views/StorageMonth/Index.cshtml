@@ -1,0 +1,235 @@
+@model StorageMonthReport
+@{
+    ViewData["Title"] = "Báo cáo Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var selectedBracket = (StorageMonthBracket?)ViewBag.Bracket;
+    var keyword = (string)ViewBag.Keyword;
+    var asOfDate = (string)ViewBag.AsOfDate;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Nhóm tuổi tồn (tháng lưu kho)</label>
+                <select name="bracket" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhóm tuổi —</option>
+                    <option value="@((int)StorageMonthBracket.Under3Months)" selected="@(selectedBracket == StorageMonthBracket.Under3Months)">&lt; 3 tháng (Mới nhập / Luân chuyển tốt)</option>
+                    <option value="@((int)StorageMonthBracket.From3To6Months)" selected="@(selectedBracket == StorageMonthBracket.From3To6Months)">3 - 6 tháng (Bình thường)</option>
+                    <option value="@((int)StorageMonthBracket.From6To12Months)" selected="@(selectedBracket == StorageMonthBracket.From6To12Months)">6 tháng - 1 năm (Cần lưu ý)</option>
+                    <option value="@((int)StorageMonthBracket.From12To24Months)" selected="@(selectedBracket == StorageMonthBracket.From12To24Months)">1 - 2 năm (Tồn lâu)</option>
+                    <option value="@((int)StorageMonthBracket.Over24Months)" selected="@(selectedBracket == StorageMonthBracket.Over24Months)">&gt; 2 năm (Tồn đọng vốn nghiêm trọng)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Ngày chốt số liệu</label>
+                <input type="date" name="asOfDate" value="@asOfDate" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Tìm kiếm hàng hoá</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hoặc tên hàng..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-funnel me-1"></i> Lọc
+                </button>
+                <a href="/StorageMonth" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="/StorageMonth/ExportCsv?warehouseId=@selectedWid&bracket=@(selectedBracket.HasValue ? (int)selectedBracket.Value : "")&q=@Uri.EscapeDataString(keyword ?? "")&asOfDate=@asOfDate"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In báo cáo">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG GIÁ TRỊ TỒN KHO</span>
+                    <i class="bi bi-wallet2 text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.GrandTotalValue.ToString("#,##0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-muted" style="font-size:11px">@Model.TotalGroups nhóm hàng hóa phát sinh tồn</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỒN ĐỌNG VỐN (&gt; 1 NĂM)</span>
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.StagnantValue.ToString("#,##0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-danger fw-semibold" style="font-size:11px">Chiếm @Model.StagnantPercent.ToString("F2")% tổng giá trị tồn kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">HÀNG MỚI NHẬP (&lt; 3 THÁNG)</span>
+                    <i class="bi bi-box-arrow-in-down text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.Under3MonthsValue.ToString("#,##0") <span class="fs-6 fw-normal text-muted">đ</span></div>
+                <div class="text-muted" style="font-size:11px">Giá trị hàng luân chuyển tốt trong kho</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">CƠ CẤU TUỔI TỒN (THÁNG)</span>
+                    <i class="bi bi-pie-chart text-info fs-5"></i>
+                </div>
+                <div class="d-flex flex-wrap gap-1 align-items-center mt-1">
+                    <span class="badge bg-success">&lt;3T</span>
+                    <span class="badge bg-info text-dark">3-6T</span>
+                    <span class="badge bg-warning text-dark">6-12T</span>
+                    <span class="badge bg-danger">1-2N</span>
+                    <span class="badge bg-dark">&gt;2N</span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:11px">Phân bổ giá trị tồn theo 5 nhóm tuổi tồn</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="bi bi-bar-chart-steps text-primary me-2"></i>Phân bổ giá trị tồn kho theo nhóm tuổi tồn (tháng)</h6>
+    </div>
+    <div class="card-body">
+        @{
+            var total = Model.GrandTotalValue > 0 ? Model.GrandTotalValue : 1m;
+            var bars = new (string label, decimal val, string css)[]
+            {
+                ("< 3 tháng", Model.Under3MonthsValue, "bg-success"),
+                ("3 - 6 tháng", Model.From3To6MonthsValue, "bg-info"),
+                ("6 tháng - 1 năm", Model.From6To12MonthsValue, "bg-warning"),
+                ("1 - 2 năm", Model.From12To24MonthsValue, "bg-danger"),
+                ("> 2 năm", Model.Over24MonthsValue, "bg-dark")
+            };
+        }
+        @foreach (var b in bars)
+        {
+            var pct = (double)(b.val / total * 100);
+            <div class="d-flex align-items-center mb-2">
+                <div class="text-muted small" style="width:130px">@b.label</div>
+                <div class="progress flex-grow-1" style="height:18px">
+                    <div class="progress-bar @b.css" role="progressbar" style="width:@pct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%">
+                        @if (pct >= 8) { <span class="small">@pct.ToString("F1")%</span> }
+                    </div>
+                </div>
+                <div class="text-end fw-semibold small ms-2" style="width:150px">@b.val.ToString("#,##0") đ</div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>Chi tiết Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng hóa</h6>
+            <span class="text-muted small">Kho: <b>@Model.WarehouseName</b> — Ngày chốt: <b>@Model.AsOfDate.ToString("dd/MM/yyyy")</b> — Hiển thị <b>@Model.Rows.Count</b> dòng</span>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/StorageTime" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-clock me-1"></i> Xem tuổi kho theo ngày
+            </a>
+            <a href="/ProductGroup" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-diagram-3 me-1"></i> Danh mục nhóm hàng
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:50px">STT</th>
+                        <th>Nhóm hàng hóa</th>
+                        <th class="text-center">Nhóm tuổi tồn (tháng)</th>
+                        <th class="text-end">Giá trị tồn</th>
+                        <th class="text-end" style="width:120px">Tỷ trọng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-1"></i>
+                                Không có nhóm hàng nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <div class="fw-bold">@r.ProductGrpName</div>
+                                    <div class="text-muted small"><code>@r.ProductGrpCode</code>@(string.IsNullOrWhiteSpace(r.ProductGrpDesc) ? "" : " • " + r.ProductGrpDesc)</div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @r.BadgeClass">@r.BracketLabel</span>
+                                </td>
+                                <td class="text-end fw-bold text-dark">
+                                    @r.TotalValue.ToString("#,##0") đ
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-flex align-items-center justify-content-end gap-2">
+                                        <div class="progress" style="height:6px;width:60px">
+                                            <div class="progress-bar @r.BadgeClass" role="progressbar" style="width:@r.InvPercent.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+                                        </div>
+                                        <span class="small text-muted">@r.InvPercent.ToString("F2")%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (Model.Rows.Count > 0)
+                {
+                    <tfoot class="table-light fw-bold border-top">
+                        <tr>
+                            <td colspan="3" class="text-end">TỔNG CỘNG (@Model.TotalGroups nhóm hàng):</td>
+                            <td class="text-end text-primary">@Model.GrandTotalValue.ToString("#,##0") đ</td>
+                            <td class="text-end">100.00%</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" class="text-end text-danger small">Tồn đọng vốn (&gt; 1 năm):</td>
+                            <td class="text-end text-danger small">@Model.StagnantValue.ToString("#,##0") đ</td>
+                            <td class="text-end text-danger small">@Model.StagnantPercent.ToString("F2")%</td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>

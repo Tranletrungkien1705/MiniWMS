@@ -7051,4 +7051,48 @@ public class LeafWarehouseBalanceController(IWmsService svc) : Controller
         var fileName = $"BaoCao_GiaTriTonKhoTheoKho_{DateTime.Now:yyyyMMdd_HHmm}.csv";
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
+}public class StorageMonthController(IWmsService svc) : Controller
+{
+    public async Task<IActionResult> Index(int? warehouseId, StorageMonthBracket? bracket, string? q, DateTime? asOfDate)
+    {
+        var whs = await svc.WarehousesAsync();
+        ViewBag.Warehouses = whs;
+        ViewBag.WarehouseId = warehouseId;
+        ViewBag.Bracket = bracket;
+        ViewBag.Keyword = q ?? "";
+        ViewBag.AsOfDate = (asOfDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+
+        var report = await svc.StorageMonthReportAsync(warehouseId, bracket, q, asOfDate);
+        return View(report);
+    }
+
+    public async Task<IActionResult> ExportCsv(int? warehouseId, StorageMonthBracket? bracket, string? q, DateTime? asOfDate)
+    {
+        var report = await svc.StorageMonthReportAsync(warehouseId, bracket, q, asOfDate);
+
+        var sb = new System.Text.StringBuilder();
+        // UTF-8 BOM cho Excel
+        sb.Append('\uFEFF');
+        sb.AppendLine("BÁO CÁO TỒN KHO THEO TUỔI TỒN (THÁNG) & NHÓM HÀNG HÓA");
+        sb.AppendLine($"Kho hàng:;{report.WarehouseName}");
+        sb.AppendLine($"Ngày chốt số liệu:;{report.AsOfDate:dd/MM/yyyy}");
+        sb.AppendLine($"Bộ lọc nhóm tuổi:;{(bracket.HasValue ? bracket.Value.ToString() : "Tất cả các nhóm")}");
+        sb.AppendLine($"Từ khóa:;{(string.IsNullOrWhiteSpace(q) ? "Tất cả" : q)}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã nhóm hàng;Tên nhóm hàng;Mô tả nhóm;Nhóm tuổi tồn (tháng);Giá trị tồn (VNĐ);Tỷ trọng giá trị (%)");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            sb.AppendLine($"{stt++};\"{r.ProductGrpCode}\";\"{r.ProductGrpName.Replace("\"", "\"\"")}\";\"{(r.ProductGrpDesc ?? "").Replace("\"", "\"\"")}\";\"{r.BracketLabel}\";{r.TotalValue:F0};{r.InvPercent:F2}%");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;;;TỔNG CỘNG:;{report.GrandTotalValue:F0};100.0%");
+        sb.AppendLine($";;;;Tồn đọng vốn (> 1 năm):;{report.StagnantValue:F0};{report.StagnantPercent:F2}%");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"BaoCao_TonKhoTheoTuoiTonThang_{report.AsOfDate:yyyyMMdd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
 }

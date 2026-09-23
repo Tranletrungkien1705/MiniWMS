@@ -105,6 +105,13 @@ app.MapGet("/api/reports/storage-time", async (int? warehouseId, StorageTimeAgin
     return Results.Ok(report);
 });
 
+// API Báo cáo Tồn kho theo Tuổi tồn (tháng) & Nhóm hàng hóa (Inventory Balance by Storage Month - port từ Rpt_Inv_InventoryBalance_ByStorageMonth Skycic)
+app.MapGet("/api/reports/inventory-balance-by-storage-month", async (int? warehouseId, StorageMonthBracket? bracket, string? q, DateTime? asOfDate, IWmsService svc) =>
+{
+    var report = await svc.StorageMonthReportAsync(warehouseId, bracket, q, asOfDate);
+    return Results.Ok(report);
+});
+
 // API Tra cứu tồn theo Lô hàng (Stock Lots)
 app.MapGet("/api/stock-lots", async (int? warehouseId, int? productId, IWmsService svc) =>
 {
