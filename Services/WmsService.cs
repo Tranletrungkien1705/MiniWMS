@@ -327,6 +327,13 @@ public interface IWmsService
     Task<(bool ok, string msg)> DeleteAgentAsync(int id);
     Task<List<Province>> ProvincesAsync(bool? activeOnly = null);
     Task<List<District>> DistrictsAsync(string? provinceCode = null, bool? activeOnly = null);
+    Task<WardReport> WardsReportAsync(string? q = null, string? province = null, string? district = null, bool? activeOnly = null);
+    Task<List<Ward>> WardsAsync(string? provinceCode = null, string? districtCode = null, bool? activeOnly = null);
+    Task<Ward?> GetWardAsync(int id);
+    Task<int> CreateWardAsync(Ward item);
+    Task<(bool ok, string msg)> UpdateWardAsync(int id, Ward item);
+    Task<(bool ok, string msg)> ToggleWardStatusAsync(int id);
+    Task<(bool ok, string msg)> DeleteWardAsync(int id);
     Task<MapDeliveryOrderReport> MapDeliveryOrderReportAsync(int? warehouseId, string? areaCode, string? customerCode, string? status, DateTime? fromDate, DateTime? toDate, string? keyword);
     Task<List<TempPrintType>> TempPrintTypesAsync(bool? activeOnly = null);
     Task<List<TempPrint>> TempPrintsAsync(string? typeCode = null, bool? activeOnly = null);
@@ -10466,6 +10473,131 @@ public class WmsService(AppDbContext db) : IWmsService
         if (!string.IsNullOrWhiteSpace(provinceCode)) query = query.Where(d => d.ProvinceCode == provinceCode);
         if (activeOnly.HasValue) query = query.Where(d => d.IsActive == activeOnly.Value);
         return query.OrderBy(d => d.Code).ToListAsync();
+    }
+
+    // ==================== QUẢN LÝ PHƯỜNG / XÃ THEO ĐỊA BÀN (Mst_Ward Skycic) ====================
+    public async Task<WardReport> WardsReportAsync(string? q = null, string? province = null, string? district = null, bool? activeOnly = null)
+    {
+        var provinces = await db.Provinces.ToListAsync();
+        var districts = await db.Districts.ToListAsync();
+        var allWards = await db.Wards.ToListAsync();
+
+        var query = db.Wards.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(province)) query = query.Where(w => w.ProvinceCode == province);
+        if (!string.IsNullOrWhiteSpace(district)) query = query.Where(w => w.DistrictCode == district);
+        if (activeOnly.HasValue) query = query.Where(w => w.IsActive == activeOnly.Value);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var kw = q.Trim().ToLower();
+            query = query.Where(w => w.Code.ToLower().Contains(kw) || w.Name.ToLower().Contains(kw));
+        }
+
+        var wardsList = await query.OrderBy(w => w.ProvinceCode).ThenBy(w => w.DistrictCode).ThenBy(w => w.Code).ToListAsync();
+
+        var rows = wardsList.Select(w =>
+        {
+            var prov = !string.IsNullOrEmpty(w.ProvinceCode) ? provinces.FirstOrDefault(p => p.Code.Equals(w.ProvinceCode, StringComparison.OrdinalIgnoreCase)) : null;
+            var dist = !string.IsNullOrEmpty(w.DistrictCode) ? districts.FirstOrDefault(d => d.Code.Equals(w.DistrictCode, StringComparison.OrdinalIgnoreCase)) : null;
+            return new WardRow(
+                w.Id,
+                w.Code,
+                w.Name,
+                w.ProvinceCode,
+                prov?.Name,
+                w.DistrictCode,
+                dist?.Name,
+                w.IsActive,
+                w.CreatedAt
+            );
+        }).ToList();
+
+        int totalWards = allWards.Count;
+        int activeCount = allWards.Count(w => w.IsActive);
+        int inactiveCount = totalWards - activeCount;
+        int provinceCount = allWards.Where(w => !string.IsNullOrEmpty(w.ProvinceCode)).Select(w => w.ProvinceCode).Distinct().Count();
+        int districtCount = allWards.Where(w => !string.IsNullOrEmpty(w.DistrictCode)).Select(w => w.DistrictCode).Distinct().Count();
+
+        return new WardReport(
+            q,
+            province,
+            district,
+            activeOnly,
+            totalWards,
+            activeCount,
+            inactiveCount,
+            provinceCount,
+            districtCount,
+            rows
+        );
+    }
+
+    public Task<List<Ward>> WardsAsync(string? provinceCode = null, string? districtCode = null, bool? activeOnly = null)
+    {
+        var query = db.Wards.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(provinceCode)) query = query.Where(w => w.ProvinceCode == provinceCode);
+        if (!string.IsNullOrWhiteSpace(districtCode)) query = query.Where(w => w.DistrictCode == districtCode);
+        if (activeOnly.HasValue) query = query.Where(w => w.IsActive == activeOnly.Value);
+        return query.OrderBy(w => w.Code).ToListAsync();
+    }
+
+    public Task<Ward?> GetWardAsync(int id) =>
+        db.Wards.FirstOrDefaultAsync(w => w.Id == id);
+
+    public async Task<int> CreateWardAsync(Ward item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Code))
+        {
+            item.Code = $"P-{await db.Wards.CountAsync() + 1:D3}";
+        }
+        item.Code = item.Code.Trim().ToUpperInvariant();
+        item.Name = item.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(item.ProvinceCode)) item.ProvinceCode = item.ProvinceCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(item.DistrictCode)) item.DistrictCode = item.DistrictCode.Trim().ToUpperInvariant();
+
+        bool exists = await db.Wards.AnyAsync(w => w.Code == item.Code);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Mã phường/xã '{item.Code}' đã tồn tại trong hệ thống.");
+        }
+
+        item.CreatedAt = DateTime.Now;
+        db.Wards.Add(item);
+        await db.SaveChangesAsync();
+        return item.Id;
+    }
+
+    public async Task<(bool ok, string msg)> UpdateWardAsync(int id, Ward item)
+    {
+        var existing = await db.Wards.FirstOrDefaultAsync(w => w.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phường/xã.");
+
+        existing.Name = item.Name.Trim();
+        existing.ProvinceCode = string.IsNullOrWhiteSpace(item.ProvinceCode) ? "" : item.ProvinceCode.Trim().ToUpperInvariant();
+        existing.DistrictCode = string.IsNullOrWhiteSpace(item.DistrictCode) ? "" : item.DistrictCode.Trim().ToUpperInvariant();
+        existing.IsActive = item.IsActive;
+
+        await db.SaveChangesAsync();
+        return (true, $"Đã cập nhật phường/xã '{existing.Name}' ({existing.Code}) thành công.");
+    }
+
+    public async Task<(bool ok, string msg)> ToggleWardStatusAsync(int id)
+    {
+        var existing = await db.Wards.FirstOrDefaultAsync(w => w.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phường/xã.");
+
+        existing.IsActive = !existing.IsActive;
+        await db.SaveChangesAsync();
+        return (true, existing.IsActive ? $"Đã kích hoạt phường/xã '{existing.Code}'." : $"Đã chuyển phường/xã '{existing.Code}' sang trạng thái tạm dừng.");
+    }
+
+    public async Task<(bool ok, string msg)> DeleteWardAsync(int id)
+    {
+        var existing = await db.Wards.FirstOrDefaultAsync(w => w.Id == id);
+        if (existing == null) return (false, "Không tìm thấy phường/xã.");
+
+        db.Wards.Remove(existing);
+        await db.SaveChangesAsync();
+        return (true, $"Đã xóa phường/xã '{existing.Code}'.");
     }
 
     // ==================== Báº¢N Äá»’ Lá»†NH GIAO HÃ€NG THEO PHIáº¾U XUáº¤T KHO (Rpt_MapDeliveryOrder_ByInvFIOut Skycic) ====================

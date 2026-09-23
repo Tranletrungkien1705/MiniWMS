@@ -748,6 +748,20 @@ public static class Seeder
             );
             await db.SaveChangesAsync();
         }
+        if (!await db.Wards.AnyAsync())
+        {
+            db.Wards.AddRange(
+                new Ward { Code = "P-HBT-01", ProvinceCode = "HN", DistrictCode = "HBT", Name = "Phường Bách Khoa", IsActive = true },
+                new Ward { Code = "P-HBT-02", ProvinceCode = "HN", DistrictCode = "HBT", Name = "Phường Nguyễn Du", IsActive = true },
+                new Ward { Code = "P-CG-01", ProvinceCode = "HN", DistrictCode = "CG", Name = "Phường Dịch Vọng Hậu", IsActive = true },
+                new Ward { Code = "P-Q1-01", ProvinceCode = "HCM", DistrictCode = "Q1", Name = "Phường Bến Nghé", IsActive = true },
+                new Ward { Code = "P-TB-01", ProvinceCode = "HCM", DistrictCode = "TB", Name = "Phường 2", IsActive = true },
+                new Ward { Code = "P-HC-01", ProvinceCode = "DN", DistrictCode = "HC", Name = "Phường Thạch Thang", IsActive = true },
+                new Ward { Code = "P-LC-01", ProvinceCode = "HP", DistrictCode = "LC", Name = "Phường Trại Cau", IsActive = true },
+                new Ward { Code = "P-NK-01", ProvinceCode = "CT", DistrictCode = "NK", Name = "Phường Tân An", IsActive = true }
+            );
+            await db.SaveChangesAsync();
+        }
         if (!await db.Agents.AnyAsync())
         {
             db.Agents.AddRange(
@@ -4329,7 +4343,7 @@ public static class Seeder
     {
         if (!db.Database.IsNpgsql()) return;
         var def = TenantContext.DefaultOrgId;
-        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Agents", "PurchaseReceipts", "PurchaseReceiptLines", "InventoryOutHists", "InventoryOutHistLines", "InventoryOutHistSerials" };
+        var tables = new[] { "Warehouses", "Products", "Docs", "DocLines", "Audits", "AuditLines", "MoveOrders", "MoveOrderLines", "ReturnToSuppliers", "ReturnToSupplierLines", "CustomerReturns", "CustomerReturnLines", "StockLots", "StockSerials", "InventoryBlocks", "CostPriceHists", "PeriodClosings", "PeriodClosingLines", "InventoryCartons", "InventoryBoxes", "InventoryInFGs", "InventoryInFGLines", "InventoryInFGSerials", "InventoryOutFGs", "InventoryOutFGLines", "InventoryOutFGSerials", "Suppliers", "Customers", "PartTypes", "Brands", "PartUnits", "PartMaterialTypes", "ProductModels", "InventoryTypes", "InventoryLevelTypes", "InventoryInTypes", "InventoryOutTypes", "UserMapInventories", "ProductGroups", "Areas", "CustomerGroups", "Departments", "CustomerSources", "MoveOrdTypes", "Dealers", "TempPrintTypes", "TempPrints", "CurrencyExchanges", "ProductSpecs", "SpecUnits", "SpecPrices", "VATRates", "PartColors", "PartColorMaps", "InventorySecrets", "SecretLicenses", "Provinces", "Districts", "Wards", "Agents", "PurchaseReceipts", "PurchaseReceiptLines", "InventoryOutHists", "InventoryOutHistLines", "InventoryOutHistSerials" };
         var sql = new List<string>
         {
             "CREATE TABLE IF NOT EXISTS miniwms.\"Orgs\" (\"Id\" uuid PRIMARY KEY, \"Name\" text NOT NULL DEFAULT '', \"ApiKey\" text NOT NULL DEFAULT '', \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
@@ -4418,6 +4432,9 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS miniwms.\"Districts\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"ProvinceCode\" text NOT NULL DEFAULT '', \"Name\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Districts_OrgId_Code\" ON miniwms.\"Districts\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Districts_OrgId_ProvinceCode\" ON miniwms.\"Districts\" (\"OrgId\", \"ProvinceCode\")",
+            "CREATE TABLE IF NOT EXISTS miniwms.\"Wards\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"ProvinceCode\" text NOT NULL DEFAULT '', \"DistrictCode\" text NOT NULL DEFAULT '', \"Name\" text NOT NULL DEFAULT '', \"IsActive\" boolean NOT NULL DEFAULT true, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Wards_OrgId_Code\" ON miniwms.\"Wards\" (\"OrgId\", \"Code\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_Wards_OrgId_ProvinceCode_DistrictCode\" ON miniwms.\"Wards\" (\"OrgId\", \"ProvinceCode\", \"DistrictCode\")",
             "CREATE TABLE IF NOT EXISTS miniwms.\"Agents\" (\"Id\" serial PRIMARY KEY, \"OrgId\" uuid NOT NULL DEFAULT '" + def + "', \"Code\" text NOT NULL, \"Name\" text NOT NULL DEFAULT '', \"ProvinceCode\" text NULL, \"DistrictCode\" text NULL, \"Address\" text NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON miniwms.\"Agents\" (\"OrgId\", \"Code\")",
             "CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON miniwms.\"Agents\" (\"OrgId\", \"ProvinceCode\")",
@@ -5284,6 +5301,9 @@ public static class Seeder
         sql.Add("CREATE TABLE IF NOT EXISTS \"Districts\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"ProvinceCode\" TEXT NOT NULL DEFAULT '', \"Name\" TEXT NOT NULL DEFAULT '', \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);");
         sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Districts_OrgId_Code\" ON \"Districts\" (\"OrgId\", \"Code\");");
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Districts_OrgId_ProvinceCode\" ON \"Districts\" (\"OrgId\", \"ProvinceCode\");");
+        sql.Add("CREATE TABLE IF NOT EXISTS \"Wards\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"ProvinceCode\" TEXT NOT NULL DEFAULT '', \"DistrictCode\" TEXT NOT NULL DEFAULT '', \"Name\" TEXT NOT NULL DEFAULT '', \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"CreatedAt\" TEXT NOT NULL);");
+        sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Wards_OrgId_Code\" ON \"Wards\" (\"OrgId\", \"Code\");");
+        sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Wards_OrgId_ProvinceCode_DistrictCode\" ON \"Wards\" (\"OrgId\", \"ProvinceCode\", \"DistrictCode\");");
         sql.Add("CREATE TABLE IF NOT EXISTS \"Agents\" (\"Id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \"OrgId\" TEXT NOT NULL, \"Code\" TEXT NOT NULL, \"Name\" TEXT NOT NULL DEFAULT '', \"ProvinceCode\" TEXT NULL, \"DistrictCode\" TEXT NULL, \"Address\" TEXT NULL, \"IsActive\" INTEGER NOT NULL DEFAULT 1, \"Remark\" TEXT NULL, \"CreatedAt\" TEXT NOT NULL, \"UpdatedAt\" TEXT NULL);");
         sql.Add("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Agents_OrgId_Code\" ON \"Agents\" (\"OrgId\", \"Code\");");
         sql.Add("CREATE INDEX IF NOT EXISTS \"IX_Agents_OrgId_ProvinceCode\" ON \"Agents\" (\"OrgId\", \"ProvinceCode\");");

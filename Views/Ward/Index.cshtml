@@ -1,0 +1,383 @@
+@model WardReport
+@{
+    ViewData["Title"] = "Phường / Xã theo địa bàn";
+    var keyword = (string)(ViewBag.Keyword ?? "");
+    var province = (string)(ViewBag.Province ?? "");
+    var district = (string)(ViewBag.District ?? "");
+    var activeOnly = (bool?)ViewBag.ActiveOnly;
+    var provinces = ViewBag.Provinces as List<Province> ?? [];
+    var districts = ViewBag.Districts as List<District> ?? [];
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h5 class="fw-bold mb-1"><i class="bi bi-signpost-split text-primary me-2"></i>Danh mục Phường / Xã theo địa bàn</h5>
+        <div class="text-muted small">Port từ <code>Mst_Ward</code> (Skycic) — Cấp địa lý thấp nhất, trực thuộc Quận/Huyện & Tỉnh/Thành phố, hoàn thiện địa chỉ giao nhận hàng hóa</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/Agent" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-geo-alt me-1"></i> Đại lý theo địa bàn
+        </a>
+        <a href="/Ward/ExportCsv?q=@keyword&province=@province&district=@district&activeOnly=@activeOnly" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Xuất CSV
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> In danh sách
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createWardModal">
+            <i class="bi bi-plus-lg me-1"></i> Thêm Phường / Xã
+        </button>
+    </div>
+</div>
+
+<!-- 4 Thẻ thống kê KPI -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG SỐ PHƯỜNG / XÃ</span>
+                    <i class="bi bi-signpost-split text-secondary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@Model.TotalWards</div>
+                <div class="small text-muted">@Model.ProvinceCount tỉnh · @Model.DistrictCount quận/huyện</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">ĐANG ÁP DỤNG</span>
+                    <i class="bi bi-check-circle text-success fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-success">@Model.ActiveCount</div>
+                <div class="small text-muted">Khả dụng khai báo địa chỉ (@Model.InactiveCount tạm dừng)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">SỐ TỈNH / QUẬN</span>
+                    <i class="bi bi-pin-map text-primary fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-primary">@Model.ProvinceCount / @Model.DistrictCount</div>
+                <div class="small text-muted">Địa bàn có phường/xã đang quản lý</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-white shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỶ LỆ ÁP DỤNG</span>
+                    <i class="bi bi-graph-up text-warning fs-5"></i>
+                </div>
+                <div class="fs-4 fw-bold text-dark">@(Model.TotalWards > 0 ? Math.Round((double)Model.ActiveCount / Model.TotalWards * 100, 1) : 0)%</div>
+                <div class="small text-muted">Phường/xã đang hoạt động trên tổng số</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div class="card border-0 bg-white shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="@keyword" class="form-control border-start-0" placeholder="Tìm theo mã, tên phường/xã..." />
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="province" class="form-select form-select-sm" id="filterProvince">
+                    <option value="">-- Tỉnh / Thành: Tất cả --</option>
+                    @foreach (var p in provinces)
+                    {
+                        <!option value="@p.Code" @(province == p.Code ? "selected" : "")>@p.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="district" class="form-select form-select-sm" id="filterDistrict">
+                    <option value="">-- Quận / Huyện: Tất cả --</option>
+                    @foreach (var d in districts)
+                    {
+                        <!option value="@d.Code" @(district == d.Code ? "selected" : "")>@d.Name</!option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="activeOnly" class="form-select form-select-sm">
+                    <option value="">-- Trạng thái: Tất cả --</option>
+                    <!option value="true" @(activeOnly == true ? "selected" : "")>Đang áp dụng</!option>
+                    <!option value="false" @(activeOnly == false ? "selected" : "")>Tạm dừng</!option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <i class="bi bi-filter me-1"></i> Lọc
+                </button>
+                <a href="/Ward" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bảng danh sách Phường / Xã -->
+<div class="card border-0 bg-white shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width: 40px;">STT</th>
+                        <th style="width: 150px;">Mã phường/xã</th>
+                        <th>Tên phường/xã</th>
+                        <th style="width: 160px;">Tỉnh / Thành phố</th>
+                        <th style="width: 160px;">Quận / Huyện</th>
+                        <th class="text-center" style="width: 120px;">Trạng thái</th>
+                        <th class="text-end" style="width: 140px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                Không tìm thấy phường/xã nào phù hợp với điều kiện tìm kiếm.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 1;
+                        foreach (var r in Model.Rows)
+                        {
+                            <tr>
+                                <td class="text-center text-muted small">@(stt++)</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border font-monospace">@r.Code</span>
+                                </td>
+                                <td>
+                                    <span class="fw-bold text-dark">@r.Name</span>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.ProvinceName) || !string.IsNullOrEmpty(r.ProvinceCode))
+                                    {
+                                        <span class="fw-semibold text-dark"><i class="bi bi-pin-map text-danger me-1"></i>@(r.ProvinceName ?? r.ProvinceCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(r.DistrictName) || !string.IsNullOrEmpty(r.DistrictCode))
+                                    {
+                                        <span class="badge bg-light text-secondary border">@(r.DistrictName ?? r.DistrictCode)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    @if (r.IsActive)
+                                    {
+                                        <span class="badge bg-success-subtle text-success border-success-subtle">
+                                            <i class="bi bi-check-circle me-1"></i>Áp dụng
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary-subtle text-secondary border-secondary-subtle">
+                                            <i class="bi bi-pause-circle me-1"></i>Tạm dừng
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Sửa thông tin"
+                                                onclick="openEditWardModal(@r.Id, '@r.Code', '@Html.Raw(Html.Encode(r.Name))', '@r.ProvinceCode', '@r.DistrictCode', @(r.IsActive ? "true" : "false"))">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <form method="post" action="/Ward/ToggleStatus/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn đổi trạng thái phường/xã @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-warning" title="@(r.IsActive ? "Tạm dừng" : "Kích hoạt")">
+                                                <i class="bi @(r.IsActive ? "bi-toggle-on text-success" : "bi-toggle-off text-muted")"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="/Ward/Delete/@r.Id" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa phường/xã @r.Code?');">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-outline-danger" title="Xóa">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL THÊM MỚI PHƯỜNG / XÃ -->
+<div class="modal fade" id="createWardModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="/Ward/Create">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-primary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Thêm mới Phường / Xã</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã phường/xã</label>
+                            <input type="text" name="Code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="vd: P-HBT-01..." />
+                            <div class="form-text small">Để trống để hệ thống tự động sinh</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên phường/xã <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" class="form-control form-control-sm" placeholder="vd: Phường Bách Khoa" required />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <select name="ProvinceCode" class="form-select form-select-sm" id="createProvince">
+                                <option value="">-- Chọn tỉnh / thành phố --</option>
+                                @foreach (var p in provinces)
+                                {
+                                    <option value="@p.Code">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Quận / Huyện</label>
+                            <select name="DistrictCode" class="form-select form-select-sm" id="createDistrict">
+                                <option value="">-- Chọn quận / huyện --</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="createIsActive" checked />
+                                <label class="form-check-label small fw-semibold" for="createIsActive">Kích hoạt áp dụng ngay khi tạo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Lưu phường/xã</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHỈNH SỬA PHƯỜNG / XÃ -->
+<div class="modal fade" id="editWardModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="post" id="editWardForm" action="/Ward/Update">
+                @Html.AntiForgeryToken()
+                <div class="modal-header bg-secondary text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Chỉnh sửa Phường / Xã</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Mã phường/xã</label>
+                            <input type="text" id="editCode" class="form-control form-control-sm font-monospace bg-light" readonly />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Tên phường/xã <span class="text-danger">*</span></label>
+                            <input type="text" name="Name" id="editName" class="form-control form-control-sm" required />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Tỉnh / Thành phố</label>
+                            <select name="ProvinceCode" class="form-select form-select-sm" id="editProvince">
+                                <option value="">-- Chọn tỉnh / thành phố --</option>
+                                @foreach (var p in provinces)
+                                {
+                                    <option value="@p.Code">@p.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Quận / Huyện</label>
+                            <select name="DistrictCode" class="form-select form-select-sm" id="editDistrict">
+                                <option value="">-- Chọn quận / huyện --</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" id="editIsActive" />
+                                <label class="form-check-label small fw-semibold" for="editIsActive">Trạng thái áp dụng</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i> Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    async function loadDistricts(provinceCode, targetSelectId, selected) {
+        const sel = document.getElementById(targetSelectId);
+        sel.innerHTML = '<option value="">-- Chọn quận / huyện --</option>';
+        if (!provinceCode) return;
+        try {
+            const res = await fetch('/Agent/Districts?provinceCode=' + encodeURIComponent(provinceCode));
+            if (!res.ok) return;
+            const list = await res.json();
+            list.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.code;
+                opt.textContent = d.name;
+                if (selected && selected === d.code) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    document.getElementById('createProvince').addEventListener('change', function () {
+        loadDistricts(this.value, 'createDistrict', null);
+    });
+    document.getElementById('editProvince').addEventListener('change', function () {
+        loadDistricts(this.value, 'editDistrict', null);
+    });
+
+    function openEditWardModal(id, code, name, provinceCode, districtCode, isActive) {
+        document.getElementById('editWardForm').action = '/Ward/Update/' + id;
+        document.getElementById('editCode').value = code || '';
+        document.getElementById('editName').value = name || '';
+        document.getElementById('editProvince').value = provinceCode || '';
+        document.getElementById('editIsActive').checked = isActive;
+        loadDistricts(provinceCode, 'editDistrict', districtCode);
+
+        new bootstrap.Modal(document.getElementById('editWardModal')).show();
+    }
+</script>
+}

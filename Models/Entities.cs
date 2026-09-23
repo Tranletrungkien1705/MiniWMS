@@ -3695,6 +3695,20 @@ public class District : IOrgOwned
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
 
+/// <summary>Danh mục Phường / Xã (port từ Mst_Ward Skycic). Cấp địa lý thấp nhất, trực thuộc một Quận / Huyện và một Tỉnh / Thành phố.
+/// Dùng để hoàn thiện địa chỉ giao nhận hàng hóa (Số nhà, Phường/Xã, Quận/Huyện, Tỉnh/Thành).</summary>
+public class Ward : IOrgOwned
+{
+    public int Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";             // Mã phường / xã (WardCode, vd: P-HBT-01, X-CG-02)
+    public string ProvinceCode { get; set; } = "";     // Mã tỉnh / thành phố trực thuộc (ProvinceCode)
+    public string DistrictCode { get; set; } = "";     // Mã quận / huyện trực thuộc (DistrictCode)
+    public string Name { get; set; } = "";             // Tên phường / xã (WardName)
+    public bool IsActive { get; set; } = true;         // Trạng thái áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
 /// <summary>Danh mục Đại lý / Điểm đại lý theo địa bàn (port từ Mst_Agent Skycic: AgentCode, ProvinceCode, DistrictCode, AgentName, AgentAddress, FlagActive).
 /// Khác với Dealer (mạng lưới phân phối phân cấp) — Agent là điểm đại lý gắn chặt địa bàn Tỉnh/Quận.</summary>
 public class Agent : IOrgOwned
@@ -3753,6 +3767,33 @@ public record AgentDetailDto(
     int TotalShippedDocsCount,
     int TotalShippedQty,
     List<StockDoc> RecentDispatches
+);
+
+/// <summary>Dòng hiển thị Phường / Xã kèm tên Tỉnh/Quận trực thuộc và số đại lý/khách hàng trong địa bàn.</summary>
+public record WardRow(
+    int Id,
+    string Code,
+    string Name,
+    string ProvinceCode,
+    string? ProvinceName,
+    string DistrictCode,
+    string? DistrictName,
+    bool IsActive,
+    DateTime CreatedAt
+);
+
+/// <summary>Báo cáo / Danh sách Phường / Xã tổng hợp kèm 4 thẻ KPI (port từ Mst_Ward Skycic).</summary>
+public record WardReport(
+    string? Keyword,
+    string? ProvinceFilter,
+    string? DistrictFilter,
+    bool? ActiveFilter,
+    int TotalWards,
+    int ActiveCount,
+    int InactiveCount,
+    int ProvinceCount,
+    int DistrictCount,
+    List<WardRow> Rows
 );
 
 /// <summary>Trạng thái phiếu nhập kho mua hàng (port từ InvF_InventoryIn - IF_InvInStatus Skycic).</summary>

@@ -6009,6 +6009,114 @@ public class AgentController(IWmsService svc) : Controller
     }
 }
 
+public class WardController(IWmsService svc) : Controller
+{
+    [HttpGet]
+    public async Task<IActionResult> Index(string? q, string? province, string? district, bool? activeOnly)
+    {
+        var report = await svc.WardsReportAsync(q, province, district, activeOnly);
+        ViewBag.Keyword = q ?? "";
+        ViewBag.Province = province ?? "";
+        ViewBag.District = district ?? "";
+        ViewBag.ActiveOnly = activeOnly;
+
+        ViewBag.Provinces = await svc.ProvincesAsync(activeOnly: true);
+        ViewBag.Districts = await svc.DistrictsAsync(province, activeOnly: true);
+        return View(report);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(Ward item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên phường/xã.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            await svc.CreateWardAsync(item);
+            TempData["Success"] = $"Đã tạo mới phường/xã '{item.Name}' ({item.Code}) thành công.";
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int id, Ward item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            TempData["Error"] = "Vui lòng nhập tên phường/xã.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (ok, msg) = await svc.UpdateWardAsync(id, item);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleStatus(int id)
+    {
+        var (ok, msg) = await svc.ToggleWardStatusAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var (ok, msg) = await svc.DeleteWardAsync(id);
+        TempData[ok ? "Success" : "Error"] = msg;
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Wards(string? provinceCode, string? districtCode)
+    {
+        var list = await svc.WardsAsync(provinceCode, districtCode, activeOnly: true);
+        return Json(list.Select(w => new { w.Code, w.Name, w.ProvinceCode, w.DistrictCode }));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> ExportCsv(string? q, string? province, string? district, bool? activeOnly)
+    {
+        var report = await svc.WardsReportAsync(q, province, district, activeOnly);
+        var sb = new System.Text.StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM
+        sb.AppendLine("DANH MỤC PHƯỜNG / XÃ THEO ĐỊA BÀN (MST_WARD)");
+        sb.AppendLine($"Ngày xuất báo cáo:;{DateTime.Now:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"Bộ lọc tỉnh thành:;{(string.IsNullOrWhiteSpace(province) ? "Tất cả" : province)}");
+        sb.AppendLine($"Bộ lọc quận huyện:;{(string.IsNullOrWhiteSpace(district) ? "Tất cả" : district)}");
+        sb.AppendLine($"Bộ lọc trạng thái:;{(activeOnly == true ? "Đang áp dụng" : activeOnly == false ? "Tạm dừng" : "Tất cả")}");
+        sb.AppendLine();
+        sb.AppendLine("STT;Mã phường/xã;Tên phường/xã;Tỉnh / Thành phố;Quận / Huyện;Trạng thái;Ngày tạo");
+
+        int stt = 1;
+        foreach (var r in report.Rows)
+        {
+            var statusStr = r.IsActive ? "Đang áp dụng" : "Tạm dừng";
+            sb.AppendLine($"{stt++};\"{r.Code}\";\"{r.Name.Replace("\"", "\"\"")}\";\"{r.ProvinceName ?? r.ProvinceCode}\";\"{r.DistrictName ?? r.DistrictCode}\";\"{statusStr}\";{r.CreatedAt:dd/MM/yyyy HH:mm}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($";;TỔNG SỐ PHƯỜNG/XÃ:;{report.TotalWards};;;;");
+        sb.AppendLine($";;ĐANG ÁP DỤNG:;{report.ActiveCount};;;;");
+        sb.AppendLine($";;TẠM DỪNG:;{report.InactiveCount};;;;");
+        sb.AppendLine($";;SỐ TỈNH THÀNH:;{report.ProvinceCount};;;;");
+        sb.AppendLine($";;SỐ QUẬN HUYỆN:;{report.DistrictCount};;;;");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"PhuongXaTheoDiaBan_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+    }
+}
+
 public class MapDeliveryOrderController(IWmsService svc) : Controller
 {
     [HttpGet("/MapDeliveryOrder")]

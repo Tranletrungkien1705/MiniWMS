@@ -70,6 +70,7 @@ public class AppDbContext : DbContext
     public DbSet<SecretLicense> SecretLicenses => Set<SecretLicense>();
     public DbSet<Province> Provinces => Set<Province>();
     public DbSet<District> Districts => Set<District>();
+    public DbSet<Ward> Wards => Set<Ward>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
     public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();

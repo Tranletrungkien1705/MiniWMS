@@ -757,6 +757,67 @@ app.MapGet("/api/provinces", async (bool? activeOnly, IWmsService svc) =>
 app.MapGet("/api/districts", async (string? provinceCode, bool? activeOnly, IWmsService svc) =>
     Results.Ok(await svc.DistrictsAsync(provinceCode, activeOnly)));
 
+// API Quản lý Danh mục Phường / Xã theo địa bàn (Ward - port từ Mst_Ward Skycic)
+app.MapGet("/api/wards", async (string? q, string? province, string? district, bool? activeOnly, IWmsService svc) =>
+{
+    var report = await svc.WardsReportAsync(q, province, district, activeOnly);
+    return Results.Ok(report);
+});
+
+app.MapGet("/api/wards/{id:int}", async (int id, IWmsService svc) =>
+{
+    var w = await svc.GetWardAsync(id);
+    if (w == null) return Results.NotFound(new { error = "Không tìm thấy phường/xã." });
+    return Results.Ok(new { w.Id, w.Code, w.Name, w.ProvinceCode, w.DistrictCode, w.IsActive, w.CreatedAt });
+});
+
+app.MapPost("/api/wards", async (CreateWardDto dto, IWmsService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest(new { error = "Cần Name." });
+    try
+    {
+        var ward = new Ward
+        {
+            Code = dto.Code?.Trim() ?? "",
+            Name = dto.Name.Trim(),
+            ProvinceCode = dto.ProvinceCode?.Trim() ?? "",
+            DistrictCode = dto.DistrictCode?.Trim() ?? "",
+            IsActive = dto.IsActive ?? true
+        };
+        var id = await svc.CreateWardAsync(ward);
+        return Results.Ok(new { id, code = ward.Code, isActive = ward.IsActive });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/wards/{id:int}", async (int id, UpdateWardDto dto, IWmsService svc) =>
+{
+    var ward = new Ward
+    {
+        Name = dto.Name ?? "",
+        ProvinceCode = dto.ProvinceCode ?? "",
+        DistrictCode = dto.DistrictCode ?? "",
+        IsActive = dto.IsActive ?? true
+    };
+    var (ok, msg) = await svc.UpdateWardAsync(id, ward);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapPost("/api/wards/{id:int}/toggle", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.ToggleWardStatusAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
+app.MapDelete("/api/wards/{id:int}", async (int id, IWmsService svc) =>
+{
+    var (ok, msg) = await svc.DeleteWardAsync(id);
+    return ok ? Results.Ok(new { success = true, message = msg }) : Results.BadRequest(new { success = false, message = msg });
+});
+
 // API Kỳ chốt sổ tồn kho & Lưu vết Snapshot số dư (port từ Rpt_In_Out_Inv & 20200407.ChotTonKho.sql Skycic)
 app.MapGet("/api/period-closings", async (int? warehouseId, PeriodClosingStatus? status, int? year, IWmsService svc) =>
 {
@@ -4481,6 +4542,8 @@ record CreateDealerDto(string? Code, string Name, string? ParentCode, int Level,
 record UpdateDealerDto(string Name, string? ParentCode, int Level, string? DealerType, string? BUCode, string? ProvinceCode, string? Address, string? PresentBy, string? GovIdNumber, string? Email, string? Phone, int? WarehouseId, bool? IsActive, string? Remark);
 record CreateAgentDto(string? Code, string Name, string? ProvinceCode, string? DistrictCode, string? Address, bool? IsActive, string? Remark);
 record UpdateAgentDto(string Name, string? ProvinceCode, string? DistrictCode, string? Address, bool? IsActive, string? Remark);
+record CreateWardDto(string? Code, string Name, string? ProvinceCode, string? DistrictCode, bool? IsActive);
+record UpdateWardDto(string Name, string? ProvinceCode, string? DistrictCode, bool? IsActive);
 record CreateTempPrintDto(string? Code, string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
 record UpdateTempPrintDto(string Name, string TypeCode, string? PaperSize, string? UnitName, string? UnitAddress, string? UnitPhone, string? UnitEmail, string HeaderTitle, string? SubTitle, string BodyTemplateHtml, string? NoteFooter, bool? IsDefault, bool? IsActive, string? Remark);
 record CreateTempPrintTypeDto(string? Code, string Name, string? GroupCode, string? Description, bool? IsActive);
