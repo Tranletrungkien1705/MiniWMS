@@ -1801,6 +1801,44 @@ public record InventoryValuationReport(
     List<InventoryValuationRow> Rows
 );
 
+/// <summary>Dòng báo cáo Định giá tồn kho theo kỳ tháng (port từ Rpt_InvBalanceValuationPeriodMonth Skycic).
+/// Mỗi dòng = 1 (Kỳ tháng, Kho, Mặt hàng): tồn cuối kỳ, hàng tạm khóa, hàng khả dụng, đơn giá vốn và tổng giá trị tồn.</summary>
+public record ValuationPeriodMonthRow(
+    DateTime PeriodMonth,        // Kỳ tháng (PeriodMonth, ngày 1 của tháng)
+    int WarehouseId,
+    string WarehouseName,
+    int ProductId,
+    string ProductCode,
+    string ProductName,
+    string Uom,
+    string? ProductGrpCode,      // Nhóm hàng hoá (ProductGrpCode)
+    string? ProductGrpName,      // Tên nhóm hàng hoá (ProductGrpName)
+    int QtyTotalOK,              // Tồn cuối kỳ (QtyTotalOK)
+    int QtyBlockOK,              // Số lượng tạm khóa / phong tỏa (QtyBlockOK)
+    int QtyAvailOK,              // Số lượng khả dụng (QtyAvailOK = QtyTotalOK - QtyBlockOK)
+    decimal UPInv,               // Đơn giá vốn kho (UPInv)
+    decimal TotalValInv,         // Tổng giá trị tồn = QtyTotalOK * UPInv (TotalValInv)
+    double InvPercent            // Tỷ trọng % giá trị so với tổng tài sản kho trong kỳ
+);
+
+/// <summary>Báo cáo Định giá tồn kho theo kỳ tháng (Inventory Balance Valuation by Period Month - port từ Rpt_InvBalanceValuationPeriodMonth Skycic).
+/// Tái dựng tồn cuối kỳ của từng (kho, mặt hàng) tại mỗi tháng trong khoảng kỳ, định giá bằng đơn giá vốn hiện hành.</summary>
+public record ValuationPeriodMonthReport(
+    int? WarehouseId,
+    string WarehouseName,
+    DateTime FromMonth,
+    DateTime ToMonth,
+    string? ProductGrpCode,
+    string? Keyword,
+    int TotalPeriods,            // Số kỳ tháng có phát sinh
+    int TotalItems,              // Tổng số dòng (kỳ x kho x mặt hàng)
+    int TotalQtyTotalOK,         // Tổng tồn cuối kỳ (cộng dồn các kỳ)
+    int TotalQtyBlockOK,         // Tổng hàng tạm khóa
+    int TotalQtyAvailOK,         // Tổng hàng khả dụng
+    decimal GrandTotalValInv,    // Tổng giá trị tồn kho (VNĐ)
+    List<ValuationPeriodMonthRow> Rows
+);
+
 /// <summary>Chi tiết hồ sơ khách hàng & Lịch sử giao dịch kho (port từ Mst_Customer Skycic).</summary>
 public record CustomerDetailDto(
     Customer Customer,

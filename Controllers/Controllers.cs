@@ -487,13 +487,53 @@ public class InventoryBalanceMonthController(IWmsService svc) : Controller
 
         sb.AppendLine($";;;;TỔNG CỘNG;{report.TotalOpeningQty};{report.TotalInQty};{report.TotalOutQty};{report.TotalClosingQty}");
 
-        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
-        var fileName = $"BaoCao_TonKhoTheoThang_{report.FromMonth:yyyyMM}_{report.ToMonth:yyyyMM}.csv";
-        return File(bytes, "text/csv; charset=utf-8", fileName);
-    }
-}
-
-public class InventoryBalanceByPeriodController(IWmsService svc) : Controller
+                var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+                var fileName = $"BaoCao_TonKhoTheoThang_{report.FromMonth:yyyyMM}_{report.ToMonth:yyyyMM}.csv";
+                return File(bytes, "text/csv; charset=utf-8", fileName);
+            }
+        }
+        public class ValuationPeriodMonthController(IWmsService svc) : Controller
+        {
+            public async Task<IActionResult> Index(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? productGrpCode, string? q)
+            {
+                var whs = await svc.WarehousesAsync();
+                ViewBag.Warehouses = whs;
+                ViewBag.WarehouseId = warehouseId;
+                var defFrom = fromMonth ?? new DateTime(DateTime.Today.Year, 1, 1);
+                var defTo = toMonth ?? DateTime.Today;
+                ViewBag.FromMonth = defFrom.ToString("yyyy-MM");
+                ViewBag.ToMonth = defTo.ToString("yyyy-MM");
+                ViewBag.ProductGrpCode = productGrpCode ?? "";
+                ViewBag.Keyword = q ?? "";
+                ViewBag.ProductGroups = await svc.ProductGroupsAsync(null, true);
+                var report = await svc.ValuationPeriodMonthReportAsync(warehouseId, defFrom, defTo, productGrpCode, q);
+                return View(report);
+            }
+            public async Task<IActionResult> ExportCsv(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? productGrpCode, string? q)
+            {
+                var defFrom = fromMonth ?? new DateTime(DateTime.Today.Year, 1, 1);
+                var defTo = toMonth ?? DateTime.Today;
+                var report = await svc.ValuationPeriodMonthReportAsync(warehouseId, defFrom, defTo, productGrpCode, q);
+                var sb = new System.Text.StringBuilder();
+                // UTF-8 BOM để Excel hiển thị đúng tiếng Việt
+                sb.Append('\uFEFF');
+                sb.AppendLine("BÁO CÁO ĐỊNH GIÁ TỒN KHO THEO KỲ THÁNG");
+                sb.AppendLine($"Kho:;{report.WarehouseName}");
+                sb.AppendLine($"Từ kỳ:;{report.FromMonth:MM/yyyy};Đến kỳ:;{report.ToMonth:MM/yyyy}");
+                sb.AppendLine();
+                sb.AppendLine("STT;Kỳ tháng;Mã hàng;Tên hàng hoá;ĐVT;Nhóm hàng;Kho hàng;Tồn cuối kỳ;Tạm khóa;Khả dụng;Đơn giá vốn;Tổng giá trị tồn;Tỷ trọng %");
+                int stt = 1;
+                foreach (var r in report.Rows)
+                {
+                    sb.AppendLine($"{stt++};{r.PeriodMonth:MM/yyyy};\"{r.ProductCode}\";\"{r.ProductName.Replace("\"", "\"\"")}\";\"{r.Uom}\";\"{r.ProductGrpName}\";\"{r.WarehouseName}\";{r.QtyTotalOK};{r.QtyBlockOK};{r.QtyAvailOK};{r.UPInv};{r.TotalValInv};{r.InvPercent}");
+                }
+                sb.AppendLine($";;;;TỔNG CỘNG;;;;{report.TotalQtyTotalOK};{report.TotalQtyBlockOK};{report.TotalQtyAvailOK};;{report.GrandTotalValInv};100");
+                var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+                var fileName = $"BaoCao_DinhGiaTonKhoTheoKy_{report.FromMonth:yyyyMM}_{report.ToMonth:yyyyMM}.csv";
+                return File(bytes, "text/csv; charset=utf-8", fileName);
+            }
+        }
+        public class InventoryBalanceByPeriodController(IWmsService svc) : Controller
 {
     public async Task<IActionResult> Index(int? warehouseId, DateTime? asOfDate, string? q)
     {

@@ -114,6 +114,7 @@ public interface IWmsService
     Task<MonthlyMatrixReport> MonthlyMatrixReportAsync(int year, int? warehouseId, string? viewMode, string? keyword);
     Task<StockExtendReport> StockExtendReportAsync(int? warehouseId, StockExtendStatus? statusFilter, string? keyword);
     Task<InventoryValuationReport> InventoryValuationReportAsync(int? warehouseId, InventoryValuationAbcClass? abcClass, bool onlyHasStock = true, string? keyword = null, DateTime? asOfDate = null);
+    Task<ValuationPeriodMonthReport> ValuationPeriodMonthReportAsync(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? productGrpCode, string? keyword);
     Task<LeafWarehouseBalanceReport> LeafWarehouseBalanceReportAsync(int? warehouseId, string? keyword = null, DateTime? asOfDate = null);
     Task<PointInTimeBalanceReport> PointInTimeBalanceReportAsync(int? warehouseId, DateTime asOfDate, string? keyword = null);
     Task<LastUpdInvByProductReport> LastUpdInvByProductReportAsync(int? warehouseId, string? keyword = null);
@@ -15000,6 +15001,186 @@ public class WmsService(AppDbContext db) : IWmsService
             rows.Count(r => r.DaysSinceUpdate <= 7),
             rows.Count(r => r.DaysSinceUpdate > 30),
             rows.Count > 0 ? rows.Max(r => r.LastUpdatedAt) : DateTime.Today,
+            rows
+        );
+    }
+
+    /// <summary>Báo cáo Định giá tồn kho theo kỳ tháng (Inventory Balance Valuation by Period Month - port từ Rpt_InvBalanceValuationPeriodMonth Skycic).
+    /// Với mỗi tháng trong khoảng kỳ, tái dựng tồn cuối kỳ của từng (kho, mặt hàng) bằng tổng lũy kế biến động tồn (QtyChTotalOK) có thời điểm ghi sổ &lt;= cuối tháng,
+    /// trừ đi hàng tạm khóa (QtyBlockOK) để ra hàng khả dụng (QtyAvailOK), định giá bằng đơn giá vốn hiện hành (UPInv) và tính tổng giá trị tồn (TotalValInv).</summary>
+    public async Task<ValuationPeriodMonthReport> ValuationPeriodMonthReportAsync(int? warehouseId, DateTime? fromMonth, DateTime? toMonth, string? productGrpCode, string? keyword)
+    {
+        // Chuẩn hóa kỳ về đầu tháng
+        var from = new DateTime((fromMonth ?? new DateTime(DateTime.Today.Year, 1, 1)).Year,
+                                (fromMonth ?? new DateTime(DateTime.Today.Year, 1, 1)).Month, 1);
+        var toM = new DateTime((toMonth ?? DateTime.Today).Year, (toMonth ?? DateTime.Today).Month, 1);
+        if (toM < from) (from, toM) = (toM, from);
+
+        string whName = "Tất cả kho";
+        if (warehouseId.HasValue)
+        {
+            var wh = await db.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value);
+            if (wh != null) whName = wh.Name;
+        }
+
+        var allWarehouses = await db.Warehouses.OrderBy(w => w.Code).ToListAsync();
+        var whDict = allWarehouses.ToDictionary(w => w.Id, w => w.Name);
+        var targetWarehouses = warehouseId.HasValue
+            ? allWarehouses.Where(w => w.Id == warehouseId.Value).ToList()
+            : allWarehouses;
+
+        // Danh mục mặt hàng (lọc theo nhóm hàng hoá + từ khoá)
+        var prodQuery = db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(productGrpCode))
+        {
+            var grp = productGrpCode.Trim();
+            prodQuery = prodQuery.Where(p => p.ProductGrpCode == grp);
+        }
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToLower();
+            prodQuery = prodQuery.Where(p => p.Code.ToLower().Contains(kw) || p.Name.ToLower().Contains(kw));
+        }
+        var products = await prodQuery.OrderBy(p => p.Code).ToListAsync();
+        var productIds = products.Select(p => p.Id).ToHashSet();
+
+        // Nhóm hàng hoá để hiển thị tên
+        var grpDict = (await db.ProductGroups.ToListAsync()).ToDictionary(g => g.Code, g => g.Name);
+
+        // Đơn giá vốn hiện hành: ưu tiên CostPriceHist của kho -> toàn hệ thống -> Product.CostPrice
+        var costPrices = await db.CostPriceHists
+            .OrderByDescending(c => c.EffectDate)
+            .ThenByDescending(c => c.Id)
+            .ToListAsync();
+        var costLookup = new Dictionary<(int? whId, int prodId), decimal>();
+        foreach (var c in costPrices)
+        {
+            if (!costLookup.ContainsKey((c.WarehouseId, c.ProductId)))
+                costLookup[(c.WarehouseId, c.ProductId)] = c.CostPrice;
+        }
+
+        // Toàn bộ bút toán biến động tồn (Inv_InventoryTransaction) tính đến cuối kỳ báo cáo
+        var periodEnd = toM.AddMonths(1).AddTicks(-1);
+        var txns = await db.InventoryTransactions
+            .Where(t => t.CreatedAt <= periodEnd && productIds.Contains(t.ProductId))
+            .ToListAsync();
+
+        // Hàng tạm khóa (QtyBlockOK): serial bị khóa/hỏng + phiếu xuất/chuyển nháp + lệnh chuyển chờ + trả NCC nháp + xuất TP chờ
+        var blockEvents = new List<(int whId, int prodId, int qty, DateTime at)>();
+        var serials = await db.StockSerials
+            .Where(s => (s.Status == StockSerialStatus.Locked || s.Status == StockSerialStatus.DamagedNG) && s.InDate <= periodEnd)
+            .ToListAsync();
+        foreach (var s in serials) blockEvents.Add((s.WarehouseId, s.ProductId, 1, s.InDate));
+
+        var draftOutDocs = await db.Docs
+            .Where(d => d.Status == DocStatus.Draft && (d.Type == DocType.Out || d.Type == DocType.Transfer) && d.Date <= periodEnd)
+            .Include(d => d.Lines).ToListAsync();
+        foreach (var d in draftOutDocs)
+            if (d.FromWarehouseId is { } fWh)
+                foreach (var l in d.Lines) blockEvents.Add((fWh, l.ProductId, l.Quantity, d.Date));
+
+        var pendingMoveOrders = await db.MoveOrders
+            .Where(m => (m.Status == MoveOrderStatus.Pending || m.Status == MoveOrderStatus.Approved) && m.Date <= periodEnd)
+            .Include(m => m.Lines).ToListAsync();
+        foreach (var m in pendingMoveOrders)
+            foreach (var l in m.Lines) blockEvents.Add((m.FromWarehouseId, l.ProductId, l.Quantity, m.Date));
+
+        var draftRetSups = await db.ReturnToSuppliers
+            .Where(r => r.Status == ReturnSupStatus.Draft && r.Date <= periodEnd)
+            .Include(r => r.Lines).ToListAsync();
+        foreach (var r in draftRetSups)
+            foreach (var l in r.Lines) blockEvents.Add((r.WarehouseId, l.ProductId, l.Quantity, r.Date));
+
+        var pendingOutFGs = await db.InventoryOutFGs
+            .Where(f => f.Status == InvOutFGStatus.Pending && f.Date <= periodEnd)
+            .Include(f => f.Lines).ToListAsync();
+        foreach (var f in pendingOutFGs)
+            foreach (var l in f.Lines) blockEvents.Add((f.WarehouseId, l.ProductId, l.Qty, f.Date));
+
+        // Duyệt từng kỳ tháng trong khoảng báo cáo
+        var rows = new List<ValuationPeriodMonthRow>();
+        var periodList = new List<DateTime>();
+        for (var m = from; m <= toM; m = m.AddMonths(1)) periodList.Add(m);
+
+        foreach (var period in periodList)
+        {
+            var monthEnd = period.AddMonths(1).AddTicks(-1);
+
+            // Tồn cuối kỳ theo (kho, mặt hàng) = tổng lũy kế QtyChTotalOK <= cuối tháng
+            var qtyMap = new Dictionary<(int whId, int prodId), int>();
+            foreach (var t in txns)
+            {
+                if (t.CreatedAt > monthEnd) continue;
+                if (!whDict.ContainsKey(t.WarehouseId) || !productIds.Contains(t.ProductId)) continue;
+                qtyMap.TryGetValue((t.WarehouseId, t.ProductId), out var cur);
+                qtyMap[(t.WarehouseId, t.ProductId)] = cur + t.QtyChTotalOK;
+            }
+
+            // Hàng tạm khóa lũy kế <= cuối tháng
+            var blockMap = new Dictionary<(int whId, int prodId), int>();
+            foreach (var b in blockEvents)
+            {
+                if (b.at > monthEnd) continue;
+                if (!whDict.ContainsKey(b.whId) || !productIds.Contains(b.prodId)) continue;
+                blockMap.TryGetValue((b.whId, b.prodId), out var cur);
+                blockMap[(b.whId, b.prodId)] = cur + b.qty;
+            }
+
+            // Xây dựng dòng cho kỳ này
+            var periodRows = new List<ValuationPeriodMonthRow>();
+            foreach (var w in targetWarehouses)
+            {
+                foreach (var p in products)
+                {
+                    int totalOk = qtyMap.GetValueOrDefault((w.Id, p.Id), 0);
+                    int rawBlock = blockMap.GetValueOrDefault((w.Id, p.Id), 0);
+                    int blockOk = Math.Min(totalOk > 0 ? totalOk : 0, rawBlock);
+                    int availOk = Math.Max(0, totalOk - blockOk);
+
+                    if (totalOk == 0 && blockOk == 0 && string.IsNullOrWhiteSpace(keyword)) continue;
+
+                    decimal cost = p.CostPrice;
+                    if (costLookup.TryGetValue((w.Id, p.Id), out var whCost) && whCost > 0) cost = whCost;
+                    else if (costLookup.TryGetValue((null, p.Id), out var sysCost) && sysCost > 0) cost = sysCost;
+                    if (cost <= 0) cost = 100000m; // Fallback giá danh nghĩa
+                    decimal totalVal = totalOk * cost;
+                    string? grpName = p.ProductGrpCode != null && grpDict.TryGetValue(p.ProductGrpCode, out var gn) ? gn : null;
+
+                    periodRows.Add(new ValuationPeriodMonthRow(
+                        period, w.Id, w.Name, p.Id, p.Code, p.Name, p.Uom,
+                        p.ProductGrpCode, grpName,
+                        totalOk, blockOk, availOk, cost, totalVal, 0.0));
+                }
+            }
+
+            // Tỷ trọng % giá trị trong kỳ
+            decimal periodTotalVal = periodRows.Sum(r => r.TotalValInv);
+            if (periodTotalVal > 0)
+            {
+                periodRows = periodRows.Select(r => r with
+                {
+                    InvPercent = Math.Round((double)(r.TotalValInv / periodTotalVal * 100m), 2)
+                }).ToList();
+            }
+
+            rows.AddRange(periodRows);
+        }
+
+        rows = rows.OrderBy(r => r.PeriodMonth).ThenBy(r => r.WarehouseName).ThenBy(r => r.ProductCode).ToList();
+
+        return new ValuationPeriodMonthReport(
+            warehouseId,
+            whName,
+            from,
+            toM,
+            productGrpCode,
+            keyword,
+            periodList.Count,
+            rows.Count,
+            rows.Sum(r => r.QtyTotalOK),
+            rows.Sum(r => r.QtyBlockOK),
+            rows.Sum(r => r.QtyAvailOK),
+            rows.Sum(r => r.TotalValInv),
             rows
         );
     }

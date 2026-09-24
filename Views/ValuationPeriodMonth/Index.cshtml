@@ -1,0 +1,239 @@
+@model ValuationPeriodMonthReport
+@{
+    ViewData["Title"] = "Định giá tồn kho theo kỳ tháng";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+    var selectedWid = (int?)ViewBag.WarehouseId;
+    var fromMonth = (string)ViewBag.FromMonth;
+    var toMonth = (string)ViewBag.ToMonth;
+    var grpCode = (string)ViewBag.ProductGrpCode;
+    var keyword = (string)ViewBag.Keyword;
+    var groups = (List<ProductGroup>)ViewBag.ProductGroups;
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold text-muted">Kho hàng</label>
+                <select name="warehouseId" class="form-select form-select-sm">
+                    <option value="">— Tất cả kho —</option>
+                    @foreach (var w in whs)
+                    {
+                        <option value="@w.Id" selected="@(selectedWid == w.Id)">@w.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Từ kỳ <span class="text-danger">*</span></label>
+                <input type="month" id="inputFromMonth" name="fromMonth" value="@fromMonth" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Đến kỳ <span class="text-danger">*</span></label>
+                <input type="month" id="inputToMonth" name="toMonth" value="@toMonth" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Nhóm hàng hoá</label>
+                <select name="productGrpCode" class="form-select form-select-sm">
+                    <option value="">— Tất cả nhóm —</option>
+                    @foreach (var g in groups)
+                    {
+                        <option value="@g.Code" selected="@(grpCode == g.Code)">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold text-muted">Tìm mặt hàng</label>
+                <input type="text" name="q" value="@keyword" placeholder="Mã hoặc tên..." class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-1 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Lọc báo cáo">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                <a href="/ValuationPeriodMonth" class="btn btn-sm btn-outline-secondary" title="Đặt lại bộ lọc">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+            <div class="col-12 d-flex gap-2 justify-content-end">
+                <a href="/ValuationPeriodMonth/ExportCsv?warehouseId=@selectedWid&fromMonth=@fromMonth&toMonth=@toMonth&productGrpCode=@grpCode&q=@Uri.EscapeDataString(keyword ?? "")"
+                   class="btn btn-sm btn-outline-success" title="Xuất file CSV / Excel">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất CSV
+                </a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="In báo cáo">
+                    <i class="bi bi-printer"></i> In
+                </button>
+            </div>
+            <div class="col-12 mt-2 pt-1 border-top d-flex gap-2 align-items-center flex-wrap">
+                <span class="small text-muted me-1">Chọn nhanh kỳ:</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisMonth')">Tháng này</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('lastMonth')">Tháng trước</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisQuarter')">Quý này</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="setPeriod('thisYear')">Năm nay</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">SỐ KỲ THÁNG</span>
+                    <i class="bi bi-calendar3-range text-secondary fs-5"></i>
+                </div>
+                <div class="stat-num text-secondary">@Model.TotalPeriods.ToString("N0")</div>
+                <div class="small text-muted">@Model.FromMonth.ToString("MM/yyyy") → @Model.ToMonth.ToString("MM/yyyy")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG TỒN CUỐI KỲ</span>
+                    <i class="bi bi-boxes text-primary fs-5"></i>
+                </div>
+                <div class="stat-num text-primary">@Model.TotalQtyTotalOK.ToString("N0")</div>
+                <div class="small text-muted">Cộng dồn các kỳ báo cáo</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">HÀNG TẠM KHÓA</span>
+                    <i class="bi bi-lock text-danger fs-5"></i>
+                </div>
+                <div class="stat-num text-danger">@Model.TotalQtyBlockOK.ToString("N0")</div>
+                <div class="small text-muted">Khả dụng: @Model.TotalQtyAvailOK.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100 border-0 bg-white">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="text-muted small fw-semibold">TỔNG GIÁ TRỊ TỒN</span>
+                    <i class="bi bi-cash-stack text-success fs-5"></i>
+                </div>
+                <div class="stat-num text-success">@Model.GrandTotalValInv.ToString("N0")</div>
+                <div class="small text-muted">VNĐ (định giá theo giá vốn)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="fw-bold fs-6"><i class="bi bi-table me-2 text-primary"></i>Định giá tồn kho theo kỳ tháng</span>
+            <span class="badge bg-light text-dark border">@Model.Rows.Count dòng</span>
+        </div>
+        <div class="small text-muted">
+            <i class="bi bi-building me-1"></i>Kho: <strong class="text-dark">@Model.WarehouseName</strong>
+            <span class="ms-3"><i class="bi bi-calendar3 me-1"></i>Từ kỳ: <strong class="text-dark">@Model.FromMonth.ToString("MM/yyyy")</strong> đến <strong class="text-dark">@Model.ToMonth.ToString("MM/yyyy")</strong></span>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center" style="width:45px">#</th>
+                    <th class="text-center" style="width:80px">Kỳ tháng</th>
+                    <th style="width:110px">Mã hàng</th>
+                    <th>Tên hàng hoá</th>
+                    <th class="text-center" style="width:60px">ĐVT</th>
+                    <th style="width:130px">Nhóm hàng</th>
+                    <th style="width:140px">Kho</th>
+                    <th class="text-end text-primary" style="width:100px">Tồn cuối kỳ</th>
+                    <th class="text-end text-danger" style="width:90px">Tạm khóa</th>
+                    <th class="text-end text-success" style="width:90px">Khả dụng</th>
+                    <th class="text-end" style="width:110px">Đơn giá vốn</th>
+                    <th class="text-end" style="width:130px">Tổng giá trị tồn</th>
+                    <th class="text-end" style="width:80px">Tỷ trọng</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                int stt = 1;
+                foreach (var r in Model.Rows)
+                {
+                    <tr>
+                        <td class="text-center text-muted small">@(stt++)</td>
+                        <td class="text-center"><span class="badge bg-light text-dark border fw-medium">@r.PeriodMonth.ToString("MM/yyyy")</span></td>
+                        <td><span class="badge bg-light text-dark border fw-medium">@r.ProductCode</span></td>
+                        <td class="fw-semibold">@r.ProductName</td>
+                        <td class="text-center text-muted small">@r.Uom</td>
+                        <td class="text-muted small">@(r.ProductGrpName ?? "—")</td>
+                        <td><i class="bi bi-building text-muted me-1"></i>@r.WarehouseName</td>
+                        <td class="text-end fw-bold text-primary">@r.QtyTotalOK.ToString("N0")</td>
+                        <td class="text-end text-danger">@(r.QtyBlockOK > 0 ? r.QtyBlockOK.ToString("N0") : "0")</td>
+                        <td class="text-end text-success">@r.QtyAvailOK.ToString("N0")</td>
+                        <td class="text-end text-muted">@r.UPInv.ToString("N0")</td>
+                        <td class="text-end fw-semibold">@r.TotalValInv.ToString("N0")</td>
+                        <td class="text-end text-muted small">@r.InvPercent.ToString("N2")%</td>
+                    </tr>
+                }
+            }
+            else
+            {
+                <tr>
+                    <td colspan="13" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                        Không có tồn kho nào phù hợp với bộ lọc trong khoảng kỳ đã chọn.
+                    </td>
+                </tr>
+            }
+            </tbody>
+            @if (Model.Rows.Count > 0)
+            {
+                <tfoot class="table-group-divider fw-bold bg-light">
+                    <tr>
+                        <td colspan="7" class="text-end text-uppercase small">Tổng cộng:</td>
+                        <td class="text-end text-primary">@Model.TotalQtyTotalOK.ToString("N0")</td>
+                        <td class="text-end text-danger">@Model.TotalQtyBlockOK.ToString("N0")</td>
+                        <td class="text-end text-success">@Model.TotalQtyAvailOK.ToString("N0")</td>
+                        <td></td>
+                        <td class="text-end">@Model.GrandTotalValInv.ToString("N0")</td>
+                        <td class="text-end">100%</td>
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    </div>
+</div>
+
+<script>
+    function fmtMonth(d) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}`;
+    }
+
+    function setPeriod(type) {
+        const today = new Date();
+        const fromInput = document.getElementById('inputFromMonth');
+        const toInput = document.getElementById('inputToMonth');
+
+        if (type === 'thisMonth') {
+            fromInput.value = fmtMonth(today);
+            toInput.value = fmtMonth(today);
+        } else if (type === 'lastMonth') {
+            const last = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            fromInput.value = fmtMonth(last);
+            toInput.value = fmtMonth(last);
+        } else if (type === 'thisQuarter') {
+            const qStartMonth = Math.floor(today.getMonth() / 3) * 3;
+            const qStart = new Date(today.getFullYear(), qStartMonth, 1);
+            fromInput.value = fmtMonth(qStart);
+            toInput.value = fmtMonth(today);
+        } else if (type === 'thisYear') {
+            const yStart = new Date(today.getFullYear(), 0, 1);
+            fromInput.value = fmtMonth(yStart);
+            toInput.value = fmtMonth(today);
+        }
+        document.getElementById('filterForm').submit();
+    }
+</script>
