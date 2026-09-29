@@ -1,0 +1,95 @@
+@model MoveOrd
+@{
+    ViewData["Title"] = $"Phiếu điều chuyển {Model.Code}";
+    var b = Ui.FormStatusBadge(Model.Status);
+}
+@*
+    Port 1:1 Views/InvF_MoveOrd/Detail.cshtml (2020.3.Skycic.Inventory).
+    Lưới dòng theo 14 cột của Create.cshtml:219-234 (đích bỏ cột CONTROL vì không sửa ở màn xem).
+*@
+<h1 class="h5 fw-bold mb-3">
+    Phiếu điều chuyển @Model.Code
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 InvF_MoveOrd/Detail.cshtml — InvF_MoveOrdDtl)</span>
+</h1>
+
+<div class="card mb-3"><div class="card-body">
+    <div class="row g-3">
+        <div class="col-md-3"><div class="text-muted small">Số phiếu điều chuyển</div><div class="fw-semibold">@Model.Code</div></div>
+        <div class="col-md-3"><div class="text-muted small">Kho xuất</div><div class="fw-semibold">@Model.OutWarehouse?.Name</div></div>
+        <div class="col-md-3"><div class="text-muted small">Kho nhập</div><div class="fw-semibold">@Model.InWarehouse?.Name</div></div>
+        <div class="col-md-3"><div class="text-muted small">Trạng thái</div><span class="badge bg-@b.css">@b.text</span></div>
+
+        <div class="col-md-3"><div class="text-muted small">Loại điều chuyển</div><div>@(Model.MoveOrdType ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Số phiếu kiểm kê</div><div>@(Model.AuditCode ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Người tạo / ngày tạo</div><div>@Model.CreatedBy · @Model.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Người duyệt / ngày duyệt</div><div>@(Model.ApprovedBy ?? "—") · @(Model.ApprovedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+
+        <div class="col-md-3"><div class="text-muted small">Người hủy / ngày hủy</div><div>@(Model.CancelledBy ?? "—") · @(Model.CancelledAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Phiếu chuyển kho đã ghi sổ</div><div>@(Model.TransferDocCode ?? "—")</div></div>
+        <div class="col-md-6"><div class="text-muted small">Nội dung xuất</div><div>@(Model.Remark ?? "—")</div></div>
+    </div>
+    <hr />
+    <div class="d-flex gap-2 flex-wrap">
+        @if (Model.Status == FormStatus.Pending)
+        {
+            <form method="post" action="/MoveOrd/Approve">@Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i>Duyệt &amp; ghi sổ chuyển kho</button>
+            </form>
+            <form method="post" action="/MoveOrd/Cancel">@Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-outline-dark"><i class="bi bi-ban me-1"></i>Hủy phiếu</button>
+            </form>
+        }
+        <a href="/MoveOrd" class="btn btn-light">Quay lại</a>
+    </div>
+</div></div>
+
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <p class="fw-bold mb-0">Danh mục hàng hóa</p>
+        @* nguồn: Create.cshtml:210 — span "Tổng:" *@
+        <div class="small">Tổng: <b>@Model.TotalQty.ToString("N2")</b> · Tiền sau thuế: <b>@Model.TotalValAfterVat.ToString("N0")</b></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+        <thead><tr>
+            <th>Mã hàng hoá</th>
+            <th>Tên hàng hoá</th>
+            <th>Đơn vị</th>
+            <th class="text-end">Số lượng điều chuyển</th>
+            <th>Vị trí xuất</th>
+            <th>Vị trí nhập</th>
+            <th class="text-end">Giá nhập trước VAT</th>
+            <th class="text-end">Thuế suất (%)</th>
+            <th class="text-end">Tổng tiền trước thuế</th>
+            <th class="text-end">Tiền thuế</th>
+            <th class="text-end">Thành tiền sau thuế</th>
+            <th>Trạng thái</th>
+            <th>Ghi chú</th>
+        </tr></thead>
+        <tbody>
+        @foreach (var l in Model.Lines)
+        {
+            var bd = Ui.FormStatusBadge(l.StatusDtl);
+            <tr>
+                <td class="fw-semibold">@l.Product.Code</td>
+                <td>@l.Product.Name</td>
+                <td>@l.UnitCode</td>
+                <td class="text-end">@l.Qty.ToString("N2")</td>
+                <td>@l.OutLocation</td>
+                <td>@l.InLocation</td>
+                <td class="text-end">@l.UpMove.ToString("N0")</td>
+                <td class="text-end">@l.Vat.ToString("N0")</td>
+                <td class="text-end">@l.ValMove.ToString("N0")</td>
+                <td class="text-end">@l.ValVat.ToString("N0")</td>
+                <td class="text-end fw-semibold">@l.ValAfterVat.ToString("N0")</td>
+                <td><span class="badge bg-@bd.css">@bd.text</span></td>
+                <td class="small text-muted">@l.Remark</td>
+            </tr>
+        }
+        @if (Model.Lines.Count == 0) { <tr><td colspan="13" class="text-center text-muted py-4">Phiếu không có dòng hàng hoá.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+</div></div>

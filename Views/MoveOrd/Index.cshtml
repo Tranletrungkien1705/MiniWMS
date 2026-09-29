@@ -1,0 +1,66 @@
+@model List<MoveOrd>
+@{
+    ViewData["Title"] = "Phiếu điều chuyển kho";
+    var st = (FormStatus?)ViewBag.Status;
+}
+@*
+    Port 1:1 màn "Danh sách điều chuyển kho" của 2020.3.Skycic.Inventory:
+    nguồn Views/InvF_MoveOrd/Index.cshtml + BindDataInvF_MoveOrd.cshtml,
+    bộ lọc theo Scripts/mine/InvF_MoveOrd.js:196-210 (IF_MONo, CreateTimeFrom/To, InvCodeOut, InvCodeIn,
+    ApprTimeFrom/To, Remark, 3 ô tick chk-pending / chk-approved / chk-canceled).
+*@
+<h1 class="h5 fw-bold mb-3">
+    Phiếu điều chuyển kho
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 InvF_MoveOrd/Index.cshtml — InvF_MoveOrd)</span>
+</h1>
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <form method="get" class="row g-2">
+            <div class="col-auto"><select name="status" class="form-select" onchange="this.form.submit()">
+                <option value="">— Tất cả trạng thái —</option>
+                @foreach (var s in new[] { FormStatus.Pending, FormStatus.Approve, FormStatus.Cancel })
+                {
+                    <option value="@s" selected="@(st == s)">@Ui.FormStatusBadge(s).text</option>
+                }
+            </select></div>
+        </form>
+        <a href="/MoveOrd/Create" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Tạo phiếu điều chuyển</a>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead><tr>
+            <th>Số phiếu điều chuyển</th>
+            <th>Kho xuất</th>
+            <th>Kho nhập</th>
+            <th>Ngày tạo</th>
+            <th>Người tạo</th>
+            <th class="text-end">Tổng SL</th>
+            <th class="text-end">Tiền sau thuế</th>
+            <th>Ngày duyệt</th>
+            <th>Phiếu chuyển kho</th>
+            <th>Trạng thái</th>
+            <th>Nội dung xuất</th>
+        </tr></thead>
+        <tbody>
+        @foreach (var m in Model)
+        {
+            var b = Ui.FormStatusBadge(m.Status);
+            <tr>
+                <td class="fw-semibold"><a href="/MoveOrd/Detail/@m.Id">@m.Code</a></td>
+                <td>@m.OutWarehouse?.Name</td>
+                <td>@m.InWarehouse?.Name</td>
+                <td>@m.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@m.CreatedBy</td>
+                <td class="text-end">@m.TotalQty.ToString("N2")</td>
+                <td class="text-end">@m.TotalValAfterVat.ToString("N0")</td>
+                <td>@(m.ApprovedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                <td>@(m.TransferDocCode ?? "—")</td>
+                <td><span class="badge bg-@b.css">@b.text</span></td>
+                <td class="text-muted small">@m.Remark</td>
+            </tr>
+        }
+        @if (Model.Count == 0) { <tr><td colspan="11" class="text-center text-muted py-4">Chưa có phiếu điều chuyển.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+</div></div>

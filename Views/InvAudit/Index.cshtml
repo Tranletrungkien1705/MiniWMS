@@ -1,0 +1,64 @@
+@model List<InvAudit>
+@{
+    ViewData["Title"] = "Phiếu kiểm kê kho";
+    var st = (FormStatus?)ViewBag.Status;
+}
+@*
+    Port 1:1 màn "Danh sách phiếu kiểm kê" của 2020.3.Skycic.Inventory:
+    nguồn Views/InvFInvAudit/Index.cshtml (bộ lọc) + Views/InvFInvAudit/BindDataInvF_InvAudit.cshtml (lưới),
+    controller InvFInvAuditController.cs:22 Index(IF_InvAudNo, createdtimefrom/to, approvedtimefrom/to, InvCodeAudit, page, recordcount).
+*@
+<h1 class="h5 fw-bold mb-3">
+    Phiếu kiểm kê kho
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 InvFInvAudit/Index.cshtml — InvF_InvAudit)</span>
+</h1>
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        @* Nguồn lọc theo 3 ô tick chk-pending / chk-approved / chk-canceled (InvF_MoveOrd.js:207-209, cùng mẫu ở màn kiểm kê) *@
+        <form method="get" class="row g-2">
+            <div class="col-auto"><select name="status" class="form-select" onchange="this.form.submit()">
+                <option value="">— Tất cả trạng thái —</option>
+                @foreach (var s in new[] { FormStatus.Pending, FormStatus.Approve, FormStatus.Finish, FormStatus.Cancel })
+                {
+                    <option value="@s" selected="@(st == s)">@Ui.FormStatusBadge(s).text</option>
+                }
+            </select></div>
+        </form>
+        <a href="/InvAudit/Create" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Tạo phiếu kiểm kê</a>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead><tr>
+            <th>Số phiếu kiểm kê</th>
+            <th>Kho kiểm kê</th>
+            <th>Ngày tạo</th>
+            <th>Người tạo</th>
+            <th class="text-end">SL lý thuyết</th>
+            <th class="text-end">SL thực tế</th>
+            <th class="text-end">Lệch</th>
+            <th>Ngày duyệt</th>
+            <th>Trạng thái</th>
+            <th>Ghi chú</th>
+        </tr></thead>
+        <tbody>
+        @foreach (var a in Model)
+        {
+            var b = Ui.FormStatusBadge(a.Status);
+            <tr>
+                <td class="fw-semibold"><a href="/InvAudit/Detail/@a.Id">@a.Code</a></td>
+                <td>@a.Warehouse?.Name</td>
+                <td>@a.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@a.CreatedBy</td>
+                <td class="text-end">@a.TotalQtyInit.ToString("N2")</td>
+                <td class="text-end">@a.TotalQtyActual.ToString("N2")</td>
+                <td class="text-end @(a.TotalQtyDiff == 0 ? "text-muted" : a.TotalQtyDiff > 0 ? "text-success fw-semibold" : "text-danger fw-semibold")">@a.TotalQtyDiff.ToString("N2")</td>
+                <td>@(a.ApprovedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                <td><span class="badge bg-@b.css">@b.text</span></td>
+                <td class="text-muted small">@a.Remark</td>
+            </tr>
+        }
+        @if (Model.Count == 0) { <tr><td colspan="10" class="text-center text-muted py-4">Chưa có phiếu kiểm kê.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+</div></div>

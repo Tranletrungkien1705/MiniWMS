@@ -25,6 +25,8 @@ builder.Services.AddDbContext<AppDbContext>(o =>
 });
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<IWmsService, WmsService>();
+// PORT 1:1 (2020.3.Skycic.Inventory): phiếu kiểm kê, phiếu điều chuyển, thẻ kho
+builder.Services.AddScoped<ISkycicService, SkycicService>();
 builder.Services.AddHttpClient();   // gọi MiniTrace khi ghi sổ phiếu
 // SSO chung: tin token do MiniSSO cấp (OIDC RS256). Authority tự nạp discovery + JWKS.
 var ssoAuthority = Environment.GetEnvironmentVariable("SSO_AUTHORITY") ?? "https://minisso.onrender.com";

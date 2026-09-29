@@ -1,0 +1,95 @@
+@model List<WarehouseCardRow>
+@{
+    ViewData["Title"] = "Thẻ kho";
+    var prods = (List<Product>)ViewBag.Products;
+    var pid = (int?)ViewBag.ProductId;
+    var from = (DateTime?)ViewBag.From;
+    var to = (DateTime?)ViewBag.To;
+}
+@*
+    Port 1:1 báo cáo THẺ KHO của 2020.3.Skycic.Inventory:
+      - màn lọc  : Views/Report/Rpt_InvF_WarehouseCard.cshtml
+      - lưới      : Views/Report/BindDataRpt_InvF_WarehouseCard.cshtml:33-69 (13 cột)
+      - SQL LIVE  : idn.Skycic.Inventory.Biz/Form.cs:134971 Rpt_InvF_WarehouseCardX_New20200602
+                    (Form.cs:138526 gọi bản này; dòng comment ngay trên nhắc _New20230106 ⇒ bản 20230106
+                     và 20230113 là MÃ CHẾT, không dùng để đối chiếu)
+      - bộ lọc    : ProductCode + ApprDTimeUTCFrom/To (Form.cs:138452-138454)
+*@
+<h1 class="h5 fw-bold mb-3">
+    Thẻ kho
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 Report/Rpt_InvF_WarehouseCard.cshtml — Rpt_InvF_WarehouseCard)</span>
+</h1>
+<div class="card"><div class="card-body">
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <label class="form-label small text-muted mb-1">Hàng hoá</label>
+            <select name="productId" class="form-select">
+                <option value="">— Tất cả hàng hoá —</option>
+                @foreach (var p in prods) { <option value="@p.Id" selected="@(pid == p.Id)">@p.Code — @p.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted mb-1">Ngày duyệt từ</label>
+            <input type="date" name="from" class="form-control" value="@(from?.ToString("yyyy-MM-dd"))" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small text-muted mb-1">đến</label>
+            <input type="date" name="to" class="form-control" value="@(to?.ToString("yyyy-MM-dd"))" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary w-100"><i class="bi bi-search me-1"></i>Xem</button>
+        </div>
+    </form>
+    <div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+        <thead><tr>
+            @* Thứ tự cột giữ đúng BindDataRpt_InvF_WarehouseCard.cshtml:33-69 *@
+            <th>Số chứng từ</th>
+            <th>Ngày duyệt</th>
+            <th>Diễn giải</th>
+            <th>Kho</th>
+            <th>Mã hàng hoá</th>
+            <th>Tên hàng hoá</th>
+            <th class="text-end">Số lượng</th>
+            <th class="text-end">Tồn kho</th>
+            <th>Vị trí tồn</th>
+            <th>Số hợp đồng</th>
+            <th>Nhập.Số Container</th>
+            <th>Nhập.Biển số xe</th>
+            <th>Code xuất khẩu</th>
+            <th>Xuất.Số Container</th>
+            <th>Xuất.Biển số xe</th>
+        </tr></thead>
+        <tbody>
+        @foreach (var r in Model)
+        {
+            <tr>
+                <td class="fw-semibold">@r.DocNo</td>
+                <td>@r.DateDoc</td>
+                <td>@r.InventoryActionDesc</td>
+                <td>@r.InvName</td>
+                <td>@r.ProductCodeUser</td>
+                <td>@r.ProductName</td>
+                @* QtyTrans âm ở chiều xuất / MOVEORDOUT — Form.cs:135679-135688 *@
+                <td class="text-end @(r.QtyTrans < 0 ? "text-danger" : "text-success")">@r.QtyTrans.ToString("N2")</td>
+                <td class="text-end fw-semibold">@r.TotalQtyInv.ToString("N2")</td>
+                <td class="small text-muted">@r.ListInvCode</td>
+                <td class="small">@r.InvFCFInCode01</td>
+                <td class="small">@r.InvFCFInCode02</td>
+                <td class="small">@r.InvFCFInCode03</td>
+                <td class="small">@r.InvFCFOutCode01</td>
+                <td class="small">@r.InvFCFOutCode02</td>
+                <td class="small">@r.InvFCFOutCode03</td>
+            </tr>
+        }
+        @if (Model.Count == 0) { <tr><td colspan="15" class="text-center text-muted py-4">Không có phát sinh nhập/xuất trong kỳ.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+    <div class="small text-muted">
+        Cột <b>Tồn kho</b> là tồn LUỸ KẾ sau chứng từ đó (nguồn: <code>TotalQtyInv</code>, Form.cs:135546-135556),
+        tính cả phát sinh trước mốc “từ ngày” để số đầu kỳ đúng (nguồn: <code>#tbl_Inv_In/Out_QtyBase_BeginPeriod</code>,
+        Form.cs:139465-139500). Phiếu chuyển kho hiện <b>2 dòng</b> (kho xuất số âm, kho nhập số dương) vì bản LIVE
+        <b>không</b> bật bộ lọc bỏ chiều OUT (Form.cs:135508 đang bị comment).
+    </div>
+</div></div>

@@ -1,0 +1,56 @@
+@{
+    ViewData["Title"] = "Tạo phiếu kiểm kê";
+    var whs = (List<Warehouse>)ViewBag.Warehouses;
+}
+@*
+    Port 1:1 Views/InvFInvAudit/Create.cshtml (2020.3.Skycic.Inventory).
+    Nguồn có 3 trường header: IFInvAudNo (readonly, Create.cshtml:82), Ngày tạo (readonly, :91),
+    InvCodeAudit (bắt buộc, :103) và Remark (:129); 2 nút Lưu / Lưu và tạo mới (:60-61).
+    Lưới hàng hoá ở nguồn KHÔNG nhập tay: Save sinh dòng từ tồn kho (InvFInvAuditController.cs:874-935).
+*@
+<h1 class="h5 fw-bold mb-3">
+    Tạo phiếu kiểm kê
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 InvFInvAudit/Create.cshtml — InvF_InvAudit)</span>
+</h1>
+<div class="card"><div class="card-body">
+    <form method="post" action="/InvAudit/Create">
+        @Html.AntiForgeryToken()
+        <div class="row g-3">
+            <div class="col-md-4">
+                @* nguồn: Create.cshtml:78-84 — Số phiếu kiểm kê, readonly, do Seq cấp *@
+                <label class="form-label">Số phiếu kiểm kê</label>
+                <input class="form-control" value="(hệ thống tự cấp khi lưu)" readonly />
+            </div>
+            <div class="col-md-4">
+                @* nguồn: Create.cshtml:86-93 — Ngày tạo, readonly, mặc định hôm nay *@
+                <label class="form-label">Ngày tạo</label>
+                <input class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" readonly />
+            </div>
+            <div class="col-md-4">
+                @* nguồn: Create.cshtml:96-121 — Kho kiểm kê (InvCodeAudit), bắt buộc *@
+                <label class="form-label">Kho kiểm kê <span class="text-danger">*</span></label>
+                <select name="warehouseId" class="form-select" required>
+                    <option value="">--Chọn kho kiểm kê--</option>
+                    @foreach (var w in whs) { <option value="@w.Id">@w.Name</option> }
+                </select>
+            </div>
+            <div class="col-md-8">
+                @* nguồn: Create.cshtml:124-131 — Ghi chú (Remark) *@
+                <label class="form-label">Ghi chú</label>
+                <textarea name="remark" class="form-control" rows="2"></textarea>
+            </div>
+        </div>
+        <div class="alert alert-info mt-3 mb-0 small">
+            <i class="bi bi-info-circle me-1"></i>
+            Danh mục hàng hoá của phiếu <b>sinh tự động từ tồn kho</b> của kho đã chọn (chỉ dòng tồn &gt; 0),
+            số lượng lý thuyết = số lượng thực tế = tồn hiện tại — đúng như nguồn
+            <code>InvFInvAuditController.cs:874-935</code>. Sau khi lưu, vào phiếu để nhập số lượng thực tế từng dòng.
+        </div>
+        <div class="mt-3 d-flex gap-2">
+            @* nguồn: Create.cshtml:60-61 — BTN_INVFINVAUDIT_SAVE và BTN_INVFINVAUDIT_SAVE_NEW *@
+            <button class="btn btn-primary" name="savetype" value="0"><i class="bi bi-save me-1"></i>Lưu</button>
+            <button class="btn btn-outline-primary" name="savetype" value="saveandcreate">Lưu và tạo mới</button>
+            <a href="/InvAudit" class="btn btn-light">Quay lại</a>
+        </div>
+    </form>
+</div></div>

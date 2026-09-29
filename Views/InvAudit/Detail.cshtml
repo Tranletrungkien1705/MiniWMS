@@ -1,0 +1,141 @@
+@model InvAudit
+@{
+    ViewData["Title"] = $"Phiếu kiểm kê {Model.Code}";
+    var b = Ui.FormStatusBadge(Model.Status);
+    var suaDuoc = Model.Status is FormStatus.Pending or FormStatus.Approve;
+}
+@*
+    Port 1:1 hai màn nguồn gộp lại:
+      - Views/InvFInvAudit/Detail.cshtml (xem phiếu, read-only)
+      - Views/InvFInvAudit/Action.cshtml + LstProductDaKiem.cshtml (nhập số lượng thực tế từng dòng,
+        controller InvFInvAuditController.cs:2075 Action / :2372 ActionIF_InvAudNo)
+    Cột lưới theo LstProduct.cshtml:56-86 (Mã hàng hóa / Tên hàng hóa / Đơn vị tính / SL tồn kho / Vị trí)
+    cộng 3 cột bị comment ở nguồn nhưng CÓ trong bảng: Số lượng thực tế, Số lượng lệch, Trạng thái
+    (LstProduct.cshtml:74-85 — comment ở lưới nhập, dùng thật ở màn Đã kiểm).
+*@
+<h1 class="h5 fw-bold mb-3">
+    Phiếu kiểm kê @Model.Code
+    <span class="text-muted fw-normal" style="font-size:12px">(port 1:1 InvFInvAudit/Detail.cshtml — InvF_InvAuditDtl)</span>
+</h1>
+
+<div class="card mb-3"><div class="card-body">
+    <div class="row g-3">
+        <div class="col-md-3"><div class="text-muted small">Số phiếu kiểm kê</div><div class="fw-semibold">@Model.Code</div></div>
+        <div class="col-md-3"><div class="text-muted small">Kho kiểm kê</div><div class="fw-semibold">@Model.Warehouse?.Name</div></div>
+        <div class="col-md-2"><div class="text-muted small">Trạng thái</div><span class="badge bg-@b.css">@b.text</span></div>
+        <div class="col-md-2"><div class="text-muted small">Người tạo</div><div>@Model.CreatedBy</div></div>
+        <div class="col-md-2"><div class="text-muted small">Ngày tạo</div><div>@Model.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div></div>
+
+        <div class="col-md-3"><div class="text-muted small">Người duyệt / ngày duyệt</div><div>@(Model.ApprovedBy ?? "—") · @(Model.ApprovedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Người chốt / ngày chốt</div><div>@(Model.FinishedBy ?? "—") · @(Model.FinishedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Người hủy / ngày hủy</div><div>@(Model.CancelledBy ?? "—") · @(Model.CancelledAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+        <div class="col-md-3"><div class="text-muted small">Phiếu điều chỉnh sinh ra</div><div>@(Model.AdjustDocCodes ?? "—")</div></div>
+        <div class="col-12"><div class="text-muted small">Ghi chú</div><div>@(Model.Remark ?? "—")</div></div>
+    </div>
+    <hr />
+    <div class="d-flex gap-2 flex-wrap">
+        @* nguồn: InvFInvAuditController.cs:450 Approve / :513 Finish / :576 Cancel *@
+        @if (Model.Status == FormStatus.Pending)
+        {
+            <form method="post" action="/InvAudit/Approve">@Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i>Duyệt</button>
+            </form>
+        }
+        @if (Model.Status == FormStatus.Approve)
+        {
+            <form method="post" action="/InvAudit/Finish">@Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-success"><i class="bi bi-flag me-1"></i>Chốt kiểm kê (cập nhật tồn)</button>
+            </form>
+        }
+        @if (Model.Status is FormStatus.Pending or FormStatus.Approve)
+        {
+            <form method="post" action="/InvAudit/Cancel">@Html.AntiForgeryToken()
+                <input type="hidden" name="id" value="@Model.Id" />
+                <button class="btn btn-outline-dark"><i class="bi bi-ban me-1"></i>Hủy phiếu</button>
+            </form>
+        }
+        <a href="/InvAudit" class="btn btn-light">Quay lại</a>
+    </div>
+    @if (Model.Status == FormStatus.Approve && Model.Lines.Any(l => !l.FlagAudit))
+    {
+        @* Guard nguồn: Form.cs:77745-77790 — còn dòng FlagAudit='0' thì KHÔNG chốt được *@
+        <div class="alert alert-warning mt-3 mb-0 small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Còn <b>@Model.Lines.Count(l => !l.FlagAudit)</b> dòng chưa kiểm — phải nhập số lượng thực tế hết mới chốt được phiếu.
+        </div>
+    }
+</div></div>
+
+<div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <p class="fw-bold mb-0">Danh mục hàng hoá <span class="text-danger">*</span></p>
+        <div class="small text-muted">
+            Tổng lý thuyết <b>@Model.TotalQtyInit.ToString("N2")</b> ·
+            thực tế <b>@Model.TotalQtyActual.ToString("N2")</b> ·
+            lệch <b class="@(Model.TotalQtyDiff == 0 ? "" : Model.TotalQtyDiff > 0 ? "text-success" : "text-danger")">@Model.TotalQtyDiff.ToString("N2")</b>
+        </div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+        <thead><tr>
+            <th class="text-center" style="width:50px">STT</th>
+            <th>Mã hàng hóa</th>
+            <th>Tên hàng hóa (TV)</th>
+            <th>Đơn vị tính</th>
+            <th class="text-end">Số lượng tồn kho</th>
+            <th class="text-end">Số lượng thực tế</th>
+            <th class="text-end">Số lượng lệch</th>
+            <th>Vị trí</th>
+            <th class="text-end">Đơn giá</th>
+            <th class="text-end">Thành tiền</th>
+            <th class="text-end">Thuế suất (%)</th>
+            <th class="text-end">Tiền thuế</th>
+            <th>Chiều</th>
+            <th>Trạng thái</th>
+            <th>Ghi chú</th>
+            @if (suaDuoc) { <th style="width:210px">Ghi số thực tế</th> }
+        </tr></thead>
+        <tbody>
+        @{ var stt = 0; }
+        @foreach (var l in Model.Lines)
+        {
+            stt++;
+            @* nguồn: LstProduct.cshtml:216-219 — FlagExist == "0" thì tô đỏ dòng *@
+            <tr class="@(l.FlagExist ? "" : "table-danger")">
+                <td class="text-center">@stt</td>
+                <td class="fw-semibold">@l.Product.Code</td>
+                <td>@l.Product.Name</td>
+                <td>@l.UnitCode</td>
+                <td class="text-end">@l.QtyInit.ToString("N2")</td>
+                <td class="text-end">@l.QtyActual.ToString("N2")</td>
+                <td class="text-end @(l.QtyDiff == 0 ? "text-muted" : l.QtyDiff > 0 ? "text-success fw-semibold" : "text-danger fw-semibold")">@l.QtyDiff.ToString("N2")</td>
+                <td>@l.LocationActual</td>
+                <td class="text-end">@l.UpAudit.ToString("N0")</td>
+                <td class="text-end">@l.ValAudit.ToString("N0")</td>
+                <td class="text-end">@l.Vat.ToString("N0")</td>
+                <td class="text-end">@l.ValVat.ToString("N0")</td>
+                <td>@(l.InventoryAction == AuditAction.In ? "Nhập" : "Xuất")</td>
+                @* nguồn: LstProduct.cshtml:191 + :211-213 — "Chưa kiểm" / "Đã kiểm" theo FlagAudit *@
+                <td>@if (l.FlagAudit) { <span class="badge bg-success">Đã kiểm</span> } else { <span class="badge bg-secondary">Chưa kiểm</span> }</td>
+                <td class="small text-muted">@l.Remark</td>
+                @if (suaDuoc)
+                {
+                    <td>
+                        <form method="post" action="/InvAudit/Count" class="d-flex gap-1">@Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@Model.Id" />
+                            <input type="hidden" name="lineId" value="@l.Id" />
+                            <input name="qtyActual" type="number" step="0.01" min="0" class="form-control form-control-sm" value="@l.QtyActual" />
+                            <input name="remark" class="form-control form-control-sm" placeholder="Ghi chú" value="@l.Remark" />
+                            <button class="btn btn-sm btn-outline-primary" title="Ghi"><i class="bi bi-check2"></i></button>
+                        </form>
+                    </td>
+                }
+            </tr>
+        }
+        @if (Model.Lines.Count == 0) { <tr><td colspan="16" class="text-center text-muted py-4">Phiếu không có dòng hàng hoá.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+</div></div>

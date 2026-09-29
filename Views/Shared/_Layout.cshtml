@@ -41,6 +41,12 @@
             <a class="nav-link" href="/Doc/Create?type=0"><i class="bi bi-box-arrow-in-down"></i> Nhập kho</a>
             <a class="nav-link" href="/Doc/Create?type=1"><i class="bi bi-box-arrow-up"></i> Xuất kho</a>
             <a class="nav-link" href="/Doc/Create?type=2"><i class="bi bi-arrow-left-right"></i> Chuyển kho</a>
+            @* PORT 1:1 (2020.3.Skycic.Inventory): InvF_InvAudit · InvF_MoveOrd · Rpt_InvF_WarehouseCard *@
+            <div class="nav-section">Kiểm kê &amp; điều chuyển</div>
+            <a class="nav-link @(Nav("InvAudit"))" href="/InvAudit"><i class="bi bi-ui-checks"></i> Phiếu kiểm kê</a>
+            <a class="nav-link @(Nav("MoveOrd"))" href="/MoveOrd"><i class="bi bi-shuffle"></i> Phiếu điều chuyển</a>
+            <div class="nav-section">Báo cáo</div>
+            <a class="nav-link @(Nav("WarehouseCard"))" href="/WarehouseCard"><i class="bi bi-card-list"></i> Thẻ kho</a>
             <div class="nav-section">Danh mục</div>
             <a class="nav-link @(Nav("Warehouse"))" href="/Warehouse"><i class="bi bi-building"></i> Kho</a>
             <a class="nav-link @(Nav("Product"))" href="/Product"><i class="bi bi-box-seam"></i> Mặt hàng</a>
