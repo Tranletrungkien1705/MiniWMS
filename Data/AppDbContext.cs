@@ -41,6 +41,8 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasQueryFilter(x => x.OrgId == _orgId);
         });
+    
+        b.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);   // entity port 1-1 (Data/PortInfra.cs)
     }
 
     public override int SaveChanges() { StampOrg(); return base.SaveChanges(); }

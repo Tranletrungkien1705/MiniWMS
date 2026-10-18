@@ -40,7 +40,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 });
 builder.Services.AddAuthorization();
 builder.Services.AddFleetObs();
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(o =>
+{
+    o.Filters.Add<PortJsonResultFilter>();   // controller port 1-1: JSON PascalCase + ngoai le -> 400 PortResult.Fail
+    o.Filters.Add<PortExceptionFilter>();
+});
 
 var app = builder.Build();
 using (var scope = app.Services.CreateScope())
