@@ -231,6 +231,55 @@ public class Mst_CustomerGroupControllerPort(AppDbContext db, IWebHostEnvironmen
         }
     }
 
+    /// <summary>
+    /// Body của Delete — nguồn nhận `string customerGrpCode = ""` (Mst_CustomerGroupController.cs:480).
+    /// </summary>
+    public class DeleteReq
+    {
+        public string? CustomerGrpCode { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 Mst_CustomerGroupController.cs:480-565 — Delete(string customerGrpCode = "").
+    /// Luồng: rỗng → Success "Mã nhóm khách hàng trống!"; Get (where CustomerGrpCode = X, lấy dòng đầu)
+    ///        → không có → Success "Mã nhóm khách hàng 'X' không có trong hệ thống!";
+    ///        có → WA_Mst_CustomerGroup_Delete (dịch vụ Product Center, dòng 532) → Save với FlagIsDelete = "1" (dòng 537-539)
+    ///        → Success "Xóa nhóm khách hàng 'X' thành công!".
+    /// GAP: bước WA_Mst_CustomerGroup_Delete gọi DỊCH VỤ NGOÀI (AddressAPIs_Product_Customer_Centrer, dòng 532) — đích không có,
+    ///      bỏ qua và ghi GAP (luật §1).
+    /// GAP: WA_Mst_CustomerGroup_Save (dòng 539) — excerpt mục 2 KHÔNG có API `WA_Mst_CustomerGroup_Save` của tầng Biz.Web
+    ///      (chỉ có WAS_/Mst_CustomerGroup_SaveX ở biz); xem .parity-run\conflicts\306_conflict.md.
+    /// </summary>
+    [HttpPost("delete")]
+    public async Task<IActionResult> Delete([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DeleteReq? req)
+    {
+        // Nguồn 491: `!CUtils.IsNullOrEmpty(customerGrpCode)` — rỗng/null → else (dòng 552-556).
+        if (string.IsNullOrEmpty(req?.CustomerGrpCode))
+            return Ok(new { Success = false, Messages = new[] { "Mã nhóm khách hàng trống!" }, RedirectUrl = (string?)null });
+
+        // Nguồn 494-498 + strWhereClause 586-589: where Mst_CustomerGroup.CustomerGrpCode = X ("=", không wildcard).
+        // GetX 12174-12187: select distinct OrgID, CustomerGrpCode ... order by MyIdxSeq asc → lấy dòng đầu (dòng 528).
+        var code = req.CustomerGrpCode;
+        var cur = await db.Set<Mst_CustomerGroup>()
+            .Where(x => EF.Functions.Like((x.CustomerGrpCode ?? "").ToLower(), PortQuery.Equal(code), PortQuery.Esc))
+            .OrderBy(x => x.AutoId)
+            .FirstOrDefaultAsync();
+
+        // Nguồn 546-550: không có dòng → Success giữ false, "Mã nhóm khách hàng '<customerGrpCode>' không có trong hệ thống!".
+        if (cur == null)
+            return Ok(new { Success = false, Messages = new[] { $"Mã nhóm khách hàng '{code}' không có trong hệ thống!" }, RedirectUrl = (string?)null });
+
+        // Nguồn 532: WA_Mst_CustomerGroup_Delete(objRQ, UserState.AddressAPIs_Product_Customer_Centrer) — dịch vụ NGOÀI, bỏ qua (GAP).
+        // Nguồn 536-539: Lst_Mst_CustomerGroup = [dòng DB] + FlagIsDelete = "1" → WA_Mst_CustomerGroup_Save.
+        //   SaveX (Customer.cs:13316, 13429-13447) với FlagIsDelete = "1": xoá Mst_CustomerGroupImages + Mst_CustomerGroup
+        //   theo CustomerGrpCode, KHÔNG insert lại (bIsDelete = true).
+        // GAP: tầng API `WA_Mst_CustomerGroup_Save` không có trong excerpt (mục 2) → chưa port bước Save;
+        //      xem .parity-run\conflicts\306_conflict.md.
+
+        // Nguồn 540-544: Success = true, "Xóa nhóm khách hàng '<customerGrpCode>' thành công!", RedirectUrl = Url.Action("Index").
+        return Ok(new { Success = true, Messages = new[] { $"Xóa nhóm khách hàng '{code}' thành công!" }, RedirectUrl = (string?)null });
+    }
+
     /// <summary>Mở form tạo nhóm khách hàng — trả model rỗng như `new Mst_CustomerGroup()` (nguồn dòng 111).</summary>
     [HttpPost("create")]
     public ActionResult<Mst_CustomerGroup> Create()
