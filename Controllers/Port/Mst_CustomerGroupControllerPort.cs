@@ -7,7 +7,7 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 Mst_CustomerGroupController.cs — Mst_CustomerGroup (action Create, Edit)
+/// port 1:1 Mst_CustomerGroupController.cs — Mst_CustomerGroup (action Create, Edit, GetDetailData)
 /// Nguồn Create: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\Mst_CustomerGroupController.cs:106-113
 ///   public ActionResult Create()
 ///   {
@@ -89,6 +89,52 @@ public class Mst_CustomerGroupControllerPort(AppDbContext db) : ControllerBase
 
         // Nguồn 326-329: Success=true, "Sửa nhóm khách hàng thành công!", RedirectUrl = Url.Action("Index") (đích không có trang Index → null).
         return Ok(new { Success = true, Messages = new[] { "Sửa nhóm khách hàng thành công!" }, RedirectUrl = (string?)null });
+    }
+
+    /// <summary>
+    /// Body của GetDetailData — nguồn nhận `string customerGrpCode` (Mst_CustomerGroupController.cs:350).
+    /// </summary>
+    public class GetDetailDataReq
+    {
+        public string? CustomerGrpCode { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 Mst_CustomerGroupController.cs:350-402 — GetDetailData(string customerGrpCode).
+    /// Luồng: dựng Mst_CustomerGroup{CustomerGrpCode} → strWhereClause (chỉ cột CustomerGrpCode, "=", dòng 586-589)
+    ///        → WA_Mst_CustomerGroup_Get (Rt_Cols_Mst_CustomerGroup = "*", Ft_RecordStart/Ft_RecordCount của gate)
+    ///        → biz Mst_CustomerGroup_Get → Mst_CustomerGroup_GetX (SQL: distinct OrgID+CustomerGrpCode, order MyIdxSeq asc,
+    ///        phân trang theo MyIdxSeq, rồi select mo.* join lại) → lấy dòng ĐẦU (dòng 390-393).
+    /// Không có dòng → trả chính đối tượng dựng ban đầu (chỉ có CustomerGrpCode, các cột khác null — dòng 362-365, 394).
+    /// Không có mã lỗi nghiệp vụ: chỉ catch chung của gate (dòng 396-399) → PortExceptionFilter.
+    /// GAP: nguồn lấy NetworkID/OrgID/UtcOffset từ UserState (dòng 376-378) — đích không có phiên; các tham số này chỉ dùng cho
+    ///      Sys_User_CheckAuthorize (dòng 11389-11402), KHÔNG tham gia SQL lọc dữ liệu → bỏ qua.
+    /// GAP: Ft_RecordStart/Ft_RecordCount của gate (dòng 380-381) là tham số phân trang của BaseController, không nằm trong
+    ///      chữ ký action → đích dùng mặc định 0/0 như giá trị khởi tạo của nguồn (xem .parity-run\conflicts\304_conflict.md).
+    /// </summary>
+    [HttpPost("getdetaildata")]
+    public async Task<IActionResult> GetDetailData([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] GetDetailDataReq? req)
+    {
+        // Nguồn 362-365: objMst_CustomerGroup = new Mst_CustomerGroup() { CustomerGrpCode = customerGrpCode }.
+        var objMst_CustomerGroup = new Mst_CustomerGroup { CustomerGrpCode = req?.CustomerGrpCode };
+
+        // Nguồn 366 + 586-589: chỉ thêm điều kiện khi CustomerGrpCode không rỗng, toán tử "=" (không wildcard).
+        // Rỗng → where (1=1) → GetX trả dòng đầu tiên của bảng (order MyIdxSeq asc).
+        IQueryable<Mst_CustomerGroup> q = db.Set<Mst_CustomerGroup>();
+        if (!string.IsNullOrEmpty(objMst_CustomerGroup.CustomerGrpCode))
+        {
+            var code = objMst_CustomerGroup.CustomerGrpCode;
+            q = q.Where(x => EF.Functions.Like((x.CustomerGrpCode ?? "").ToLower(), PortQuery.Equal(code), PortQuery.Esc));
+        }
+
+        // Nguồn 12174-12187: select distinct OrgID, CustomerGrpCode ... order by MyIdxSeq asc (MyIdxSeq = thứ tự dòng nguồn).
+        // Nguồn 12194-12231: phân trang theo MyIdxSeq rồi inner join Mst_CustomerGroup lấy mo.* theo đúng thứ tự đó.
+        // Đích: sắp theo AutoId (khoá tự tăng = thứ tự chèn) rồi lấy dòng đầu — tương đương MyIdxSeq asc.
+        var first = await q.OrderBy(x => x.AutoId).FirstOrDefaultAsync();
+
+        // Nguồn 390-393: chỉ thay objMst_CustomerGroup khi danh sách có dòng; 394: JsonView(model).
+        if (first != null) objMst_CustomerGroup = first;
+        return Ok(objMst_CustomerGroup);
     }
 
     /// <summary>Mở form tạo nhóm khách hàng — trả model rỗng như `new Mst_CustomerGroup()` (nguồn dòng 111).</summary>
