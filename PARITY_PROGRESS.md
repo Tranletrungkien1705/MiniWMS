@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 6/521 (1.15%)
+**Tiến độ hiện tại**: 7/521 (1.34%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -313,7 +313,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 301 | Mst_CustomerGroupController/Create | Đã làm | fc502fa |
 | 302 | Mst_CustomerGroupController/Update | Chưa làm | - |
 | 303 | Mst_CustomerGroupController/Edit | Đã làm | c4f1205 |
-| 304 | Mst_CustomerGroupController/GetDetailData | Chưa làm | - |
+| 304 | Mst_CustomerGroupController/GetDetailData | Đã làm | 72dd8db |
 | 305 | Mst_CustomerGroupController/Export | Chưa làm | - |
 | 306 | Mst_CustomerGroupController/Delete | Chưa làm | - |
 | 307 | Mst_CustomerSourceController/Index | Chưa làm | - |
