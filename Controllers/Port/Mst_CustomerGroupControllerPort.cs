@@ -7,7 +7,7 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 Mst_CustomerGroupController.cs — Mst_CustomerGroup (action Create, Edit, GetDetailData)
+/// port 1:1 Mst_CustomerGroupController.cs — Mst_CustomerGroup (action Create, Edit, GetDetailData, Export)
 /// Nguồn Create: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\Mst_CustomerGroupController.cs:106-113
 ///   public ActionResult Create()
 ///   {
@@ -24,7 +24,7 @@ namespace MiniWMS.Controllers.Port;
 /// </summary>
 [ApiController]
 [Route("api/mst_customergroup")]
-public class Mst_CustomerGroupControllerPort(AppDbContext db) : ControllerBase
+public class Mst_CustomerGroupControllerPort(AppDbContext db, IWebHostEnvironment? env = null) : ControllerBase
 {
     /// <summary>
     /// Body của Edit — nguồn nhận `string model` rồi `JsonConvert.DeserializeObject&lt;Mst_CustomerGroup&gt;(model)`
@@ -135,6 +135,100 @@ public class Mst_CustomerGroupControllerPort(AppDbContext db) : ControllerBase
         // Nguồn 390-393: chỉ thay objMst_CustomerGroup khi danh sách có dòng; 394: JsonView(model).
         if (first != null) objMst_CustomerGroup = first;
         return Ok(objMst_CustomerGroup);
+    }
+
+    /// <summary>
+    /// Body của Export — nguồn nhận 2 tham số chuỗi `customerGrpName, customerGrpDesc`
+    /// (Mst_CustomerGroupController.cs:408); đích nhận qua JSON body (bài học A.14).
+    /// </summary>
+    public class ExportReq
+    {
+        public string? CustomerGrpName { get; set; }
+        public string? CustomerGrpDesc { get; set; }
+    }
+
+    /// <summary>
+    /// Cột Excel của Export — chép nguyên văn `GetImportDicColums()` của gate
+    /// (Mst_CustomerGroupController.cs:569-576): khoá = tên thuộc tính, giá trị = nhãn cột.
+    /// </summary>
+    private static readonly Dictionary<string, string> ExportDicColums = new()
+    {
+        { "CustomerGrpName", "Mã nhóm khách hàng" },
+        { "CustomerGrpDesc", "Tên nhóm khách hàng" },
+    };
+
+    /// <summary>
+    /// port 1:1 Mst_CustomerGroupController.cs:408-473 — Export(string customerGrpName, string customerGrpDesc).
+    /// Luồng: dựng Mst_CustomerGroup{Name, Desc} → strWhereClause (chỉ 2 cột Name/Desc, `like '%x%'`, dòng 590-597)
+    ///        → WA_Mst_CustomerGroup_Get (Rt_Cols_Mst_CustomerGroup = "*", Ft_RecordStart/Ft_RecordCount của gate)
+    ///        → biz Mst_CustomerGroup_Get → Mst_CustomerGroup_GetX (SQL: distinct OrgID+CustomerGrpCode, order MyIdxSeq asc,
+    ///        phân trang theo MyIdxSeq, rồi select mo.* join lại) → có dòng: ghi Excel + trả strUrl; không có: "Không có dữ liệu!".
+    /// Không có mã lỗi nghiệp vụ: chỉ catch chung của gate (dòng 467-470) → PortExceptionFilter.
+    /// GAP: nguồn lấy NetworkID/OrgID/UtcOffset từ UserState (dòng 435-437) — đích không có phiên; các tham số này chỉ dùng cho
+    ///      Sys_User_CheckAuthorize (dòng 11389-11402), KHÔNG tham gia SQL lọc dữ liệu → bỏ qua.
+    /// GAP: Ft_RecordStart/Ft_RecordCount của gate (dòng 439-440) là tham số phân trang của BaseController, không nằm trong
+    ///      chữ ký action → đích dùng mặc định 0/0 như giá trị khởi tạo của nguồn (xem .parity-run\conflicts\304_conflict.md).
+    /// GAP: nguồn trả `strUrl` = đường dẫn ảo `/TempFiles/...` (dòng 460); đích trả đường dẫn ảo tương đối như PortExcel sinh ra
+    ///      (không ghép GetRequestBaseAddress vì nguồn KHÔNG ghép ở action này).
+    /// </summary>
+    [HttpPost("export")]
+    public async Task<IActionResult> Export([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ExportReq? req)
+    {
+        // Nguồn 419-423: objMst_CustomerGroup = new Mst_CustomerGroup() { CustomerGrpName, CustomerGrpDesc }.
+        var objMst_CustomerGroup = new Mst_CustomerGroup
+        {
+            CustomerGrpName = req?.CustomerGrpName,
+            CustomerGrpDesc = req?.CustomerGrpDesc,
+        };
+
+        // Nguồn 425 + 590-597: chỉ thêm điều kiện khi giá trị không rỗng; Name/Desc dùng `like '%<Trim>%'`.
+        IQueryable<Mst_CustomerGroup> q = db.Set<Mst_CustomerGroup>();
+        if (!string.IsNullOrEmpty(objMst_CustomerGroup.CustomerGrpName))
+        {
+            var name = objMst_CustomerGroup.CustomerGrpName;
+            q = q.Where(x => EF.Functions.Like((x.CustomerGrpName ?? "").ToLower(), PortQuery.Contains(name), PortQuery.Esc));
+        }
+        if (!string.IsNullOrEmpty(objMst_CustomerGroup.CustomerGrpDesc))
+        {
+            var desc = objMst_CustomerGroup.CustomerGrpDesc;
+            q = q.Where(x => EF.Functions.Like((x.CustomerGrpDesc ?? "").ToLower(), PortQuery.Contains(desc), PortQuery.Esc));
+        }
+
+        // Nguồn 12174-12187: select distinct OrgID, CustomerGrpCode ... order by MyIdxSeq asc (MyIdxSeq = thứ tự dòng nguồn).
+        // Nguồn 12194-12231: phân trang theo MyIdxSeq rồi inner join Mst_CustomerGroup lấy mo.* theo đúng thứ tự đó.
+        // Đích: sắp theo AutoId (khoá tự tăng = thứ tự chèn) — tương đương MyIdxSeq asc.
+        var ordered = q.OrderBy(x => x.AutoId);
+
+        // Nguồn 12153-12154: nFilterRecordStart = Ft_RecordStart, nFilterRecordEnd = Start + Count - 1 (phân trang theo MyIdxSeq).
+        // Ft_RecordStart/Ft_RecordCount của gate mặc định 0/0 (xem GAP ở summary) → nFilterRecordEnd = -1 → 0 dòng.
+        // Giữ đúng mẫu phân trang của các port hiện có (bài học A.12).
+        const long recordStart = 0;
+        const long recordCount = 0;
+        var list = (recordCount <= 0 || recordStart < 0)
+            ? new List<Mst_CustomerGroup>()
+            : await ordered.Skip((int)Math.Min(recordStart, int.MaxValue))
+                           .Take((int)Math.Min(recordCount, int.MaxValue))
+                           .ToListAsync();
+
+        // Nguồn 449-465: có dòng → xuất Excel + trả strUrl; không có → "Không có dữ liệu!".
+        if (list.Count == 0)
+            return Ok(new { Success = true, Title = "Không có dữ liệu!", CheckSuccess = "1" });
+
+        // Nguồn 453-458: GetImportDicColums() + GenExcelExportFilePath(typeof(Mst_CustomerGroup).Name) + ExportToExcelFromList.
+        // Phần ghi file bọc try/catch riêng (bài học A.2).
+        try
+        {
+            var webRoot = env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var (filePath, virtualPath) = PortExcel.GenExcelExportFilePath(webRoot, nameof(Mst_CustomerGroup));
+            PortExcel.ExportToExcelFromList(list, ExportDicColums, filePath, nameof(Mst_CustomerGroup));
+
+            // Nguồn 460: Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = url.
+            return Ok(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = virtualPath });
+        }
+        catch (Exception ex)
+        {
+            return PortResult.Fail("Mst_CustomerGroup_Export", "Exception", ex.Message);
+        }
     }
 
     /// <summary>Mở form tạo nhóm khách hàng — trả model rỗng như `new Mst_CustomerGroup()` (nguồn dòng 111).</summary>
