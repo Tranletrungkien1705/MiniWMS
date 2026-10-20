@@ -276,6 +276,7 @@ public class Mst_InventoryLevelTypeControllerPort(AppDbContext db, IConfiguratio
     /// Lõi Import — tách ra để test gọi trực tiếp. Nguồn Mst_InventoryLevelTypeController.cs:458-564.
     /// Trả về JsonResultEntry (200 OK) với Success/Messages như nguồn (`return Json(resultEntry)`), KHÔNG dùng PortResult.Fail.
     /// </summary>
+    [NonAction]
     public async Task<IActionResult> ImportCoreAsync(byte[] fileContent, string? orgId, string? waUserCode)
     {
         // Nguồn 740-748: GetImportDicColums — thứ tự cột bắt buộc.
