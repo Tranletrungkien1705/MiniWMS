@@ -7,10 +7,12 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 Mst_InventoryLevelTypeController.cs — Mst_InventoryLevelType (action Detail, Edit).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\Mst_InventoryLevelTypeController.cs:302-351 (Detail), 222-297 (Edit).
+/// port 1:1 Mst_InventoryLevelTypeController.cs — Mst_InventoryLevelType (action Detail, Edit, Delete).
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\Mst_InventoryLevelTypeController.cs:302-351 (Detail), 222-297 (Edit), 355-421 (Delete).
 /// Chuỗi Detail: gate Detail → WA_Mst_InventoryLevelType_Get (WAS_Mst_InventoryLevelType_Get → Mst_InventoryLevelType_Get → Mst_InventoryLevelType_GetX).
 /// Chuỗi Edit: gate Edit → WA_Mst_InventoryLevelType_Get → ... → WA_Mst_InventoryLevelType_Update (WAS → Update → UpdateX).
+/// Chuỗi Delete: gate Delete → WA_Mst_InventoryLevelType_Get (lấy dòng đầu theo where InvLevelType) → WA_Mst_InventoryLevelType_Delete
+///              (WAS → Delete → DeleteX: Mst_Org_CheckDB + Mst_InventoryLevelType_CheckDB + xoá).
 /// GAP: không có phiên đăng nhập nên OrgID nhận từ body (nguồn: UserState.Mst_NNT.OrgID — Detail dùng cho ability view; Edit cho Mst_Org_CheckDB).
 ///      WAUserCode nhận từ body (nguồn: UserState.SysUser.UserCode), mặc định "port".
 /// GAP: nguồn dùng user ability view để lọc OrgID trong SQL GetX; đích filter trực tiếp theo OrgID trong body (nếu truyền).
@@ -31,6 +33,14 @@ public class Mst_InventoryLevelTypeControllerPort(AppDbContext db) : ControllerB
         public string? FlagActive { get; set; }
         public string? OrgID { get; set; }
         public string? WAUserCode { get; set; }
+    }
+
+    public class DeleteReq
+    {
+        /// <summary>Nguồn 355: tham số `invleveltype` của action Delete.</summary>
+        public string? InvLevelType { get; set; }
+        /// <summary>GAP: nguồn lọc qua ability view của user; đích nhận OrgID tuỳ chọn (không truyền = không lọc) — cùng mẫu Detail.</summary>
+        public string? OrgID { get; set; }
     }
 
     // Nguồn 302-351: Detail(invleveltype) → trả 1 dòng Mst_InventoryLevelType hoặc object rỗng.
@@ -145,5 +155,71 @@ public class Mst_InventoryLevelTypeControllerPort(AppDbContext db) : ControllerB
 
         // Nguồn 281-283: Success=true, message, RedirectUrl = Url.Action("Index") (đích không có trang Index → null).
         return Ok(new { Success = true, Messages = new[] { "Sửa danh mục cấp kho thành công!" }, RedirectUrl = (string?)null });
+    }
+
+    // Nguồn 355-421: Delete(invleveltype).
+    // Luồng: rỗng → Success "Mã cấp kho!"; Get (where InvLevelType = X, order OrgID/InvLevelType asc, lấy dòng đầu)
+    //        → không có → Success "…không có trong hệ thống!"; có → WA_Delete với row đó
+    //        (DeleteX: Mst_Org_CheckDB(OrgID,"1","1") + Mst_InventoryLevelType_CheckDB(OrgID,InvLevelType,"1","") + xoá) → Success "Xóa…".
+    [HttpPost("api/mst_inventoryleveltype/delete")]
+    public async Task<IActionResult> Delete([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DeleteReq? req)
+    {
+        // Nguồn 365 + 414-418: `!CUtils.IsNullOrEmpty(invleveltype)` — rỗng → else → Success=true, "Mã cấp kho!"
+        // (dùng IsNullOrWhiteSpace nhất quán Detail/Edit trong cùng controller).
+        var invLevelTypeRQ = req?.InvLevelType?.Trim().ToUpper();
+        if (string.IsNullOrEmpty(invLevelTypeRQ))
+            return Ok(new { Success = true, Messages = new[] { "Mã cấp kho!" }, RedirectUrl = (string?)null });
+
+        // Nguồn 372 + strWhereClause 717-724 + GetX 3890-3904: where InvLevelType = X (không wildcard), order OrgID/InvLevelType asc.
+        IQueryable<Mst_InventoryLevelType> q = db.Set<Mst_InventoryLevelType>()
+            .Where(x => EF.Functions.Like((x.InvLevelType ?? "").ToLower(), PortQuery.Equal(invLevelTypeRQ), PortQuery.Esc));
+
+        // GAP: nguồn lọc qua ability view của user; đích nhận OrgID tuỳ chọn từ body (không truyền → không lọc, như Detail).
+        if (!string.IsNullOrWhiteSpace(req?.OrgID))
+        {
+            var orgFilter = req!.OrgID!.Trim().ToUpper();
+            q = q.Where(x => EF.Functions.Like((x.OrgID ?? "").ToLower(), PortQuery.Equal(orgFilter), PortQuery.Esc));
+        }
+
+        var found = await q.OrderBy(x => x.OrgID).ThenBy(x => x.InvLevelType).FirstOrDefaultAsync();
+
+        // Nguồn 408-412: không có dòng → Success=true, "Mã cấp kho 'X' không có trong hệ thống!"
+        if (found == null)
+            return Ok(new
+            {
+                Success = true,
+                Messages = new[] { $"Mã cấp kho '{req!.InvLevelType}' không có trong hệ thống!" },
+                RedirectUrl = (string?)null
+            });
+
+        // Nguồn 400 + DeleteX 5174-5175: lấy row tìm được, StdParam(OrgID) + StdParam(InvLevelType).
+        var strOrgID = (found.OrgID ?? "").Trim().ToUpper();
+        var strInvLevelType = (found.InvLevelType ?? "").Trim().ToUpper();
+
+        // DeleteX 5183-5189: Mst_Org_CheckDB(strOrgID, TConst.Flag.Yes, TConst.Flag.Active) — tồn tại + FlagActive ∈ "1".
+        var org = await db.Set<Mst_Org>().FirstOrDefaultAsync(x => x.OrgID == strOrgID);
+        if (org == null)
+            return PortResult.Fail("Mst_Org_CheckDB_OrgNotFound", "Check.OrgID", strOrgID);
+        var orgFlag = org.FlagActive ?? "";
+        if (!"1".Contains(orgFlag))
+            return PortResult.Fail("Mst_Org_CheckDB_FlagActiveNotMatched",
+                "Check.OrgID", strOrgID,
+                "Check.strFlagActiveListToCheck", "1",
+                "DB.FlagActive", org.FlagActive);
+
+        // DeleteX 5191-5198: Mst_InventoryLevelType_CheckDB(strOrgID, strInvLevelType, Yes, "") — tồn tại (không kiểm FlagActive).
+        var inDb = await db.Set<Mst_InventoryLevelType>()
+            .FirstOrDefaultAsync(x => EF.Functions.Like((x.OrgID ?? "").ToLower(), PortQuery.Equal(strOrgID), PortQuery.Esc)
+                                   && EF.Functions.Like((x.InvLevelType ?? "").ToLower(), PortQuery.Equal(strInvLevelType), PortQuery.Esc));
+        if (inDb == null)
+            return PortResult.Fail("Mst_InventoryLevelType_CheckDB_InvLevelTypeNotFound",
+                "Check.OrgID", strOrgID, "Check.InvLevelType", strInvLevelType);
+
+        // DeleteX 5203-5213: xoá dòng, SaveData.
+        db.Set<Mst_InventoryLevelType>().Remove(inDb);
+        await db.SaveChangesAsync();
+
+        // Nguồn 404-406: Success=true, "Xóa danh mục cấp kho thành công!", RedirectUrl = Index (đích null).
+        return Ok(new { Success = true, Messages = new[] { "Xóa danh mục cấp kho thành công!" }, RedirectUrl = (string?)null });
     }
 }
