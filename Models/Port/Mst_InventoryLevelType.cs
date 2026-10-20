@@ -8,11 +8,13 @@ namespace MiniWMS.Models.Port;
 /// port 1:1 Mst_InventoryLevelType.cs — Mst_InventoryLevelType.
 /// Cột lấy theo model nguồn D:\idocNet\...\Common\Models\Mst_InventoryLevelType.cs:8-21.
 /// PK nguồn: (OrgID, InvLevelType).
+/// Cột NetworkID thêm cho Import #329: nguồn MasterData.cs:4577 `drDB["NetworkID"] = nNetworkID` (CreateX ghi cột này).
 /// </summary>
 public class Mst_InventoryLevelType
 {
     public string OrgID { get; set; } = "";
     public string InvLevelType { get; set; } = "";
+    public string? NetworkID { get; set; }
     public string? InvLevelTypeName { get; set; }
     public string? FlagActive { get; set; } = "1";
     public DateTime? LogLUDTimeUTC { get; set; }
@@ -27,6 +29,7 @@ public class Mst_InventoryLevelTypeConfiguration : IEntityTypeConfiguration<Mst_
         b.HasKey(x => new { x.OrgID, x.InvLevelType });
         b.Property(x => x.OrgID).HasMaxLength(50);
         b.Property(x => x.InvLevelType).HasMaxLength(50);
+        b.Property(x => x.NetworkID).HasMaxLength(50);
         b.Property(x => x.InvLevelTypeName).HasMaxLength(255);
         b.Property(x => x.FlagActive).HasMaxLength(10);
         b.Property(x => x.LogLUBy).HasMaxLength(50);
