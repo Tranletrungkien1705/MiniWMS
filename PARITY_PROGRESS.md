@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 0/521 (0%)
+**Tiến độ hiện tại**: 1/521 (0.19%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -335,7 +335,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 323 | Mst_InventoryLevelTypeController/Index | Chưa làm | - |
 | 324 | Mst_InventoryLevelTypeController/Create | Chưa làm | - |
 | 325 | Mst_InventoryLevelTypeController/Update | Chưa làm | - |
-| 326 | Mst_InventoryLevelTypeController/Edit | Chưa làm | - |
+| 326 | Mst_InventoryLevelTypeController/Edit | Đã làm | a68fed3 |
 | 327 | Mst_InventoryLevelTypeController/Detail | Chưa làm | - |
 | 328 | Mst_InventoryLevelTypeController/Delete | Chưa làm | - |
 | 329 | Mst_InventoryLevelTypeController/Import | Chưa làm | - |
