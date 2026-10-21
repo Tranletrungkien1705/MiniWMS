@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 13/521 (2.5%)
+**Tiến độ hiện tại**: 14/521 (2.69%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -28,7 +28,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 16 | FileController/UploadImage | Chưa làm | - |
 | 17 | FileController/UploadFile | Chưa làm | - |
 | 18 | HomeController/Index | Đã làm | 76ad14e |
-| 19 | HomeController/About | Chưa làm | - |
+| 19 | HomeController/About | Đã làm | 0f75067 |
 | 20 | HomeController/Contact | Chưa làm | - |
 | 21 | HomeController/Ping | Chưa làm | - |
 | 22 | HomeController/Notification | Chưa làm | - |
