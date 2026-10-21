@@ -34,8 +34,52 @@ namespace MiniWMS.Controllers.Port;
 /// </summary>
 [ApiController]
 [Route("api/inv_costpricehist")]
-public class Inv_CostPriceHistControllerPort(AppDbContext db) : ControllerBase
+public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironment? env = null) : ControllerBase
 {
+    /// <summary>
+    /// port 1:1 Inv_CostPriceHistController.cs:408-418 — ExportTemplate().
+    /// Nguồn KHÔNG có tham số action, KHÔNG gọi service/biz, KHÔNG đọc/ghi bảng, KHÔNG mã lỗi (excerpt mục 4: 0 chỗ ném lỗi).
+    /// Luồng: list = new List&lt;Inv_CostPriceHist&gt;() (dòng 410) → dicColNames = GetImportDicColumsTemplate() (dòng 412, 4 cột)
+    ///        → GenExcelExportFilePath(typeof(Inv_CostPriceHist).Name, ref url) (dòng 414, BaseController.cs:750-768)
+    ///        → ExcelExport.ExportToExcelFromList(list, dicColNames, filePath, "Mst_Product") (dòng 415 — tên sheet nguồn
+    ///          viết cứng "Mst_Product", KHÔNG phải tên bảng Inv_CostPriceHist; giữ nguyên)
+    ///        → Json(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = url }) (dòng 417).
+    /// GAP: `ExcelExport` của nguồn nằm trong DLL không có mã ⇒ định dạng ô (độ rộng, kiểu số/ngày) dùng PortExcel
+    ///      (cùng giả định đã ghi ở Data/PortExcel.cs:12-13).
+    /// </summary>
+    [HttpPost("exporttemplate")]
+    public IActionResult ExportTemplate([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] object? req = null)
+    {
+        // Nguồn 410: `var list = new List<Inv_CostPriceHist>();` — danh sách RỖNG (file mẫu chỉ có dòng tiêu đề).
+        var list = new List<Inv_CostPriceHist>();
+
+        // Nguồn 412 + 818-827: GetImportDicColumsTemplate() — 4 cột, ĐÚNG thứ tự khai báo của từ điển nguồn.
+        var dicColNames = new Dictionary<string, string>
+        {
+            { "EffectDTimeUTC", "Thời gian hiệu lực(*)" },
+            { "ProductCodeUser", "Mã hàng hóa(*)" },
+            { "UPInv", "Giá vốn(*)" },
+            { "InvCode", "Mã kho" },
+        };
+
+        // Nguồn 414: GenExcelExportFilePath(string.Format(typeof(Inv_CostPriceHist).Name), ref url).
+        // Nguồn 415: ExcelExport.ExportToExcelFromList(list, dicColNames, filePath, string.Format("Mst_Product")).
+        // Phần ghi file bọc try/catch riêng (bài học A.2).
+        try
+        {
+            var webRoot = env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var (filePath, virtualPath) = PortExcel.GenExcelExportFilePath(webRoot, nameof(Inv_CostPriceHist));
+            PortExcel.ExportToExcelFromList(list, dicColNames, filePath, "Mst_Product");
+
+            // Nguồn 417: Json(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = url }).
+            return Ok(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = virtualPath });
+        }
+        catch (Exception ex)
+        {
+            return PortResult.Fail("Inv_CostPriceHist_ExportTemplate", "Exception", ex.Message);
+        }
+    }
+
     /// <summary>
     /// Body của Index. Nguồn KHÔNG có tham số action; các trường dưới đây là dữ liệu nguồn lấy từ phiên
     /// (UserState / RT_Mst_Sys_Config) — thiếu thì để null, KHÔNG tự đặt mặc định.
