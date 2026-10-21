@@ -62,4 +62,35 @@ public class AccountControllerPort : ControllerBase
         // Nguồn 971 redirect sang urlSignOut dựng từ appSettings không có ở đích → trả null, ghi GAP + conflict #7.
         return Ok(new { Success = true, RedirectUrl = (string?)null });
     }
+
+    /// <summary>
+    /// port 1:1 AccountController.cs:977-983 — action SignOut (phiên/FormsAuth, không body, không tham số).
+    /// Nguồn (nguyên văn):
+    ///   977| public ActionResult SignOut()
+    ///   978| {
+    ///   979|     Session.Clear();
+    ///   980|
+    ///   981|     FormsAuthentication.SignOut();
+    ///   982|     return null;
+    ///   983| }
+    ///
+    /// Toàn bộ thân hàm là thao tác hạ tầng phiên:
+    ///   - dòng 979 Session.Clear(): đích KHÔNG dùng Session (JWT Bearer + MiniSSO) → GAP;
+    ///   - dòng 981 FormsAuthentication.SignOut(): đích KHÔNG dùng FormsAuthentication → GAP;
+    ///   - dòng 982 `return null`: ActionResult null = phản hồi 200 rỗng, không JSON, không mã lỗi.
+    ///
+    /// Không có service/biz, không bảng, không transaction, không mã lỗi, không gọi dịch vụ ngoài
+    /// (excerpt dòng 14-16: "GATE goi service:" rỗng). Đây là hạng mục GAP thuần hạ tầng, cùng dạng LogOff (#7).
+    ///
+    /// Hình dạng phản hồi: để client dùng được, trả 200 + { Success = true } — KHÁC nguồn (nguồn 200 rỗng).
+    /// Đây là phần CẦN CLAUDE CHỐT (đề xuất: giữ 200 rỗng 1:1 với `return null` của nguồn, hoặc 200 + Success=true
+    /// như LogOff để đồng nhất controller). Ghi GAP + CONFLICT trong báo cáo hạng mục #8.
+    /// </summary>
+    [HttpPost("api/account/signout")]
+    public IActionResult SignOut()
+    {
+        // GAP: Session.Clear (dòng 979) + FormsAuthentication.SignOut (dòng 981) — hạ tầng nguồn không tồn tại ở đích.
+        // Nguồn dòng 982 `return null` → 200 rỗng; đích trả Success=true cho client dùng được (xem CONFLICT ở báo cáo).
+        return Ok(new { Success = true });
+    }
 }
