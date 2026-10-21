@@ -178,4 +178,97 @@ public class HomeControllerPort(AppDbContext db) : ControllerBase
         // Nguồn dòng 390: Json(true) — trả nguyên giá trị true, không bọc thêm trường nào.
         return Ok(true);
     }
+
+    /// <summary>
+    /// Body của Notification. Nguồn KHÔNG có tham số action; các giá trị dưới đây là dữ liệu nguồn lấy từ
+    /// phiên (`UserState.Mst_NNT.NetworkID`, HomeController.cs:426-429) — thiếu thì để null, KHÔNG tự đặt mặc định.
+    /// </summary>
+    public class NotificationReq
+    {
+        /// <summary>Nguồn: `userState != null` (HomeController.cs:419).</summary>
+        public bool? HasUserState { get; set; }
+        /// <summary>Nguồn: `userState.Mst_NNT.NetworkID` (HomeController.cs:426-429).</summary>
+        public string? NetworkID { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 HomeController.cs:394-504 — Notification().
+    /// Luồng nguồn: userState null → bỏ qua khối lấy thông báo (dòng 419-445); ngược lại InitSSO (dòng 422)
+    ///   → `new inos.common.Service.NotificationService(Session).GetNotifications(iNetworkId, "",
+    ///   NotificationStatuses.ALL, 0, PageSizeConfig)` (dòng 430-431) → lấy phần tử UNREAD ĐẦU TIÊN
+    ///   (dòng 436-440) → dựng `objNotificationResult` (dòng 465-501) → `Json(..., AllowGet)` (dòng 502).
+    /// GAP (xem .parity-run\conflicts\22_conflict.md): toàn bộ danh sách thông báo đến từ DỊCH VỤ NGOÀI
+    /// `inos.common.Service.NotificationService` (SSO/iNOS) — đích KHÔNG có ⇒ KHÔNG mô phỏng, KHÔNG bịa dữ liệu.
+    /// Nguồn KHÔNG đọc/ghi bảng nội bộ nào (Mst_NNT chỉ đọc qua UserState của phiên).
+    /// </summary>
+    [HttpPost("notification")]
+    public IActionResult Notification([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] NotificationReq? req)
+    {
+        // Nguồn 412-416: giá trị khởi tạo trước try.
+        var success = false;
+        var errorCode = "";
+        var errorDetail = "";
+        var urlLogin = "";
+        var serverBaseAddress = "";
+
+        // Nguồn 399-407: objInosNotificationResult khởi tạo rỗng (List rỗng, mọi số = 0).
+        var pageIndex = 0;
+        var pageSize = 0;
+        var unreadCount = 0;
+        var pageCount = 0;
+        var itemCount = 0;
+        var list = new List<object>();
+        // Nguồn 408: listInosNotification_UnRead khởi tạo rỗng.
+        var listInosNotification_UnRead = new List<object>();
+
+        try
+        {
+            // Nguồn 419-445: chỉ chạy khi có userState.
+            if (req?.HasUserState == true)
+            {
+                // Nguồn 422: InitSSO() — cấu hình client SSO (BaseController.cs:883-908).
+                // GAP: dịch vụ SSO inos không có ở đích → không mô phỏng.
+
+                // Nguồn 425-429: iNetworkId = Convert.ToInt64(userState.Mst_NNT.NetworkID) khi khác rỗng.
+                // GAP: UserState/Mst_NNT của phiên không có ở đích; NetworkID nhận qua body nhưng chỉ dùng làm
+                // tham số của dịch vụ ngoài (dòng 431) nên ở đích không có tác dụng lọc.
+
+                // Nguồn 430-431: notificationService.GetNotifications(iNetworkId, "", NotificationStatuses.ALL, 0, PageSizeConfig).
+                // GAP: inos.common.Service.NotificationService (dịch vụ ngoài) không có ở đích ⇒ objInosNotificationResult
+                // giữ nguyên giá trị khởi tạo rỗng; KHÔNG tự dựng danh sách thông báo.
+            }
+            // Nguồn 446: Success = true (đặt sau khối if, kể cả khi userState null).
+            success = true;
+        }
+        catch (Exception ex)
+        {
+            // Nguồn 448-462: ServiceException → ErrorCode = cex.ErrorCode.ToLower() + UrlLogin = <ClientDomain>/Account/Login;
+            // ngoại lệ khác → ErrorDetail = "ServerBaseAddress: " + serverBaseAddress + "<br />" + ex.Message + ex.StackTrace.
+            // GAP: mbiz.core ServiceException + AppSettings ClientDomain không có ở đích ⇒ nhánh ngoại lệ khác.
+            errorDetail = "ServerBaseAddress: " + serverBaseAddress + "<br />" + ex.Message + ex.StackTrace;
+        }
+
+        // Nguồn 465-501: hình dạng objNotificationResult (Json PascalCase, AllowGet).
+        return Ok(new
+        {
+            Success = success,
+            ErrorDetail = errorDetail,
+            ErrorCode = errorCode,
+            UrlLogin = urlLogin,
+            InosNotificationResult = new
+            {
+                PageIndex = pageIndex,
+                PageSize = pageSize,
+                UnreadCount = unreadCount,
+                PageCount = pageCount,
+                ItemCount = itemCount,
+                List = list,
+            },
+            ListInosNotification_UnRead = listInosNotification_UnRead,
+            // Nguồn 500: DateTime.Now.ToString(Nonsense.DATE_TIME_FULL_DB_FORMAT) = "yyyy-MM-dd HH:mm:ss.fff".
+            DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+            // GAP: danh sách thông báo lấy từ dịch vụ ngoài inos NotificationService (HomeController.cs:430-431).
+            Gap = new[] { "NotificationService.GetNotifications (HomeController.cs:430-431) — GAP: dịch vụ ngoài" }
+        });
+    }
 }
