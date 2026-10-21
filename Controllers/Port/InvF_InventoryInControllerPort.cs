@@ -7,8 +7,8 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType, SearchInventoryIn, ShowInvCodeInActual, ShowLo).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 323-361, 365-411, 415-461, 2846-2964.
+/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType, SearchInventoryIn, ShowInvCodeInActual, ShowLo, ShowSerial).
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 323-361, 365-411, 415-461, 465-512, 2846-2964.
 /// Action SearchInvInType: dòng 282-320.
 ///   -> BaseController.cs:2917-2922 (Mst_InvInType_Get_Async)
 ///   -> BaseController.cs:2883-2915 (Task_Mst_InvInType_Get)
@@ -33,6 +33,12 @@ namespace MiniWMS.Controllers.Port;
 ///   -> API WA_Mst_Inventory_Get (MstInventoryController.cs:18-89)
 ///   -> BIZ WAS_Mst_Inventory_Get (MasterData.cs:9254-9368)
 ///   -> BIZ Mst_Inventory_Get: lọc Mst_Inventory theo FlagActive = '1' (dòng 422) và like InvBUPattern (dòng 424-428).
+/// Action ShowSerial: dòng 465-512 (#77).
+///   -> BaseController.cs:2752-2757 (Mst_Inventory_Get_Async)
+///   -> BaseController.cs:2717-2750 (Task_Mst_Inventory_Get)
+///   -> API WA_Mst_Inventory_Get (MstInventoryController.cs:18-89)
+///   -> BIZ WAS_Mst_Inventory_Get (MasterData.cs:9254-9368)
+///   -> BIZ Mst_Inventory_Get: lọc Mst_Inventory theo FlagActive = '1' (dòng 472) và like InvBUPattern (dòng 474-478).
 /// </summary>
 [ApiController]
 public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
@@ -169,6 +175,35 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public string? ProductName { get; set; }
         public List<Mst_Inventory> ListMst_Inventory { get; set; } = new();
         public List<InvF_InventoryInInstLot> ListInvF_InventoryInInstLot { get; set; } = new();
+        public string? IF_InvInStatus { get; set; }
+        public string? ViewType { get; set; }
+    }
+
+    public class ShowSerialReq
+    {
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productcode.</summary>
+        public string? ProductCode { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productcodeuser.</summary>
+        public string? ProductCodeUser { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productname.</summary>
+        public string? ProductName { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — invbupattern.</summary>
+        public string? InvBUPattern { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — listserial (JSON mảng InvF_InventoryInInstSerial).</summary>
+        public string? ListSerial { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — ifinvinstatus.</summary>
+        public string? IF_InvInStatus { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:465 — viewtype.</summary>
+        public string? ViewType { get; set; }
+    }
+
+    public class ShowSerialResult
+    {
+        public bool Success { get; set; } = true;
+        public string? ProductCode { get; set; }
+        public string? ProductName { get; set; }
+        public List<Mst_Inventory> ListMst_Inventory { get; set; } = new();
+        public List<InvF_InventoryInInstSerial> ListInvF_InventoryInInstSerial { get; set; } = new();
         public string? IF_InvInStatus { get; set; }
         public string? ViewType { get; set; }
     }
@@ -402,6 +437,84 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         }
     }
 
+    /// <summary>
+    /// port 1:1 InvF_InventoryInController.cs:465-512 — ShowSerial.
+    /// Chuỗi gọi: ShowSerial -> Mst_Inventory_Get_Async -> Task_Mst_Inventory_Get -> WA_Mst_Inventory_Get -> WAS_Mst_Inventory_Get.
+    /// Lọc Mst_Inventory: FlagActive = '1' (dòng 472); nếu invbupattern không rỗng thì AND Mst_Inventory.InvBUPattern like 'invbupattern' (dòng 474-478).
+    /// ViewBag.ProductCode = productcode (dòng 491).
+    /// ViewBag.ProductName = productcodeuser + " - " + productname (dòng 492).
+    /// ViewBag.ListMst_Inventory = list_Mst_Inventory (dòng 493).
+    /// ViewBag.ListInvF_InventoryInInstSerial = Deserialize<List<InvF_InventoryInInstSerial>>(listserial) (dòng 495-500).
+    /// ViewBag.IF_InvInStatus = ifinvinstatus (dòng 501).
+    /// ViewBag.ViewType = viewtype (dòng 502).
+    /// </summary>
+    [HttpPost("api/invf_inventoryin/showserial")]
+    public async Task<IActionResult> ShowSerial([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowSerialReq? req)
+    {
+        try
+        {
+            // Nguồn dòng 472: var strWhere_Mst_Inventory = "Mst_Inventory.FlagActive = '1'";
+            var query = db.Set<Mst_Inventory>()
+                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
+
+            var invbupattern = req?.InvBUPattern;
+            // Nguồn dòng 474-478: if (!string.IsNullOrEmpty(invbupattern)) strWhere += " Mst_Inventory.InvBUPattern like '" + invbupattern + "'";
+            if (!string.IsNullOrEmpty(invbupattern))
+            {
+                // Nguồn dùng like với chuỗi invbupattern nguyên vẹn (có thể chứa wildcard % hoặc không)
+                var pattern = invbupattern.Trim().ToLowerInvariant().Replace(@"\", @"\\");
+                query = query.Where(x => EF.Functions.Like((x.InvBUPattern ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
+
+            var listMstInventory = await query.OrderBy(x => x.InvCode).ToListAsync();
+
+            // Nguồn dòng 492: ViewBag.ProductName = productcodeuser + " - " + productname;
+            var productCodeUser = req?.ProductCodeUser ?? "";
+            var productNameRaw = req?.ProductName ?? "";
+            var productDisplayName = string.IsNullOrEmpty(productCodeUser) && string.IsNullOrEmpty(productNameRaw)
+                ? null
+                : $"{productCodeUser} - {productNameRaw}";
+
+            // Nguồn dòng 495-500: parse listserial JSON nếu có
+            var lstSerial = new List<InvF_InventoryInInstSerial>();
+            if (!string.IsNullOrEmpty(req?.ListSerial))
+            {
+                try
+                {
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInInstSerial>>(
+                        req.ListSerial,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
+                    if (parsed != null)
+                    {
+                        lstSerial.AddRange(parsed);
+                    }
+                }
+                catch
+                {
+                    // Nguồn bắt lỗi JsonParseException trong khối chung, trả kết quả lỗi
+                    throw;
+                }
+            }
+
+            return Ok(new ShowSerialResult
+            {
+                Success = true,
+                ProductCode = req?.ProductCode,
+                ProductName = productDisplayName,
+                ListMst_Inventory = listMstInventory,
+                ListInvF_InventoryInInstSerial = lstSerial,
+                IF_InvInStatus = req?.IF_InvInStatus,
+                ViewType = req?.ViewType
+            });
+        }
+        catch (Exception ex)
+        {
+            // Nguồn dòng 506-509: resultEntry.SetFailed().AddException(this, ex)
+            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
+        }
+    }
+
     [HttpPost("api/invf_inventoryin/index")]
     public async Task<IActionResult> Index([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] IndexReq? req)
     {
@@ -446,106 +559,108 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
 
         var query = db.Set<InvF_InventoryIn>().AsQueryable();
 
-        // 1. IF_InvInNo
-        if (!string.IsNullOrEmpty(req?.IF_InvInNo))
+        if (req != null)
         {
-            var pattern = PortQuery.Contains(req.IF_InvInNo.Trim().ToLowerInvariant());
-            query = query.Where(x => EF.Functions.Like((x.IF_InvInNo ?? "").ToLower(), pattern, PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.IF_InvInNo))
+            {
+                var pattern = PortQuery.Contains(req.IF_InvInNo.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.IF_InvInNo ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
 
-        // 2. InvInType
-        if (!string.IsNullOrEmpty(req?.InvInType))
-        {
-            var v = req.InvInType.Trim().ToLowerInvariant();
-            query = query.Where(x => EF.Functions.Like((x.InvInType ?? "").ToLower(), PortQuery.Equal(v), PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.CreatedTimeFrom))
+            {
+                var dtFrom = DateTime.Parse(req.CreatedTimeFrom);
+                query = query.Where(x => x.CreateDTimeUTC >= dtFrom);
+            }
 
-        // 3. CustomerCode
-        if (!string.IsNullOrEmpty(req?.CustomerCode))
-        {
-            var v = req.CustomerCode.Trim().ToLowerInvariant();
-            query = query.Where(x => EF.Functions.Like((x.CustomerCode ?? "").ToLower(), PortQuery.Equal(v), PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.CreatedTimeTo))
+            {
+                var dtTo = DateTime.Parse(req.CreatedTimeTo);
+                query = query.Where(x => x.CreateDTimeUTC <= dtTo);
+            }
 
-        // 4. InvCodeIn
-        if (!string.IsNullOrEmpty(req?.InvCodeIn))
-        {
-            var v = req.InvCodeIn.Trim().ToLowerInvariant();
-            query = query.Where(x => EF.Functions.Like((x.InvCodeIn ?? "").ToLower(), PortQuery.Equal(v), PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.ApprdTimeFrom))
+            {
+                var dtFrom = DateTime.Parse(req.ApprdTimeFrom);
+                query = query.Where(x => x.ApprDTimeUTC >= dtFrom);
+            }
 
-        // 5. InvoiceNo
-        if (!string.IsNullOrEmpty(req?.InvoiceNo))
-        {
-            var pattern = PortQuery.Contains(req.InvoiceNo.Trim().ToLowerInvariant());
-            query = query.Where(x => EF.Functions.Like((x.InvoiceNo ?? "").ToLower(), pattern, PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.ApprdTimeTo))
+            {
+                var dtTo = DateTime.Parse(req.ApprdTimeTo);
+                query = query.Where(x => x.ApprDTimeUTC <= dtTo);
+            }
 
-        // 6. RefNo
-        if (!string.IsNullOrEmpty(req?.RefNo))
-        {
-            var pattern = PortQuery.Contains(req.RefNo.Trim().ToLowerInvariant());
-            query = query.Where(x => EF.Functions.Like((x.RefNo ?? "").ToLower(), pattern, PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.InvoiceDateFrom))
+            {
+                var dtFrom = DateTime.Parse(req.InvoiceDateFrom);
+                query = query.Where(x => x.InvoiceDate >= dtFrom);
+            }
 
-        // 7. BusinessGroupCode
-        if (!string.IsNullOrEmpty(req?.BusinessGroupCode))
-        {
-            var v = req.BusinessGroupCode.Trim().ToLowerInvariant();
-            query = query.Where(x => EF.Functions.Like((x.BusinessGroupCode ?? "").ToLower(), PortQuery.Equal(v), PortQuery.Esc));
-        }
+            if (!string.IsNullOrEmpty(req.InvoiceDateTo))
+            {
+                var dtTo = DateTime.Parse(req.InvoiceDateTo);
+                query = query.Where(x => x.InvoiceDate <= dtTo);
+            }
 
-        // 8. Trạng thái (ChkPending, ChkApproved, ChkCanceled)
-        var statusList = new List<string>();
-        if (string.Equals(req?.ChkPending, "1", StringComparison.OrdinalIgnoreCase)) statusList.Add("PENDING");
-        if (string.Equals(req?.ChkApproved, "1", StringComparison.OrdinalIgnoreCase)) statusList.Add("APPROVE");
-        if (string.Equals(req?.ChkCanceled, "1", StringComparison.OrdinalIgnoreCase)) statusList.Add("CANCEL");
+            if (!string.IsNullOrEmpty(req.InvoiceNo))
+            {
+                var pattern = PortQuery.Contains(req.InvoiceNo.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.InvoiceNo ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
 
-        if (statusList.Count > 0)
-        {
-            query = query.Where(x => statusList.Contains(x.IF_InvInStatus ?? ""));
-        }
+            if (!string.IsNullOrEmpty(req.InvInType))
+            {
+                var pattern = PortQuery.Equal(req.InvInType.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.InvInType ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
 
-        // 9. Khoảng thời gian tạo CreatedTimeFrom / CreatedTimeTo
-        if (DateTime.TryParse(req?.CreatedTimeFrom, out var dtFrom))
-        {
-            query = query.Where(x => x.CreateDTimeUTC >= dtFrom);
-        }
-        if (DateTime.TryParse(req?.CreatedTimeTo, out var dtTo))
-        {
-            query = query.Where(x => x.CreateDTimeUTC <= dtTo);
-        }
+            if (!string.IsNullOrEmpty(req.CustomerCode))
+            {
+                var pattern = PortQuery.Equal(req.CustomerCode.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.CustomerCode ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
 
-        // 10. Khoảng thời gian duyệt ApprdTimeFrom / ApprdTimeTo
-        if (DateTime.TryParse(req?.ApprdTimeFrom, out var dtApprFrom))
-        {
-            query = query.Where(x => x.ApprDTimeUTC >= dtApprFrom);
-        }
-        if (DateTime.TryParse(req?.ApprdTimeTo, out var dtApprTo))
-        {
-            query = query.Where(x => x.ApprDTimeUTC <= dtApprTo);
-        }
+            if (!string.IsNullOrEmpty(req.InvCodeIn))
+            {
+                var pattern = PortQuery.Equal(req.InvCodeIn.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.InvCodeIn ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
 
-        // 11. Khoảng ngày hóa đơn InvoiceDateFrom / InvoiceDateTo
-        if (DateTime.TryParse(req?.InvoiceDateFrom, out var dtInvFrom))
-        {
-            query = query.Where(x => x.InvoiceDate >= dtInvFrom);
-        }
-        if (DateTime.TryParse(req?.InvoiceDateTo, out var dtInvTo))
-        {
-            query = query.Where(x => x.InvoiceDate <= dtInvTo);
+            if (!string.IsNullOrEmpty(req.OrgId))
+            {
+                var pattern = PortQuery.Equal(req.OrgId.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.OrgID ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
+
+            if (!string.IsNullOrEmpty(req.RefNo))
+            {
+                var pattern = PortQuery.Contains(req.RefNo.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.RefNo ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
+
+            var statuses = new List<string>();
+            if (req.ChkPending == "1") statuses.Add("PENDING");
+            if (req.ChkApproved == "1") statuses.Add("APPROVED");
+            if (req.ChkCanceled == "1") statuses.Add("CANCELED");
+
+            if (statuses.Count > 0)
+            {
+                query = query.Where(x => statuses.Contains(x.IF_InvInStatus ?? ""));
+            }
         }
 
         var itemCount = await query.CountAsync();
-        var pageCount = recordcount > 0 ? (int)Math.Ceiling((double)itemCount / recordcount) : 0;
-        var recordStart = page * recordcount;
+        var pageCount = recordcount <= 0 ? 0 : (int)Math.Ceiling((double)itemCount / recordcount);
 
-        var ordered = query.OrderByDescending(x => x.CreateDTimeUTC).ThenByDescending(x => x.IF_InvInNo);
-        var pagedItems = (recordcount <= 0 || recordStart < 0)
+        var ordered = query.OrderByDescending(x => x.CreateDTimeUTC);
+
+        var pagedItems = (recordcount <= 0 || page < 0)
             ? new List<InvF_InventoryIn>()
-            : await ordered.Skip((int)Math.Min(recordStart, int.MaxValue)).Take((int)Math.Min(recordcount, int.MaxValue)).ToListAsync();
+            : await ordered.Skip((int)Math.Min((long)page * recordcount, int.MaxValue))
+                           .Take((int)Math.Min(recordcount, int.MaxValue))
+                           .ToListAsync();
 
-        // Join thêm thông tin bổ sung: Khách hàng, Loại nhập, Kho, Người tạo
         var resultList = new List<InvF_InventoryIn>();
         if (pagedItems.Count > 0)
         {
