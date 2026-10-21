@@ -6,20 +6,69 @@ namespace MiniWMS.Models.Port;
 
 /// <summary>
 /// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (phiếu nhập kho).
-/// Model đại diện cho danh sách trả về trong PageInfo của action Index (dòng 25-28, 47-50).
+/// Model đại diện cho danh sách trả về trong PageInfo của action Index / DoSearch.
 /// Cột tối thiểu lấy theo các trường chuẩn của chứng từ nhập kho hệ thống Skycic.Inventory.
 /// </summary>
 public class InvF_InventoryIn
 {
     public string IF_InvInNo { get; set; } = "";
+    public string? NetworkID { get; set; }
     public string? OrgID { get; set; }
     public string? InvInType { get; set; }
     public string? InvCodeIn { get; set; }
+    public string? IF_InvAudNo { get; set; }
     public string? CustomerCode { get; set; }
+    public string? InvoiceNo { get; set; }
+    public string? OrderNoSys { get; set; }
+    public string? OrderNo { get; set; }
+    public string? OrderType { get; set; }
+    public string? RefNoSys { get; set; }
+    public string? RefNo { get; set; }
+    public string? RefType { get; set; }
+    public string? UserDeliver { get; set; }
+    public double? TotalValIn { get; set; }
+    public double? TotalValInDesc { get; set; }
+    public double? TotalValInAfterDesc { get; set; }
+    public DateTime? CreateDTimeUTC { get; set; }
+    public string? CreateBy { get; set; }
+    public DateTime? LUDTimeUTC { get; set; }
+    public string? LUBy { get; set; }
+    public DateTime? ApprDTimeUTC { get; set; }
+    public string? ApprBy { get; set; }
+    public string? FlagQR { get; set; }
+    public string? IF_InvInStatus { get; set; }
+    public string? Remark { get; set; }
     public string? InvInDesc { get; set; }
     public string? FlagActive { get; set; } = "1";
     public DateTime? LogLUDTimeUTC { get; set; }
     public string? LogLUBy { get; set; }
+
+    public string? InvFCFInCode01 { get; set; }
+    public string? InvFCFInCode02 { get; set; }
+    public string? InvFCFInCode03 { get; set; }
+    public string? InvFCFInCode04 { get; set; }
+    public string? InvFCFInCode05 { get; set; }
+    public string? InvFCFInCode06 { get; set; }
+    public string? InvFCFInCode07 { get; set; }
+    public string? InvFCFInCode08 { get; set; }
+    public string? InvFCFInCode09 { get; set; }
+    public string? InvFCFInCode10 { get; set; }
+    public DateTime? InvoiceDate { get; set; }
+    public string? InvoiceSign { get; set; }
+    public string? FlagSynced { get; set; }
+    public string? CodeGuid { get; set; }
+    public double? TotalValVAT { get; set; }
+    public string? BusinessGroupCode { get; set; }
+
+    // Các cột join bổ sung khi Get (Form.cs:146908-146920)
+    public string? mct_CustomerCode { get; set; }
+    public string? mct_CustomerName { get; set; }
+    public string? miit_InvInType { get; set; }
+    public string? miit_InvInTypeName { get; set; }
+    public string? mii_InvCode { get; set; }
+    public string? mii_InvName { get; set; }
+    public string? su_UserCode_Create { get; set; }
+    public string? su_UserName_Create { get; set; }
 }
 
 public class InvF_InventoryInConfiguration : IEntityTypeConfiguration<InvF_InventoryIn>
@@ -29,27 +78,78 @@ public class InvF_InventoryInConfiguration : IEntityTypeConfiguration<InvF_Inven
         b.ToTable("InvF_InventoryIn");
         b.HasKey(x => x.IF_InvInNo);
         b.Property(x => x.IF_InvInNo).HasMaxLength(50);
+        b.Property(x => x.NetworkID).HasMaxLength(50);
         b.Property(x => x.OrgID).HasMaxLength(50);
         b.Property(x => x.InvInType).HasMaxLength(50);
         b.Property(x => x.InvCodeIn).HasMaxLength(50);
         b.Property(x => x.CustomerCode).HasMaxLength(50);
+        b.Property(x => x.InvoiceNo).HasMaxLength(100);
+        b.Property(x => x.OrderNo).HasMaxLength(100);
+        b.Property(x => x.RefNo).HasMaxLength(100);
+        b.Property(x => x.IF_InvInStatus).HasMaxLength(50);
+        b.Property(x => x.BusinessGroupCode).HasMaxLength(50);
         b.Property(x => x.InvInDesc).HasMaxLength(500);
+        b.Property(x => x.Remark).HasMaxLength(500);
         b.Property(x => x.FlagActive).HasMaxLength(10);
+        b.Property(x => x.CreateBy).HasMaxLength(50);
+        b.Property(x => x.LogLUBy).HasMaxLength(50);
+
+        // Các trường join không lưu vào bảng chính
+        b.Ignore(x => x.mct_CustomerCode);
+        b.Ignore(x => x.mct_CustomerName);
+        b.Ignore(x => x.miit_InvInType);
+        b.Ignore(x => x.miit_InvInTypeName);
+        b.Ignore(x => x.mii_InvCode);
+        b.Ignore(x => x.mii_InvName);
+        b.Ignore(x => x.su_UserCode_Create);
+        b.Ignore(x => x.su_UserName_Create);
+    }
+}
+
+/// <summary>
+/// port 1:1 InvF_InventoryInDtl.cs — chi tiết phiếu nhập kho.
+/// </summary>
+public class InvF_InventoryInDtl
+{
+    public string IF_InvInNo { get; set; } = "";
+    public string ProductCode { get; set; } = "";
+    public string? InvCodeInActual { get; set; }
+    public string? NetworkID { get; set; }
+    public double? Qty { get; set; }
+    public double? QtyReturn { get; set; }
+    public double? UPIn { get; set; }
+    public double? UPInDesc { get; set; }
+    public double? ValInvIn { get; set; }
+    public double? ValInDesc { get; set; }
+    public double? ValInAfterDesc { get; set; }
+    public string? UnitCode { get; set; }
+    public string? IF_InvInStatusDtl { get; set; }
+    public string? Remark { get; set; }
+    public DateTime? LogLUDTimeUTC { get; set; }
+    public string? LogLUBy { get; set; }
+    public double? VAT { get; set; }
+    public double? ValVAT { get; set; }
+}
+
+public class InvF_InventoryInDtlConfiguration : IEntityTypeConfiguration<InvF_InventoryInDtl>
+{
+    public void Configure(EntityTypeBuilder<InvF_InventoryInDtl> b)
+    {
+        b.ToTable("InvF_InventoryInDtl");
+        b.HasKey(x => new { x.IF_InvInNo, x.ProductCode });
+        b.Property(x => x.IF_InvInNo).HasMaxLength(50);
+        b.Property(x => x.ProductCode).HasMaxLength(50);
+        b.Property(x => x.InvCodeInActual).HasMaxLength(50);
+        b.Property(x => x.NetworkID).HasMaxLength(50);
+        b.Property(x => x.UnitCode).HasMaxLength(50);
+        b.Property(x => x.IF_InvInStatusDtl).HasMaxLength(50);
+        b.Property(x => x.Remark).HasMaxLength(500);
         b.Property(x => x.LogLUBy).HasMaxLength(50);
     }
 }
 
 /// <summary>
-/// DDL nguồn trích trong source_excerpt.txt:328-353:
-/// CREATE TABLE Mst_InvInType (
-///        InvInType            Varchar50 NOT NULL,
-///        NetworkID            Varchar50 NOT NULL,
-///        InvInTypeName        Varchar100 NOT NULL,
-///        FlagActive           MyStatus,
-///        FlagStatistic        MyStatus,
-///        LogLUDTimeUTC        MyDateTime,
-///        LogLUBy              Varchar50
-/// )
+/// DDL nguồn trích trong source_excerpt.txt:328-353
 /// </summary>
 public class Mst_InvInType
 {
@@ -79,7 +179,6 @@ public class Mst_InvInTypeConfiguration : IEntityTypeConfiguration<Mst_InvInType
 
 /// <summary>
 /// port 1:1 Mst_BusinessGroup (nhóm kinh doanh / chi nhánh).
-/// Cột dùng ở action Index: BusinessType, FlagActive (dòng 41-42, 223-228), OrgID/NetworkID.
 /// </summary>
 public class Mst_BusinessGroup
 {
@@ -111,7 +210,6 @@ public class Mst_BusinessGroupConfiguration : IEntityTypeConfiguration<Mst_Busin
 
 /// <summary>
 /// port 1:1 Mst_Customer (khách hàng / nhà cung cấp).
-/// Cột dùng ở action Index: CustomerCode, CustomerName, FlagActive, FlagSupplier (dòng 108).
 /// </summary>
 public class Mst_Customer
 {
@@ -143,7 +241,6 @@ public class Mst_CustomerConfiguration : IEntityTypeConfiguration<Mst_Customer>
 
 /// <summary>
 /// port 1:1 Mst_NNT (thông tin người nộp thuế / tổ chức chi nhánh).
-/// Cột dùng ở action Index: MST, MSTBUPattern, NNTFullName, FlagActive (dòng 119).
 /// </summary>
 public class Mst_NNT
 {
@@ -218,6 +315,130 @@ public class InvF_InventoryInMasterSeeder : IPortSeeder
                 new Mst_NNT { MST = "0101234567-001", MSTBUPattern = "0101234567%", NNTFullName = "Chi nhánh Hà Nội 1", OrgID = "ORG01", NetworkID = "1001", FlagActive = "1", LogLUBy = "seed", LogLUDTimeUTC = DateTime.UtcNow },
                 new Mst_NNT { MST = "0309999999", MSTBUPattern = "0309999999%", NNTFullName = "Chi nhánh Độc lập", OrgID = "ORG02", NetworkID = "1001", FlagActive = "1", LogLUBy = "seed", LogLUDTimeUTC = DateTime.UtcNow },
                 new Mst_NNT { MST = "0101234567-999", MSTBUPattern = "0101234567%", NNTFullName = "Chi nhánh Đã đóng", OrgID = "ORG01", NetworkID = "1001", FlagActive = "0", LogLUBy = "seed", LogLUDTimeUTC = DateTime.UtcNow }
+            );
+        }
+
+        // Seed nghiệp vụ phiếu nhập kho demo (InvF_InventoryIn & InvF_InventoryInDtl)
+        if (!await db.Set<InvF_InventoryIn>().AnyAsync())
+        {
+            var now = DateTime.UtcNow;
+            db.Set<InvF_InventoryIn>().AddRange(
+                new InvF_InventoryIn
+                {
+                    IF_InvInNo = "PNK001",
+                    OrgID = "ORG01",
+                    NetworkID = "1001",
+                    InvInType = "IN01",
+                    InvCodeIn = "KHO01",
+                    CustomerCode = "NCC01",
+                    InvoiceNo = "HD001",
+                    RefNo = "REF001",
+                    BusinessGroupCode = "BG01",
+                    IF_InvInStatus = "PENDING",
+                    TotalValIn = 1000000,
+                    TotalValInAfterDesc = 1100000,
+                    TotalValVAT = 100000,
+                    CreateDTimeUTC = now.AddDays(-2),
+                    CreateBy = "U01",
+                    InvoiceDate = now.AddDays(-2),
+                    FlagActive = "1",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                },
+                new InvF_InventoryIn
+                {
+                    IF_InvInNo = "PNK002",
+                    OrgID = "ORG01",
+                    NetworkID = "1001",
+                    InvInType = "IN01",
+                    InvCodeIn = "KHO01",
+                    CustomerCode = "NCC02",
+                    InvoiceNo = "HD002",
+                    RefNo = "REF002",
+                    BusinessGroupCode = "BG01",
+                    IF_InvInStatus = "APPROVE",
+                    TotalValIn = 2000000,
+                    TotalValInAfterDesc = 2200000,
+                    TotalValVAT = 200000,
+                    CreateDTimeUTC = now.AddDays(-1),
+                    CreateBy = "U01",
+                    ApprDTimeUTC = now.AddDays(-1),
+                    ApprBy = "U01",
+                    InvoiceDate = now.AddDays(-1),
+                    FlagActive = "1",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                },
+                new InvF_InventoryIn
+                {
+                    IF_InvInNo = "PNK003",
+                    OrgID = "ORG01",
+                    NetworkID = "1001",
+                    InvInType = "IN02",
+                    InvCodeIn = "KHO02",
+                    CustomerCode = "NCC01",
+                    InvoiceNo = "HD003",
+                    RefNo = "REF003",
+                    BusinessGroupCode = "BG02",
+                    IF_InvInStatus = "CANCEL",
+                    TotalValIn = 500000,
+                    TotalValInAfterDesc = 550000,
+                    TotalValVAT = 50000,
+                    CreateDTimeUTC = now,
+                    CreateBy = "U01",
+                    InvoiceDate = now,
+                    FlagActive = "1",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                }
+            );
+
+            db.Set<InvF_InventoryInDtl>().AddRange(
+                new InvF_InventoryInDtl
+                {
+                    IF_InvInNo = "PNK001",
+                    ProductCode = "SP01",
+                    InvCodeInActual = "KHO01",
+                    NetworkID = "1001",
+                    Qty = 10,
+                    UPIn = 100000,
+                    ValInvIn = 1000000,
+                    ValInAfterDesc = 1100000,
+                    UnitCode = "U01",
+                    IF_InvInStatusDtl = "PENDING",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                },
+                new InvF_InventoryInDtl
+                {
+                    IF_InvInNo = "PNK002",
+                    ProductCode = "SP02",
+                    InvCodeInActual = "KHO01",
+                    NetworkID = "1001",
+                    Qty = 20,
+                    UPIn = 100000,
+                    ValInvIn = 2000000,
+                    ValInAfterDesc = 2200000,
+                    UnitCode = "U01",
+                    IF_InvInStatusDtl = "APPROVE",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                },
+                new InvF_InventoryInDtl
+                {
+                    IF_InvInNo = "PNK003",
+                    ProductCode = "SP01",
+                    InvCodeInActual = "KHO02",
+                    NetworkID = "1001",
+                    Qty = 5,
+                    UPIn = 100000,
+                    ValInvIn = 500000,
+                    ValInAfterDesc = 550000,
+                    UnitCode = "U01",
+                    IF_InvInStatusDtl = "CANCEL",
+                    LogLUBy = "seed",
+                    LogLUDTimeUTC = now
+                }
             );
         }
 
