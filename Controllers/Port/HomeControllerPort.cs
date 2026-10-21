@@ -153,4 +153,16 @@ public class HomeControllerPort(AppDbContext db) : ControllerBase
         // Nguồn dòng 334: chuỗi chép nguyên văn.
         return Ok(new { Success = true, Message = "Your application description page." });
     }
+
+    /// <summary>
+    /// port 1:1 HomeController.cs:339-344 — Contact() (hạng mục #20).
+    /// Nguồn: `ViewBag.Message = "Your contact page."; return View();` — KHÔNG tham số, KHÔNG guard,
+    /// KHÔNG mã lỗi, KHÔNG đọc/ghi bảng, KHÔNG gọi dịch vụ ngoài (excerpt dòng 13-15: danh sách service rỗng).
+    /// </summary>
+    [HttpPost("contact")]
+    public IActionResult Contact()
+    {
+        // Nguồn dòng 341: chuỗi chép nguyên văn.
+        return Ok(new { Success = true, Message = "Your contact page." });
+    }
 }
