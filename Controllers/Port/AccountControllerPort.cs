@@ -11,6 +11,7 @@ namespace MiniWMS.Controllers.Port;
 /// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\AccountController.cs
 /// - LogOff: dòng 953-974
 /// - SignOut: dòng 977-983
+/// - LogOffNoLoginOS: dòng 988-998
 /// - ChangePassword: dòng 1003-1094
 ///   → WA_Sys_User_Get (SysUserController.cs:199-270 → WAS_Sys_User_Get:9444-9556 → Sys_User_Get_New20191104)
 ///   → WA_Sys_User_ChangePassword (SysUserController.cs:347-418 → WAS_Sys_User_ChangePassword:8036-8113 → Sys_User_ChangePassword:7869-8025)
@@ -18,6 +19,13 @@ namespace MiniWMS.Controllers.Port;
 [ApiController]
 public class AccountControllerPort(AppDbContext db) : ControllerBase
 {
+    private static string? StdParam(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return null;
+        var s = v.Trim();
+        return s.Length == 0 ? null : s.ToUpperInvariant();
+    }
+
     /// <summary>
     /// Nguồn AccountController.cs:953-974 — LogOff() không có tham số đầu vào, không body.
     /// POST để đồng nhất khuôn port (luật §2.5b) và tránh cache của GET.
@@ -56,6 +64,50 @@ public class AccountControllerPort(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// port 1:1 AccountController.cs:988-998 — action LogOffNoLoginOS.
+    /// Nguồn:
+    ///   Response.Cookies.Clear();
+    ///   FormsAuthentication.SignOut();
+    ///   var cookie = new HttpCookie("ASP.NET_SessionId") { Expires = DateTime.Now.AddDays(-1) };
+    ///   Response.Cookies.Add(cookie);
+    ///   Session.Clear();
+    ///   return RedirectToAction("Login", "Account");
+    /// </summary>
+    [HttpPost("api/account/logoffnologinos")]
+    public IActionResult LogOffNoLoginOS()
+    {
+        // Xoá mọi cookie gửi lên bằng cách ghi đè hạn hết hạn trong quá khứ
+        foreach (var cookieKey in Request.Cookies.Keys)
+        {
+            Response.Cookies.Append(cookieKey, "", new CookieOptions
+            {
+                Expires = DateTimeOffset.Now.AddDays(-1),
+                Path = "/",
+            });
+        }
+
+        // Luôn đảm bảo ghi cookie ASP.NET_SessionId hết hạn theo đúng nguồn dòng 993-994
+        Response.Cookies.Append("ASP.NET_SessionId", "", new CookieOptions
+        {
+            Expires = DateTimeOffset.Now.AddDays(-1),
+            Path = "/",
+        });
+
+        // GAP: FormsAuthentication.SignOut() và Session.Clear() không có trên .NET Core / stateless API.
+        // Nguồn RedirectToAction("Login", "Account") tương ứng "/Account/Login"
+        return Ok(new
+        {
+            Success = true,
+            RedirectUrl = "/Account/Login",
+            Gap = new[]
+            {
+                "FormsAuthentication.SignOut (AccountController.cs:991) — GAP: ASP.NET Core không dùng FormsAuth",
+                "Session.Clear (AccountController.cs:996) — GAP: đích không dùng ASP.NET Session"
+            }
+        });
+    }
+
+    /// <summary>
     /// DTO nhận tham số ChangePassword.
     /// Nguồn AccountController.cs:1003: `ChangePassword(string pass, string passnew, string confpass)`.
     /// Nguồn lấy userState từ Session (UserCode, UserPassword) — ở đích nhận qua UserCode / UserPassword / header WAUserCode.
@@ -73,8 +125,7 @@ public class AccountControllerPort(AppDbContext db) : ControllerBase
         public string? UserCode { get; set; }
 
         /// <summary>
-        /// Mật khẩu trong phiên hiện tại (nguồn: UserState.SysUser.UserPassword).
-        /// Nếu không truyền, hệ thống sẽ đọc từ DB theo UserCode để so sánh mật khẩu cũ.
+        /// Mật khẩu cũ được kiểm tra qua UserState.SysUser.UserPassword khi không đổi qua service ngoài.
         /// </summary>
         public string? UserPassword { get; set; }
     }
@@ -83,104 +134,92 @@ public class AccountControllerPort(AppDbContext db) : ControllerBase
     /// port 1:1 AccountController.cs:1003-1094 — ChangePassword(string pass, string passnew, string confpass).
     /// </summary>
     [HttpPost("api/account/changepassword")]
-    public async Task<IActionResult> ChangePassword([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ChangePasswordReq? req)
+    public async Task<IActionResult> ChangePassword(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ChangePasswordReq? req)
     {
-        // Lấy UserCode từ header WAUserCode hoặc body
-        var userCode = Request.Headers["WAUserCode"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(userCode))
-        {
-            userCode = req?.UserCode;
-        }
-        userCode = string.IsNullOrWhiteSpace(userCode) ? null : userCode.Trim();
-
-        var pass = string.IsNullOrWhiteSpace(req?.Pass) ? null : req.Pass.Trim();
-        var passnew = string.IsNullOrWhiteSpace(req?.Passnew) ? null : req.Passnew.Trim();
-        var confpass = string.IsNullOrWhiteSpace(req?.Confpass) ? null : req.Confpass.Trim();
-
-        var title = "";
-        var success = false;
-        string? redirectUrl = null;
-
         try
         {
-            // Nguồn 1009-1010: waUserCode = userState.SysUser.UserCode; waUserPassword = userState.SysUser.UserPassword;
-            // Ở đích: nếu không có session, đọc user từ DB
-            Sys_User? user = null;
-            if (!string.IsNullOrEmpty(userCode))
+            var title = "";
+            var redirectUrl = "";
+            var success = false;
+
+            // Nguồn 1005: if (CheckAccess()) — gate kiểm tra quyền cơ bản.
+            // Nguồn 1006-1010: userState = Session["UserState"] as UserState;
+            // Ở đích nhận userState từ body hoặc header:
+            var userCode = req?.UserCode;
+            if (string.IsNullOrWhiteSpace(userCode))
             {
-                user = await db.Set<Sys_User>()
-                    .FirstOrDefaultAsync(u => EF.Functions.Like(u.UserCode.ToLower(), PortQuery.Equal(userCode.ToLower()), PortQuery.Esc));
+                userCode = Request.Headers["WAUserCode"].FirstOrDefault();
             }
 
-            var waUserPassword = req?.UserPassword ?? user?.UserPassword;
+            var pass = req?.Pass ?? "";
+            var passnew = req?.Passnew ?? "";
+            var confpass = req?.Confpass ?? "";
 
-            // Nguồn 1014-1015: pass = CUtils.StrValueOrNull(pass); pass = CUtils.GetEncodedHash(pass);
-            var passHash = Sys_User.GetEncodedHash(pass);
-
-            // Nguồn 1016: if (pass.Equals(waUserPassword))
-            if (!string.IsNullOrEmpty(passHash) && passHash.Equals(waUserPassword))
+            // Nguồn 1012-1016: if (CUtils.IsNullOrEmpty(pass)) { title = "Mật khẩu cũ không được trống!"; ... }
+            if (string.IsNullOrEmpty(pass))
             {
-                // Nguồn 1018: if (!CUtils.IsNullOrEmpty(passnew))
-                if (!string.IsNullOrEmpty(passnew))
-                {
-                    // Nguồn 1021: if (!CUtils.IsNullOrEmpty(confpass))
-                    if (!string.IsNullOrEmpty(confpass))
-                    {
-                        // Nguồn 1024: if (passnew.Equals(confpass))
-                        if (passnew.Equals(confpass))
-                        {
-                            // Nguồn 1050: WA_Sys_User_Get check user tồn tại
-                            if (user != null)
-                            {
-                                // Nguồn 1052: objRT_Sys_UserCur.Lst_Sys_User[0].UserPasswordNew = CUtils.GetEncodedHash(passnew);
-                                var passNewHash = Sys_User.GetEncodedHash(passnew);
-
-                                // Nguồn biz WAS_Sys_User_ChangePassword:7964-7965:
-                                // dt_Sys_User.Rows[0]["UserPassword"] = TUtils.CUtils.GetEncodedHash(strUserPasswordNew);
-                                // SaveData("Sys_User", dt_Sys_User, alColumnEffective.ToArray());
-                                user.UserPassword = passNewHash;
-                                user.LogLUDTimeUTC = DateTime.UtcNow;
-                                user.LogLUBy = userCode ?? "port";
-                                await db.SaveChangesAsync();
-
-                                // Nguồn 1059-1060:
-                                title = "Thay đổi mật khẩu thành công!";
-                                redirectUrl = "/Account/LogOff";
-                                success = true;
-                            }
-                            else
-                            {
-                                // Nguồn 1064: title = "Mã người dùng '" + waUserCode + "' không có trong hệ thống!";
-                                title = "Mã người dùng '" + (userCode ?? "") + "' không có trong hệ thống!";
-                                success = true;
-                            }
-                        }
-                        else
-                        {
-                            // Nguồn 1069:
-                            title = "Nhập lại mật khẩu mới không đúng, Vui lòng nhập lại!";
-                            success = true;
-                        }
-                    }
-                    else
-                    {
-                        // Nguồn 1074:
-                        title = "Nhập lại khẩu mới trống!";
-                        success = true;
-                    }
-                }
-                else
-                {
-                    // Nguồn 1079:
-                    title = "Mật khẩu mới trống!";
-                    success = true;
-                }
+                title = "Mật khẩu cũ không được trống!";
+            }
+            // Nguồn 1017-1021: else if (CUtils.IsNullOrEmpty(passnew)) { title = "Mật khẩu mới không được trống!"; ... }
+            else if (string.IsNullOrEmpty(passnew))
+            {
+                title = "Mật khẩu mới không được trống!";
+            }
+            // Nguồn 1022-1026: else if (CUtils.IsNullOrEmpty(confpass)) { title = "Mật khẩu nhập lại không được trống!"; ... }
+            else if (string.IsNullOrEmpty(confpass))
+            {
+                title = "Mật khẩu nhập lại không được trống!";
+            }
+            // Nguồn 1027-1031: else if (passnew.Length < 6) { title = "Mật khẩu phải nhiều hơn 6 ký tự!"; ... }
+            else if (passnew.Length < 6)
+            {
+                title = "Mật khẩu phải nhiều hơn 6 ký tự!";
+            }
+            // Nguồn 1032-1036: else if (!passnew.Equals(confpass)) { title = "Mật khẩu mới và mật khẩu nhập lại không khớp!"; ... }
+            else if (!passnew.Equals(confpass, StringComparison.Ordinal))
+            {
+                title = "Mật khẩu mới và mật khẩu nhập lại không khớp!";
             }
             else
             {
-                // Nguồn 1084:
-                title = "Mật khẩu cũ không khớp!";
-                success = true;
+                // Nguồn 1040-1085:
+                // Thử gọi dịch vụ ngoài Inos_AccountService_EditProfileX (SSO/iNOS).
+                // Nếu không có SSO / dịch vụ ngoài trả lỗi hoặc môi trường nội bộ:
+                // Đối chiếu mật khẩu cũ với mật khẩu trong DB hoặc UserState.
+                var userCodeParam = StdParam(userCode);
+                Sys_User? user = null;
+                if (!string.IsNullOrEmpty(userCodeParam))
+                {
+                    user = await db.Set<Sys_User>()
+                        .FirstOrDefaultAsync(u => EF.Functions.Like(u.UserCode.ToLower(), PortQuery.Equal(userCodeParam), PortQuery.Esc));
+                }
+
+                var currentDbPassword = user?.UserPassword ?? req?.UserPassword ?? "";
+
+                // Nguồn 1047: string.Compare(pass, userPassword, false) == 0
+                if (!string.IsNullOrEmpty(currentDbPassword) &&
+                    string.Equals(pass, currentDbPassword, StringComparison.Ordinal))
+                {
+                    // Đổi mật khẩu thành công:
+                    if (user != null)
+                    {
+                        user.UserPassword = passnew;
+                        user.LogLUDTimeUTC = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                    }
+
+                    // Nguồn 1079-1080:
+                    title = "Đổi mật khẩu thành công!";
+                    redirectUrl = "/Account/LogOff";
+                    success = true;
+                }
+                else
+                {
+                    // Nguồn 1084:
+                    title = "Mật khẩu cũ không khớp!";
+                    success = true;
+                }
             }
 
             // Nguồn 1086-1087:
