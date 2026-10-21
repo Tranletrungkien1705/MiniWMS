@@ -165,4 +165,17 @@ public class HomeControllerPort(AppDbContext db) : ControllerBase
         // Nguồn dòng 341: chuỗi chép nguyên văn.
         return Ok(new { Success = true, Message = "Your contact page." });
     }
+
+    /// <summary>
+    /// port 1:1 HomeController.cs:388-391 — Ping() (hạng mục #21).
+    /// Nguồn: `return Json(true, JsonRequestBehavior.AllowGet);` — KHÔNG tham số, KHÔNG guard,
+    /// KHÔNG mã lỗi, KHÔNG đọc/ghi bảng, KHÔNG gọi dịch vụ ngoài (excerpt dòng 11-18: danh sách service rỗng).
+    /// Đích: POST /api/home/ping trả đúng giá trị boolean `true` của nguồn.
+    /// </summary>
+    [HttpPost("ping")]
+    public IActionResult Ping()
+    {
+        // Nguồn dòng 390: Json(true) — trả nguyên giá trị true, không bọc thêm trường nào.
+        return Ok(true);
+    }
 }
