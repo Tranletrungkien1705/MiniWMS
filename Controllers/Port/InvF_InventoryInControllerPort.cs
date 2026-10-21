@@ -7,8 +7,8 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType, SearchInventoryIn).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 323-361, 2846-2964.
+/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType, SearchInventoryIn, ShowInvCodeInActual).
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 323-361, 365-411, 2846-2964.
 /// Action SearchInvInType: dòng 282-320.
 ///   -> BaseController.cs:2917-2922 (Mst_InvInType_Get_Async)
 ///   -> BaseController.cs:2883-2915 (Task_Mst_InvInType_Get)
@@ -21,6 +21,12 @@ namespace MiniWMS.Controllers.Port;
 ///   -> API WA_Mst_Inventory_Get (MstInventoryController.cs:18-89)
 ///   -> BIZ WAS_Mst_Inventory_Get (MasterData.cs:9254-9368)
 ///   -> BIZ Mst_Inventory_Get: lọc Mst_Inventory theo FlagActive = '1' and FlagIn_Out = '1' và like InvCode / InvName.
+/// Action ShowInvCodeInActual: dòng 365-411 (#75).
+///   -> BaseController.cs:2752-2757 (Mst_Inventory_Get_Async)
+///   -> BaseController.cs:2717-2750 (Task_Mst_Inventory_Get)
+///   -> API WA_Mst_Inventory_Get (MstInventoryController.cs:18-89)
+///   -> BIZ WAS_Mst_Inventory_Get (MasterData.cs:9254-9368)
+///   -> BIZ Mst_Inventory_Get: lọc Mst_Inventory theo FlagActive = '1' (dòng 371) và like InvBUPattern (dòng 373-377).
 /// </summary>
 [ApiController]
 public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
@@ -101,6 +107,37 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public List<Mst_Inventory> List_Mst_Inventory { get; set; } = new();
     }
 
+    public class ShowInvCodeInActualReq
+    {
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcode.</summary>
+        public string? ProductCode { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcodeuser.</summary>
+        public string? ProductCodeUser { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcodebase.</summary>
+        public string? ProductCodeBase { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productname.</summary>
+        public string? ProductName { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — invbupattern.</summary>
+        public string? InvBUPattern { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — listdetail (JSON mảng InvF_InventoryInDtl hoặc truyền đối tượng).</summary>
+        public string? ListDetail { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — ifinvinstatus.</summary>
+        public string? IF_InvInStatus { get; set; }
+        /// <summary>Nguồn InvF_InventoryInController.cs:365 — viewtype.</summary>
+        public string? ViewType { get; set; }
+    }
+
+    public class ShowInvCodeInActualResult
+    {
+        public bool Success { get; set; } = true;
+        public string? ProductCode { get; set; }
+        public string? ProductName { get; set; }
+        public List<Mst_Inventory> ListMst_Inventory { get; set; } = new();
+        public List<InvF_InventoryInDtl> ListInvF_InventoryInDtl { get; set; } = new();
+        public string? IF_InvInStatus { get; set; }
+        public string? ViewType { get; set; }
+    }
+
     /// <summary>
     /// port 1:1 InvF_InventoryInController.cs:282-320 — SearchInvInType(string txtsearch).
     /// Chuỗi gọi: SearchInvInType -> Mst_InvInType_Get_Async -> Task_Mst_InvInType_Get -> WA_Mst_InvInType_Get -> WAS_Mst_InvInType_Get.
@@ -176,6 +213,80 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         }
         catch (Exception ex)
         {
+            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// port 1:1 InvF_InventoryInController.cs:365-411 — ShowInvCodeInActual.
+    /// Chuỗi gọi: ShowInvCodeInActual -> Mst_Inventory_Get_Async -> Task_Mst_Inventory_Get -> WA_Mst_Inventory_Get -> WAS_Mst_Inventory_Get.
+    /// Lọc Mst_Inventory: FlagActive = '1' (dòng 371); nếu invbupattern không rỗng thì AND Mst_Inventory.InvBUPattern like 'invbupattern' (dòng 373-377).
+    /// ViewBag.ProductName = productcodeuser + " - " + productname (dòng 391).
+    /// ViewBag.ListInvF_InventoryInDtl = Deserialize<List<InvF_InventoryInDtl>>(listdetail) (dòng 395-399).
+    /// </summary>
+    [HttpPost("api/invf_inventoryin/showinvcodeinactual")]
+    public async Task<IActionResult> ShowInvCodeInActual([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowInvCodeInActualReq? req)
+    {
+        try
+        {
+            // Nguồn dòng 371: var strWhere_Mst_Inventory = "Mst_Inventory.FlagActive = '1'";
+            var query = db.Set<Mst_Inventory>()
+                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
+
+            var invbupattern = req?.InvBUPattern;
+            // Nguồn dòng 373-377: if (!string.IsNullOrEmpty(invbupattern)) strWhere += " Mst_Inventory.InvBUPattern like '" + invbupattern + "'";
+            if (!string.IsNullOrEmpty(invbupattern))
+            {
+                // Nguồn dùng like với chuỗi invbupattern nguyên vẹn (có thể chứa wildcard % hoặc không)
+                var pattern = invbupattern.Trim().ToLowerInvariant().Replace(@"\", @"\\");
+                query = query.Where(x => EF.Functions.Like((x.InvBUPattern ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
+
+            var listMstInventory = await query.OrderBy(x => x.InvCode).ToListAsync();
+
+            // Nguồn dòng 391: ViewBag.ProductName = productcodeuser + " - " + productname;
+            var productCodeUser = req?.ProductCodeUser ?? "";
+            var productNameRaw = req?.ProductName ?? "";
+            var productDisplayName = string.IsNullOrEmpty(productCodeUser) && string.IsNullOrEmpty(productNameRaw)
+                ? null
+                : $"{productCodeUser} - {productNameRaw}";
+
+            // Nguồn dòng 394-399: parse listdetail JSON nếu có
+            var lstDetail = new List<InvF_InventoryInDtl>();
+            if (!string.IsNullOrEmpty(req?.ListDetail))
+            {
+                try
+                {
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInDtl>>(
+                        req.ListDetail,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
+                    if (parsed != null)
+                    {
+                        lstDetail.AddRange(parsed);
+                    }
+                }
+                catch
+                {
+                    // Nguồn bắt lỗi JsonParseException trong khối chung, trả kết quả lỗi
+                    throw;
+                }
+            }
+
+            return Ok(new ShowInvCodeInActualResult
+            {
+                Success = true,
+                ProductCode = req?.ProductCode,
+                ProductName = productDisplayName,
+                ListMst_Inventory = listMstInventory,
+                ListInvF_InventoryInDtl = lstDetail,
+                IF_InvInStatus = req?.IF_InvInStatus,
+                ViewType = req?.ViewType
+            });
+        }
+        catch (Exception ex)
+        {
+            // Nguồn dòng 405-410: resultEntry.SetFailed().AddException(this, ex)
             return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
         }
     }
