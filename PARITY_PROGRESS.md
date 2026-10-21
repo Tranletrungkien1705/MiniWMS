@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 32/521 (6.14%)
+**Tiến độ hiện tại**: 33/521 (6.33%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -118,7 +118,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 106 | InvF_InventoryInController/InvF_InventoryIn_UpdMultiBusinessGroupCode | Chưa làm | - |
 | 107 | InvF_InventoryOutController/Index | Chưa làm | - |
 | 108 | InvF_InventoryOutController/DoSearch | Chưa làm | - |
-| 109 | InvF_InventoryOutController/Create | Chưa làm | - |
+| 109 | InvF_InventoryOutController/Create | Đã làm | 39ffc24 |
 | 110 | InvF_InventoryOutController/Save | Chưa làm | - |
 | 111 | InvF_InventoryOutController/UpdProfile | Chưa làm | - |
 | 112 | InvF_InventoryOutController/DeleteMulti | Chưa làm | - |
