@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 22/521 (4.22%)
+**Tiến độ hiện tại**: 23/521 (4.41%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -19,7 +19,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 7 | AccountController/LogOff | Đã làm | 5def394 |
 | 8 | AccountController/SignOut | Đã làm | 8e95601 |
 | 9 | AccountController/LogOffNoLoginOS | Chưa làm | - |
-| 10 | AccountController/ChangePassword | Chưa làm | - |
+| 10 | AccountController/ChangePassword | Đã làm | b10ab66 |
 | 11 | DashboardController/Index | Chưa làm | - |
 | 12 | DashboardRptController/WG_Rpt_Inv_InventoryBalance | Chưa làm | - |
 | 13 | DashboardRptController/WG_Rpt_Summary_In_Pivot | Đã làm | 56de7e9 |
