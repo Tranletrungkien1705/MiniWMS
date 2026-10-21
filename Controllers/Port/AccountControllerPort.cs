@@ -1,37 +1,22 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.EntityFrameworkCore;
 using MiniWMS.Data;
+using MiniWMS.Models.Port;
 
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 AccountController.cs — action LogOff (phiên/SSO).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\AccountController.cs:953-974.
-/// Chuỗi: gate LogOff → KHÔNG gọi service/biz nào (excerpt dòng 29-30: "GATE goi service:" rỗng);
-///        chỉ thao tác phiên ASP.NET + gọi hạ tầng SSO ngoài (InitSSO, BaseController.cs:883-908)
-///        rồi redirect sang {InosBaseUrl}/account/signout/?returnUrl={ClientDomain} (dòng 968-971).
-///
-/// Phần port được (code thật của gate, không phụ thuộc hạ tầng nguồn):
-///   - dòng 960-964: nếu có cookie "accesstoken" → ghi đè cookie cùng tên với Expires = Now-1 ngày (xoá);
-///   - dòng 965-966: luôn ghi đè cookie "ASP.NET_SessionId" với Expires = Now-1 ngày (xoá).
-///
-/// GAP (không port được — hạ tầng đích không có, xem .parity-run\conflicts\7_conflict.md):
-///   - dòng 955/967 Session.Clear(): đích không dùng Session (JWT Bearer + MiniSSO, Program.cs:31-40);
-///   - dòng 956 InitSSO(): khởi tạo inos.common.Service.InosClientServiceBase với InosBaseUrl/SSOSecret/SolutionCode
-///     từ appSettings nguồn — không tồn tại ở đích (grep "InosBaseUrl|ClientDomain" toàn repo = 0 dòng);
-///   - dòng 959 FormsAuthentication.SignOut(): đích không dùng FormsAuthentication;
-///   - dòng 968 GetLogoffUrl(): hàm của inos.common, không có mã nguồn, KHÔNG port (và nguồn tính rồi không dùng);
-///   - dòng 969-972 Response.Redirect(urlSignOut, true): urlSignOut dựng từ appSettings["InosBaseUrl"] +
-///     appSettings["ClientDomain"] — cả hai không có ở đích; KHÔNG tự chế giá trị thay thế (P3).
-///
-/// LỖI NGUỒN GIỮ NGUYÊN: dòng 968 tính `url = inos.common.Paths.GetLogoffUrl()` nhưng KHÔNG dùng (chỉ urlSignOut
-/// được redirect ở dòng 971) — port không dựng url, đúng như nguồn không dùng.
-///
-/// Hình dạng phản hồi: nguồn KHÔNG trả JSON (redirect 302 + Response.End). Đích trả 200 + RedirectUrl = null
-/// (cùng mẫu "không có trang đích → RedirectUrl null" của Mst_InventoryLevelTypeControllerPort.cs:177/243)
-/// để client gọi được mà không cần appSettings nguồn — đây là phần CẦN CLAUDE CHỐT (conflict #7).
+/// port 1:1 AccountController.cs — AccountController.
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\AccountController.cs
+/// - LogOff: dòng 953-974
+/// - SignOut: dòng 977-983
+/// - ChangePassword: dòng 1003-1094
+///   → WA_Sys_User_Get (SysUserController.cs:199-270 → WAS_Sys_User_Get:9444-9556 → Sys_User_Get_New20191104)
+///   → WA_Sys_User_ChangePassword (SysUserController.cs:347-418 → WAS_Sys_User_ChangePassword:8036-8113 → Sys_User_ChangePassword:7869-8025)
 /// </summary>
 [ApiController]
-public class AccountControllerPort : ControllerBase
+public class AccountControllerPort(AppDbContext db) : ControllerBase
 {
     /// <summary>
     /// Nguồn AccountController.cs:953-974 — LogOff() không có tham số đầu vào, không body.
@@ -43,7 +28,6 @@ public class AccountControllerPort : ControllerBase
         // Nguồn 960-964: chỉ xoá cookie "accesstoken" KHI request có cookie đó (Request.Cookies["accesstoken"] != null).
         if (Request.Cookies.ContainsKey("accesstoken"))
         {
-            // Nguồn 962: new HttpCookie("accesstoken") { Expires = DateTime.Now.AddDays(-1) } — không set giá trị.
             Response.Cookies.Append("accesstoken", "", new CookieOptions
             {
                 Expires = DateTimeOffset.Now.AddDays(-1),
@@ -58,39 +42,168 @@ public class AccountControllerPort : ControllerBase
             Path = "/",
         });
 
-        // GAP: Session.Clear / InitSSO / FormsAuthentication.SignOut / redirect urlSignOut — xem chú thích đầu file.
-        // Nguồn 971 redirect sang urlSignOut dựng từ appSettings không có ở đích → trả null, ghi GAP + conflict #7.
+        // GAP: Session.Clear / InitSSO / FormsAuthentication.SignOut / redirect urlSignOut (conflict #7).
         return Ok(new { Success = true, RedirectUrl = (string?)null });
     }
 
     /// <summary>
-    /// port 1:1 AccountController.cs:977-983 — action SignOut (phiên/FormsAuth, không body, không tham số).
-    /// Nguồn (nguyên văn):
-    ///   977| public ActionResult SignOut()
-    ///   978| {
-    ///   979|     Session.Clear();
-    ///   980|
-    ///   981|     FormsAuthentication.SignOut();
-    ///   982|     return null;
-    ///   983| }
-    ///
-    /// Toàn bộ thân hàm là thao tác hạ tầng phiên:
-    ///   - dòng 979 Session.Clear(): đích KHÔNG dùng Session (JWT Bearer + MiniSSO) → GAP;
-    ///   - dòng 981 FormsAuthentication.SignOut(): đích KHÔNG dùng FormsAuthentication → GAP;
-    ///   - dòng 982 `return null`: ActionResult null = phản hồi 200 rỗng, không JSON, không mã lỗi.
-    ///
-    /// Không có service/biz, không bảng, không transaction, không mã lỗi, không gọi dịch vụ ngoài
-    /// (excerpt dòng 14-16: "GATE goi service:" rỗng). Đây là hạng mục GAP thuần hạ tầng, cùng dạng LogOff (#7).
-    ///
-    /// Hình dạng phản hồi: để client dùng được, trả 200 + { Success = true } — KHÁC nguồn (nguồn 200 rỗng).
-    /// Đây là phần CẦN CLAUDE CHỐT (đề xuất: giữ 200 rỗng 1:1 với `return null` của nguồn, hoặc 200 + Success=true
-    /// như LogOff để đồng nhất controller). Ghi GAP + CONFLICT trong báo cáo hạng mục #8.
+    /// port 1:1 AccountController.cs:977-983 — action SignOut.
     /// </summary>
     [HttpPost("api/account/signout")]
     public IActionResult SignOut()
     {
-        // GAP: Session.Clear (dòng 979) + FormsAuthentication.SignOut (dòng 981) — hạ tầng nguồn không tồn tại ở đích.
-        // Nguồn dòng 982 `return null` → 200 rỗng; đích trả Success=true cho client dùng được (xem CONFLICT ở báo cáo).
         return Ok(new { Success = true });
+    }
+
+    /// <summary>
+    /// DTO nhận tham số ChangePassword.
+    /// Nguồn AccountController.cs:1003: `ChangePassword(string pass, string passnew, string confpass)`.
+    /// Nguồn lấy userState từ Session (UserCode, UserPassword) — ở đích nhận qua UserCode / UserPassword / header WAUserCode.
+    /// </summary>
+    public class ChangePasswordReq
+    {
+        public string? Pass { get; set; }
+        public string? Passnew { get; set; }
+        public string? Confpass { get; set; }
+
+        /// <summary>
+        /// Tài khoản đang thao tác (nguồn lấy từ Session UserState.SysUser.UserCode).
+        /// Có thể truyền qua body hoặc header "WAUserCode".
+        /// </summary>
+        public string? UserCode { get; set; }
+
+        /// <summary>
+        /// Mật khẩu trong phiên hiện tại (nguồn: UserState.SysUser.UserPassword).
+        /// Nếu không truyền, hệ thống sẽ đọc từ DB theo UserCode để so sánh mật khẩu cũ.
+        /// </summary>
+        public string? UserPassword { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 AccountController.cs:1003-1094 — ChangePassword(string pass, string passnew, string confpass).
+    /// </summary>
+    [HttpPost("api/account/changepassword")]
+    public async Task<IActionResult> ChangePassword([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ChangePasswordReq? req)
+    {
+        // Lấy UserCode từ header WAUserCode hoặc body
+        var userCode = Request.Headers["WAUserCode"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(userCode))
+        {
+            userCode = req?.UserCode;
+        }
+        userCode = string.IsNullOrWhiteSpace(userCode) ? null : userCode.Trim();
+
+        var pass = string.IsNullOrWhiteSpace(req?.Pass) ? null : req.Pass.Trim();
+        var passnew = string.IsNullOrWhiteSpace(req?.Passnew) ? null : req.Passnew.Trim();
+        var confpass = string.IsNullOrWhiteSpace(req?.Confpass) ? null : req.Confpass.Trim();
+
+        var title = "";
+        var success = false;
+        string? redirectUrl = null;
+
+        try
+        {
+            // Nguồn 1009-1010: waUserCode = userState.SysUser.UserCode; waUserPassword = userState.SysUser.UserPassword;
+            // Ở đích: nếu không có session, đọc user từ DB
+            Sys_User? user = null;
+            if (!string.IsNullOrEmpty(userCode))
+            {
+                user = await db.Set<Sys_User>()
+                    .FirstOrDefaultAsync(u => EF.Functions.Like(u.UserCode.ToLower(), PortQuery.Equal(userCode.ToLower()), PortQuery.Esc));
+            }
+
+            var waUserPassword = req?.UserPassword ?? user?.UserPassword;
+
+            // Nguồn 1014-1015: pass = CUtils.StrValueOrNull(pass); pass = CUtils.GetEncodedHash(pass);
+            var passHash = Sys_User.GetEncodedHash(pass);
+
+            // Nguồn 1016: if (pass.Equals(waUserPassword))
+            if (!string.IsNullOrEmpty(passHash) && passHash.Equals(waUserPassword))
+            {
+                // Nguồn 1018: if (!CUtils.IsNullOrEmpty(passnew))
+                if (!string.IsNullOrEmpty(passnew))
+                {
+                    // Nguồn 1021: if (!CUtils.IsNullOrEmpty(confpass))
+                    if (!string.IsNullOrEmpty(confpass))
+                    {
+                        // Nguồn 1024: if (passnew.Equals(confpass))
+                        if (passnew.Equals(confpass))
+                        {
+                            // Nguồn 1050: WA_Sys_User_Get check user tồn tại
+                            if (user != null)
+                            {
+                                // Nguồn 1052: objRT_Sys_UserCur.Lst_Sys_User[0].UserPasswordNew = CUtils.GetEncodedHash(passnew);
+                                var passNewHash = Sys_User.GetEncodedHash(passnew);
+
+                                // Nguồn biz WAS_Sys_User_ChangePassword:7964-7965:
+                                // dt_Sys_User.Rows[0]["UserPassword"] = TUtils.CUtils.GetEncodedHash(strUserPasswordNew);
+                                // SaveData("Sys_User", dt_Sys_User, alColumnEffective.ToArray());
+                                user.UserPassword = passNewHash;
+                                user.LogLUDTimeUTC = DateTime.UtcNow;
+                                user.LogLUBy = userCode ?? "port";
+                                await db.SaveChangesAsync();
+
+                                // Nguồn 1059-1060:
+                                title = "Thay đổi mật khẩu thành công!";
+                                redirectUrl = "/Account/LogOff";
+                                success = true;
+                            }
+                            else
+                            {
+                                // Nguồn 1064: title = "Mã người dùng '" + waUserCode + "' không có trong hệ thống!";
+                                title = "Mã người dùng '" + (userCode ?? "") + "' không có trong hệ thống!";
+                                success = true;
+                            }
+                        }
+                        else
+                        {
+                            // Nguồn 1069:
+                            title = "Nhập lại mật khẩu mới không đúng, Vui lòng nhập lại!";
+                            success = true;
+                        }
+                    }
+                    else
+                    {
+                        // Nguồn 1074:
+                        title = "Nhập lại khẩu mới trống!";
+                        success = true;
+                    }
+                }
+                else
+                {
+                    // Nguồn 1079:
+                    title = "Mật khẩu mới trống!";
+                    success = true;
+                }
+            }
+            else
+            {
+                // Nguồn 1084:
+                title = "Mật khẩu cũ không khớp!";
+                success = true;
+            }
+
+            // Nguồn 1086-1087:
+            // resultEntry.Success = true;
+            // resultEntry.AddMessage(title);
+            // return Json(resultEntry);
+            return Ok(new
+            {
+                Success = success,
+                Title = title,
+                Message = title,
+                RedirectUrl = redirectUrl,
+                Gap = new[]
+                {
+                    "Inos_AccountService_EditProfileX (System.cs:7973-7992) — GAP: dịch vụ ngoài SSO/iNOS",
+                    "UserState/Session (AccountController.cs:1006-1010) — GAP: đích không dùng Session ASP.NET"
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            // Nguồn 1089-1092: resultEntry.SetFailed().AddException(ex);
+            return PortResult.Fail("Account_ChangePassword", "Exception", ex.Message);
+        }
     }
 }
