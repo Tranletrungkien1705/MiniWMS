@@ -129,6 +129,107 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// Body của LoadData. Nguồn (Inv_CostPriceHistController.cs:321) nhận 1 tham số `productcode`.
+    /// </summary>
+    public class LoadDataReq
+    {
+        /// <summary>Nguồn dòng 321 — `string productcode` (dùng nguyên văn, KHÔNG chuẩn hoá ở gate).</summary>
+        public string? ProductCode { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 Inv_CostPriceHistController.cs:321-366 — LoadData(productcode).
+    /// Chuỗi: gate → GetPrdBase (dòng 335/343) → Mst_ProductService.Instance.WA_Mst_Product_Get (dòng 401)
+    ///        → API MstProductController.cs:20-88 → biz ProductCenter.MasterData.cs:5714-5872 (WAS_Mst_Product_Get)
+    ///        → Mst_Product_Get (MasterData.cs:5769).
+    /// </summary>
+    [HttpPost("loaddata")]
+    public async Task<IActionResult> LoadData(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] LoadDataReq? req)
+    {
+        // Nguồn 326: `if (!CUtils.IsNullOrEmpty(productcode))` — rỗng/null ⇒ rơi xuống JsonViewError("Create", ...)
+        // với resultEntry.Success = false (dòng 323, 365).
+        var productcode = req?.ProductCode;
+        if (!string.IsNullOrEmpty(productcode))
+        {
+            // Nguồn 329-335: Mst_Product { ProductCode = productcode, ProductLevelSys = "L2PRD" } →
+            // strWhereClause_Mst_Product_Get_Base (dòng 859-876): ProductCode = x AND ProductLevelSys != "L2PRD".
+            var lstPrdBase = await GetPrdBaseAsync(productcode, level2: false);
+
+            // Nguồn 336: `objRT_Mst_ProductBase.Lst_Mst_Product[0].ProductCodeRoot` — ném nếu danh sách rỗng
+            // (giữ nguyên hành vi nguồn: ngoại lệ → PortExceptionFilter trả 400).
+            // LỖI NGUỒN GIỮ NGUYÊN (Inv_CostPriceHistController.cs:336-343): biến `_productcodeRoot` được gán nhưng
+            // KHÔNG dùng — where clause Level2 (dòng 885) vẫn lọc `ProductCodeRoot = productcode` (tham số gốc).
+            var _productcodeRoot = lstPrdBase[0].ProductCodeRoot;
+
+            // Nguồn 337-343: strWhereClause_Mst_Product_Get_Level2 (dòng 877-894):
+            // ProductCodeRoot = productcode AND ProductLevelSys = "L2PRD".
+            var lstPrdLevel2 = await GetPrdBaseAsync(productcode, level2: true);
+
+            // Nguồn 344-351: Mst_ProductUI { LstPrdBase, LstPrdLeve2 }; LstPrdLeve2.AddRange(LstPrdBase).
+            var productbase = new LoadData_ProductUI
+            {
+                LstPrdBase = lstPrdBase,
+                LstPrdLeve2 = lstPrdLevel2,
+            };
+            productbase.LstPrdLeve2.AddRange(lstPrdBase);
+            var listproductbase = new List<LoadData_ProductUI> { productbase };
+
+            // Nguồn 354-357: `if (listproductbase != null) return Json(new { Success = true, data = listproductbase });`
+            // (luôn khác null ⇒ luôn vào nhánh này).
+            return Ok(new
+            {
+                Success = true,
+                data = listproductbase,
+            });
+        }
+
+        // Nguồn 360-365: catch → SetFailed().AddException; JsonViewError("Create", null, resultEntry) với Success = false.
+        // Đích: PortExceptionFilter đã bắt ngoại lệ; nhánh này chỉ còn trường hợp productcode rỗng.
+        // GAP: `Html` của nguồn là kết quả RenderRazorViewToString("Create") (BaseController.cs:649-691) — đích không có
+        //      Razor view ⇒ null; `Title`/`Detail` là Messages/Detail của JsonResultEntry (rỗng khi không có lỗi).
+        return Ok(new
+        {
+            Success = false,
+            Html = (string?)null,
+            Title = (object?)null,
+            Detail = (object?)null,
+        });
+    }
+
+    /// <summary>
+    /// port 1:1 gate GetPrdBase (Inv_CostPriceHistController.cs:368-403) + 2 hàm strWhereClause (dòng 859-894)
+    /// → biz WAS_Mst_Product_Get (ProductCenter.MasterData.cs:5714-5872) → Mst_Product_Get (dòng 5769).
+    /// `level2 = false` ⇒ where `ProductCode = x AND ProductLevelSys != "L2PRD"` (dòng 867/871);
+    /// `level2 = true`  ⇒ where `ProductCodeRoot = x AND ProductLevelSys = "L2PRD"` (dòng 885/889).
+    /// GAP: thân SQL `Mst_Product_Get` KHÔNG có trong excerpt — chỉ biết where clause do gate dựng và bảng trả về
+    ///      "Mst_Product" (MasterData.cs:5804-5806); đích lọc đúng điều kiện đó trên bảng Mst_Product nội bộ.
+    /// GAP: `Rt_Cols_Prd_Attribute = "*"` (dòng 394) — bảng Prd_Attribute chưa có ở đích, gate không dùng kết quả
+    ///      (dòng 348-349 bị comment) ⇒ bỏ qua.
+    /// </summary>
+    private async Task<List<Mst_Product>> GetPrdBaseAsync(string productCode, bool level2)
+    {
+        // Nguồn 867/885: `ProductCode = @x` / `ProductCodeRoot = @x` — toán tử `=`, KHÔNG wildcard.
+        var pCode = PortQuery.Equal(productCode);
+        var q = db.Set<Mst_Product>().AsQueryable();
+        if (level2)
+        {
+            q = q.Where(x => EF.Functions.Like((x.ProductCodeRoot ?? "").ToLower(), pCode, PortQuery.Esc));
+            // Nguồn 889: `ProductLevelSys = 'L2PRD'`.
+            q = q.Where(x => EF.Functions.Like((x.ProductLevelSys ?? "").ToLower(), PortQuery.Equal("L2PRD"), PortQuery.Esc));
+        }
+        else
+        {
+            q = q.Where(x => EF.Functions.Like((x.ProductCode ?? "").ToLower(), pCode, PortQuery.Esc));
+            // Nguồn 871: `ProductLevelSys != 'L2PRD'`.
+            q = q.Where(x => !EF.Functions.Like((x.ProductLevelSys ?? "").ToLower(), PortQuery.Equal("L2PRD"), PortQuery.Esc));
+        }
+
+        // Nguồn 385-386: Ft_RecordStart / Ft_RecordCount của gate (mặc định 0) — biz trả toàn bộ khi không phân trang.
+        return await q.ToListAsync();
+    }
+
+    /// <summary>
     /// port 1:1 BaseController.cs:3245-3269 — SysAccessCheckDeny(userState, functionNames).
     /// Nhận `IsSysAdmin` + `ListSysAccess` (dữ liệu phiên) qua interface để dùng chung cho mọi body của controller này.
     /// </summary>
@@ -458,6 +559,18 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db) : ControllerBase
                 System.Globalization.DateTimeStyles.None, out var dt)) return dt;
         return null;
     }
+}
+
+/// <summary>
+/// port 1:1 model nguồn `Mst_ProductUI` (Inv_CostPriceHistController.cs:344-351) — 2 danh sách sản phẩm.
+/// Nguồn KHÔNG có file model Mst_ProductUI trong 12.Dev.Common (excerpt dòng 213) ⇒ chỉ khai 2 thuộc tính gate dùng.
+/// </summary>
+public class LoadData_ProductUI
+{
+    /// <summary>Nguồn 346 — `productbase.LstPrdBase = objRT_Mst_ProductBase.Lst_Mst_Product`.</summary>
+    public List<Mst_Product> LstPrdBase { get; set; } = new();
+    /// <summary>Nguồn 347-350 — `LstPrdLeve2` (giữ nguyên lỗi chính tả của nguồn) + AddRange(LstPrdBase).</summary>
+    public List<Mst_Product> LstPrdLeve2 { get; set; } = new();
 }
 
 /// <summary>
