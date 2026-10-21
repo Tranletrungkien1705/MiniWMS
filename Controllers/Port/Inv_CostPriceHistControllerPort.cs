@@ -7,7 +7,7 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 Inv_CostPriceHistController.cs — Inv_CostPriceHist (action Index).
+/// port 1:1 Inv_CostPriceHistController.cs — Inv_CostPriceHist (action Index, Inv_CostPriceHist_Calc).
 /// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\Inv_CostPriceHistController.cs:24-97
 ///   → Mst_InventoryService.Instance.WA_Mst_Inventory_GetInvCodeLeaf (dòng 75)
 ///   → API MstInventoryController.cs:465-536 → biz MasterData.cs:11805-11902 (WAS_Mst_Inventory_GetInvCodeLeaf)
@@ -155,6 +155,96 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db) : ControllerBase
     {
         bool? IsSysAdmin { get; }
         List<string>? ListSysAccess { get; }
+    }
+
+    /// <summary>
+    /// Body của Inv_CostPriceHist_Calc. Nguồn (Inv_CostPriceHistController.cs:191) KHÔNG có tham số action; các trường dưới đây
+    /// là dữ liệu nguồn lấy từ phiên (UserState / RT_Mst_Sys_Config) — thiếu thì để null, KHÔNG tự đặt mặc định.
+    /// </summary>
+    public class Inv_CostPriceHist_CalcReq : ISysAccessState
+    {
+        /// <summary>Nguồn: `userState.IsSysAdmin` (BaseController.cs:3250).</summary>
+        public bool? IsSysAdmin { get; set; }
+        /// <summary>Nguồn: `userState.ListSysAccess[].ObjectCode` (BaseController.cs:3258-3260).</summary>
+        public List<string>? ListSysAccess { get; set; }
+        /// <summary>Nguồn: `userState.RT_Mst_Sys_Config.Lst_Mst_Sys_Config` (Inv_CostPriceHistController.cs:209-211).</summary>
+        public List<IndexSysConfig>? Lst_Mst_Sys_Config { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 Inv_CostPriceHistController.cs:191-265 — Inv_CostPriceHist_Calc().
+    /// Chuỗi: gate → Mst_InventoryService.Instance.WA_Mst_Inventory_GetInvCodeLeaf (dòng 242)
+    ///        → API MstInventoryController.cs:465-536 → biz MasterData.cs:11805-11902 (WAS_Mst_Inventory_GetInvCodeLeaf)
+    ///        → MasterData.cs:11846-11863 (Mst_Inventory_GetInvCodeLeaf).
+    /// </summary>
+    [HttpPost("inv_costpricehist_calc")]
+    public async Task<IActionResult> Inv_CostPriceHist_Calc(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] Inv_CostPriceHist_CalcReq? req)
+    {
+        // Nguồn 193-197: SysAccessCheckDeny(UserState, "MNU_INV_COSTPRICEHIST_CALC") — false ⇒
+        // RedirectToAction("Index", "AccessDeny"). BaseController.cs:3245-3269: userState null ⇒ false; IsSysAdmin ⇒ true;
+        // ngược lại phải có ObjectCode khớp (InvariantCultureIgnoreCase).
+        if (!SysAccessCheckDeny(req, "MNU_INV_COSTPRICEHIST_CALC"))
+            return Ok(new
+            {
+                Success = true,
+                RedirectUrl = "/AccessDeny/Index",
+                ListMst_Inventory = (object?)null,
+                Data = (object?)null,
+            });
+
+        // Nguồn 208: `var listMst_Inventory = new List<Mst_Inventory>();`
+        var listMst_Inventory = new List<Mst_Inventory>();
+
+        // Nguồn 209: `userState.RT_Mst_Sys_Config.Lst_Mst_Sys_Config != null && Count > 0`.
+        var lstSysConfig = req?.Lst_Mst_Sys_Config;
+        if (lstSysConfig != null && lstSysConfig.Count > 0)
+        {
+            // Nguồn 211: Where(it => CUtils.StrValue(it.SysConfigID).Contains("CALCUPINVBYINVCODE")) — CHỨA, phân biệt hoa/thường.
+            var listMst_Sys_Config_TinhGiaVon = lstSysConfig
+                .Where(it => (it.SysConfigID ?? "").Contains("CALCUPINVBYINVCODE"))
+                .ToList();
+
+            // Nguồn 213: có dòng cấu hình tính giá vốn.
+            if (listMst_Sys_Config_TinhGiaVon.Count > 0)
+            {
+                // Nguồn 216-217: strFlagActive = CUtils.StrValue(dòng đầu .FlagActive); so `Equals(FlagActive)` ("1").
+                var strFlagActive = listMst_Sys_Config_TinhGiaVon[0].FlagActive ?? "";
+                if (strFlagActive.Equals("1"))
+                {
+                    // Nguồn 221-242: theo từng kho → WA_Mst_Inventory_GetInvCodeLeaf với
+                    // Ft_WhereClause = "Mst_Inventory.FlagActive='1'" (dòng 236), Rt_Cols_Mst_Inventory = "*" (dòng 239).
+                    // Biz MasterData.cs:11846-11871: trả bảng "Mst_Inventory" → Lst_Mst_Inventory.
+                    // GAP: thân SQL Mst_Inventory_GetInvCodeLeaf không có trong excerpt (chỉ biết điều kiện FlagActive='1').
+                    var lst = await db.Set<Mst_Inventory>()
+                        .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc))
+                        .ToListAsync();
+
+                    // Nguồn 243-246: chỉ gán khi Lst_Mst_Inventory != null && Count > 0; rỗng ⇒ giữ danh sách rỗng.
+                    if (lst.Count > 0)
+                        listMst_Inventory = lst;
+                }
+                else
+                {
+                    // Nguồn 251-256: không theo kho ⇒ kho mặc định (I).
+                    listMst_Inventory.Add(new Mst_Inventory
+                    {
+                        InvCode = "I",
+                        InvName = "I",
+                    });
+                }
+            }
+        }
+
+        // Nguồn 261-264: ViewBag.ListMst_Inventory = listMst_Inventory; ViewBag.UtcOffset = ...;
+        // return View(new List<Inv_CostPriceHist>()).
+        return Ok(new
+        {
+            Success = true,
+            RedirectUrl = (string?)null,
+            ListMst_Inventory = listMst_Inventory,
+            Data = new List<Inv_CostPriceHist>(),
+        });
     }
 
     /// <summary>
