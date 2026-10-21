@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 10/521 (1.92%)
+**Tiến độ hiện tại**: 11/521 (2.11%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -23,7 +23,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 11 | DashboardController/Index | Chưa làm | - |
 | 12 | DashboardRptController/WG_Rpt_Inv_InventoryBalance | Chưa làm | - |
 | 13 | DashboardRptController/WG_Rpt_Summary_In_Pivot | Đã làm | 56de7e9 |
-| 14 | DashboardRptController/WG_Rpt_Summary_Out_Pivot | Chưa làm | - |
+| 14 | DashboardRptController/WG_Rpt_Summary_Out_Pivot | Đã làm | e41be72 |
 | 15 | FileController/Index | Chưa làm | - |
 | 16 | FileController/UploadImage | Chưa làm | - |
 | 17 | FileController/UploadFile | Chưa làm | - |
