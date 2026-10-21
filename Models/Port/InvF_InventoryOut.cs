@@ -46,6 +46,11 @@ public class InvF_InventoryOut
     public string? CreateBy { get; set; }
 
     public DateTime? ApprDTimeUTC { get; set; }
+
+    [StringLength(10)]
+    public string? FlagIsDelete { get; set; }
+
+    public DateTime? LogLUDTimeUTC { get; set; }
 }
 
 public class InvF_InventoryOutConfiguration : IEntityTypeConfiguration<InvF_InventoryOut>
@@ -77,7 +82,8 @@ public class InvF_InventoryOutSeeder : IPortSeeder
                 ProfileStatus = "NEW",
                 IF_InvOutStatus = "PENDING",
                 CreateDTimeUTC = DateTime.UtcNow,
-                CreateBy = "admin"
+                CreateBy = "admin",
+                FlagIsDelete = "0"
             });
             await db.SaveChangesAsync();
         }
