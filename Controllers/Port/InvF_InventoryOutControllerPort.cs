@@ -7,8 +7,8 @@ using System.Text.Json;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryOutController.DeleteMulti
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryOutController.cs:794-857
+/// port 1:1 InvF_InventoryOutController.DeleteMulti & UpdBusinessGroupCode
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryOutController.cs:861-918
 /// </summary>
 [ApiController]
 public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
@@ -80,6 +80,64 @@ public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
         {
             await tx.RollbackAsync();
             return BadRequest(PortResult.Fail("InvF_InventoryOut_DeleteMulti", "Exception", ex.Message));
+        }
+    }
+
+    public class UpdBusinessGroupCodeReq
+    {
+        public InvF_InventoryOut? InvF_InventoryOut { get; set; }
+        public string? model { get; set; }
+    }
+
+    [HttpPost("/api/invf_inventoryout/updbusinessgroupcode")]
+    public async Task<ActionResult> UpdBusinessGroupCode([FromBody] UpdBusinessGroupCodeReq? req)
+    {
+        InvF_InventoryOut? invOut = req?.InvF_InventoryOut;
+        if (invOut == null && !string.IsNullOrEmpty(req?.model))
+        {
+            try
+            {
+                invOut = JsonSerializer.Deserialize<InvF_InventoryOut>(req.model);
+            }
+            catch
+            {
+            }
+        }
+
+        if (invOut == null || string.IsNullOrEmpty(invOut.IF_InvOutNo))
+        {
+            return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Check.strJson", "Dữ liệu không hợp lệ!"));
+        }
+
+        using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var ifInvOutNo = invOut.IF_InvOutNo.Trim().ToUpper();
+            var entity = await db.Set<InvF_InventoryOut>().FirstOrDefaultAsync(x => x.IF_InvOutNo != null && x.IF_InvOutNo.ToUpper() == ifInvOutNo);
+
+            if (entity == null)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Check.IF_InvOutNo", "Không tồn tại phiếu xuất kho!"));
+            }
+
+            entity.BusinessGroupCode = invOut.BusinessGroupCode?.Trim();
+            entity.LUDTimeUTC = DateTime.UtcNow;
+            entity.LogLUDTimeUTC = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                Success = true,
+                Messages = "Cập nhật CN thành công!"
+            });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Exception", ex.Message));
         }
     }
 }

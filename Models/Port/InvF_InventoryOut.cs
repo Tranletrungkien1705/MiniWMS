@@ -50,6 +50,8 @@ public class InvF_InventoryOut
     [StringLength(10)]
     public string? FlagIsDelete { get; set; }
 
+    public DateTime? LUDTimeUTC { get; set; }
+
     public DateTime? LogLUDTimeUTC { get; set; }
 }
 
