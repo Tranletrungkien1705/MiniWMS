@@ -16,6 +16,11 @@ namespace MiniWMS.Models.Port;
 /// (nguồn không cho biết DDL/khoá thật); bộ cột nguồn dùng để join `#tbl_Inv_CostPriceHist_Filter` là
 /// (ProductCode, EffectDTimeUTC, OrgID, InvCode) — dòng 200630-200633.
 /// Các cột còn lại của `t.*` nguồn KHÔNG có trong excerpt ⇒ GAP, không tự đặt.
+///
+/// #30 `ExportExcel` (Inv_CostPriceHistController.cs:721-777) xuất Excel theo `GetExportDicColumsTemplate()`
+/// (dòng 829-843) — 9 cột, trong đó 5 cột thuộc bảng này: `EffectDTimeUTC`, `UPInv`, `FormNo`, `UpdBy`, `UpdDTimeUTC`
+/// (3 cột còn lại `mp_ProductCodeUser`/`mp_ProductName`/`mp_UnitCode` là cột join của Mst_Product, xem
+/// `ExportExcel_Inv_CostPriceHistItem`). Tên cột lấy NGUYÊN VĂN từ hằng `TblInv_CostPriceHist.*` của nguồn.
 /// </summary>
 public class Inv_CostPriceHist
 {
@@ -29,6 +34,14 @@ public class Inv_CostPriceHist
     public string? OrgID { get; set; }
     /// <summary>Nguồn Form.cs:200569 — `t.InvCode` (lọc `= '@strInvCode'`, dòng 200578).</summary>
     public string? InvCode { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:837 — `TblInv_CostPriceHist.UPInv` (Giá vốn). Kiểu số nguồn không có trong excerpt ⇒ `double?` (luật mục 3).</summary>
+    public double? UPInv { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:838 — `TblInv_CostPriceHist.FormNo` (Số phiếu nhập).</summary>
+    public string? FormNo { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:839 — `TblInv_CostPriceHist.UpdBy` (Người cập nhật).</summary>
+    public string? UpdBy { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:840 — `TblInv_CostPriceHist.UpdDTimeUTC` (Ngày cập nhật).</summary>
+    public DateTime? UpdDTimeUTC { get; set; }
 }
 
 public class Inv_CostPriceHistConfiguration : IEntityTypeConfiguration<Inv_CostPriceHist>
@@ -41,6 +54,9 @@ public class Inv_CostPriceHistConfiguration : IEntityTypeConfiguration<Inv_CostP
         b.Property(x => x.ProductCode).HasMaxLength(50);
         b.Property(x => x.OrgID).HasMaxLength(50);
         b.Property(x => x.InvCode).HasMaxLength(50);
+        // #30 ExportExcel — 4 cột nguồn dùng để xuất Excel (Inv_CostPriceHistController.cs:837-840).
+        b.Property(x => x.FormNo).HasMaxLength(50);
+        b.Property(x => x.UpdBy).HasMaxLength(50);
     }
 }
 
@@ -49,6 +65,8 @@ public class Inv_CostPriceHistConfiguration : IEntityTypeConfiguration<Inv_CostP
 /// InvCode) nên seed CHỈ dùng 4 cột đó; dữ liệu khớp Mst_Product (SP01/SP02/SP03 @ ORG01, SP01 @ ORG02) và
 /// Mst_Inventory (KHO01/KHO02/KHO03). Mỗi (ProductCode, OrgID, InvCode) có 2 mốc EffectDTimeUTC để phân biệt
 /// FlagIsCurrent = "0" (lấy tất cả) và FlagIsCurrent != "0" (chỉ Max(EffectDTimeUTC)).
+/// #30 ExportExcel: điền thêm 4 cột nguồn dùng để xuất Excel (UPInv, FormNo, UpdBy, UpdDTimeUTC) — giá trị demo,
+/// nguồn không cho biết quy tắc sinh (chỉ là dữ liệu mẫu, không phải giá trị nghiệp vụ suy diễn).
 /// </summary>
 public class Inv_CostPriceHistSeeder : IPortSeeder
 {
@@ -59,14 +77,14 @@ public class Inv_CostPriceHistSeeder : IPortSeeder
         if (await db.Set<Inv_CostPriceHist>().AnyAsync()) return;
         db.Set<Inv_CostPriceHist>().AddRange(
             // SP01 @ ORG01 @ KHO01 — 2 mốc giá vốn.
-            new Inv_CostPriceHist { Id = "CPH01", OrgID = "ORG01", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-            new Inv_CostPriceHist { Id = "CPH02", OrgID = "ORG01", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Inv_CostPriceHist { Id = "CPH01", OrgID = "ORG01", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), UPInv = 85000, FormNo = "PN260801-001", UpdBy = "seed", UpdDTimeUTC = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Inv_CostPriceHist { Id = "CPH02", OrgID = "ORG01", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), UPInv = 92000, FormNo = "PN260801-001", UpdBy = "seed", UpdDTimeUTC = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc) },
             // SP02 @ ORG01 @ KHO01 — 1 mốc.
-            new Inv_CostPriceHist { Id = "CPH03", OrgID = "ORG01", ProductCode = "SP02", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Inv_CostPriceHist { Id = "CPH03", OrgID = "ORG01", ProductCode = "SP02", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), UPInv = 120000, FormNo = "PN260801-001", UpdBy = "seed", UpdDTimeUTC = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc) },
             // SP03 @ ORG01 @ KHO02 — 1 mốc.
-            new Inv_CostPriceHist { Id = "CPH04", OrgID = "ORG01", ProductCode = "SP03", InvCode = "KHO02", EffectDTimeUTC = new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Inv_CostPriceHist { Id = "CPH04", OrgID = "ORG01", ProductCode = "SP03", InvCode = "KHO02", EffectDTimeUTC = new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc), UPInv = 90000, FormNo = "PN260801-001", UpdBy = "seed", UpdDTimeUTC = new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc) },
             // SP01 @ ORG02 @ KHO01 — 1 mốc (cùng mã hàng, khác OrgID).
-            new Inv_CostPriceHist { Id = "CPH05", OrgID = "ORG02", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc) }
+            new Inv_CostPriceHist { Id = "CPH05", OrgID = "ORG02", ProductCode = "SP01", InvCode = "KHO01", EffectDTimeUTC = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc), UPInv = 87000, FormNo = "PN260801-002", UpdBy = "seed", UpdDTimeUTC = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
         await db.SaveChangesAsync();
     }

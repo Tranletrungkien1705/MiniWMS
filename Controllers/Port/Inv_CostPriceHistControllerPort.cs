@@ -81,6 +81,119 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
     }
 
     /// <summary>
+    /// Body của ExportExcel. Nguồn (Inv_CostPriceHistController.cs:721) nhận 4 tham số chuỗi
+    /// `productcodeuser, productname, invcode, flagiscurrent`; các trường còn lại là dữ liệu nguồn lấy từ phiên
+    /// (UserState) — thiếu thì để null, KHÔNG tự đặt mặc định.
+    /// </summary>
+    public class ExportExcelReq : ISysAccessState
+    {
+        /// <summary>Nguồn dòng 750 — `CUtils.StrValue(productcodeuser)`.</summary>
+        public string? ProductCodeUser { get; set; }
+        /// <summary>Nguồn dòng 751 — `CUtils.StrValue(productname)`.</summary>
+        public string? ProductName { get; set; }
+        /// <summary>Nguồn dòng 753 — `CUtils.StrValue(invcode)`.</summary>
+        public string? InvCode { get; set; }
+        /// <summary>Nguồn dòng 752 — `CUtils.StrValue(flagiscurrent)`.</summary>
+        public string? FlagIsCurrent { get; set; }
+        /// <summary>Nguồn dòng 745 — `CUtils.StrValue(UserState.Mst_NNT.OrgID)` (dùng cho Sys_User_CheckAuthorize).</summary>
+        public string? OrgID { get; set; }
+        /// <summary>Nguồn dòng 744 — `CUtils.StrValue(UserState.Mst_NNT.NetworkID)`.</summary>
+        public string? NetworkID { get; set; }
+        /// <summary>Nguồn dòng 742 — `CUtils.StrValue(UserState.SysUser.UserCode)`.</summary>
+        public string? WAUserCode { get; set; }
+        /// <summary>Nguồn dòng 741 — `CUtils.StrValue(UserState.AccessToken)`.</summary>
+        public string? AccessToken { get; set; }
+        /// <summary>Nguồn dòng 723 — `SysAccessCheckDeny(UserState, ...)` cần `userState.IsSysAdmin` (BaseController.cs:3250).</summary>
+        public bool? IsSysAdmin { get; set; }
+        /// <summary>Nguồn dòng 723 — `userState.ListSysAccess[].ObjectCode` (BaseController.cs:3258-3260).</summary>
+        public List<string>? ListSysAccess { get; set; }
+    }
+
+    /// <summary>
+    /// port 1:1 Inv_CostPriceHistController.cs:721-777 — ExportExcel(productcodeuser, productname, invcode, flagiscurrent).
+    /// Chuỗi: gate → Inv_CostPriceHistService.Instance.WA_Inv_CostPriceHist_Get (dòng 755)
+    ///        → API InvCostPriceHistController.cs:163-232 → biz Form.cs:200118-200203 (WAS_Inv_CostPriceHist_Get)
+    ///        → Form.cs:200205-200351 (Inv_CostPriceHist_Get) → Form.cs:200498-200669 (Inv_CostPriceHist_GetX_New20240916).
+    /// Luồng nguồn:
+    ///   1. SysAccessCheckDeny(UserState, "MNU_RPT_INV_INVENTORYBALANCE_STORAGETIME") — false ⇒ RedirectToAction("Index", "AccessDeny") (dòng 723-727).
+    ///   2. Dựng RQ_Inv_CostPriceHist (dòng 735-754): EffectDTimeUTCFrom/To KHÔNG được gate gán (null).
+    ///   3. Gọi WA_Inv_CostPriceHist_Get (dòng 755).
+    ///   4. Lst_Inv_CostPriceHist != null && Count > 0 (dòng 756) ⇒ xuất Excel 9 cột (GetExportDicColumsTemplate dòng 829-843)
+    ///      rồi trả { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = url } (dòng 764).
+    ///      Ngược lại ⇒ { Success = false, Title = "Không có dữ liệu xuất!", CheckSuccess = "0" } (dòng 767).
+    ///   5. Ngoại lệ ⇒ { Success = false, Detail = resultEntry.Detail } (dòng 771-776).
+    /// </summary>
+    [HttpPost("exportexcel")]
+    public async Task<IActionResult> ExportExcel(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ExportExcelReq? req)
+    {
+        // Nguồn 723-727: SysAccessCheckDeny(UserState, "MNU_RPT_INV_INVENTORYBALANCE_STORAGETIME") — false ⇒
+        // RedirectToAction("Index", "AccessDeny"). BaseController.cs:3245-3269: userState null ⇒ false; IsSysAdmin ⇒ true;
+        // ngược lại phải có ObjectCode khớp (InvariantCultureIgnoreCase).
+        if (!SysAccessCheckDeny(req, "MNU_RPT_INV_INVENTORYBALANCE_STORAGETIME"))
+            return Ok(new
+            {
+                Success = true,
+                RedirectUrl = "/AccessDeny/Index",
+                Data = (object?)null,
+            });
+
+        // Nguồn 735-754: dựng RQ_Inv_CostPriceHist. Nguồn 750-753: CUtils.StrValue(x) = chuỗi rỗng khi null
+        // (KHÔNG Trim/ToUpper ở gate). EffectDTimeUTCFrom/To KHÔNG được gate gán (null) — dòng 160-161 biz.
+        var productCodeUser = req?.ProductCodeUser ?? "";
+        var productName = req?.ProductName ?? "";
+        var flagIsCurrent = req?.FlagIsCurrent ?? "";
+        var invCode = req?.InvCode ?? "";
+
+        // Nguồn 755: Inv_CostPriceHistService.Instance.WA_Inv_CostPriceHist_Get(objRQ, addressAPIs).
+        // GAP: Sys_User_CheckAuthorize / Sys_Access_CheckDenyV30 / Sys_User_GetAbilityViewOfUser / zzzzClauseSelect_Mst_NNT_ViewAbility_Get
+        //      (Form.cs:200264-200284, 200554-200558) là tầng xác thực + phân quyền theo phiên — đích không có phiên
+        //      ⇒ bỏ qua, KHÔNG tự chế (cùng cách #24, xem .parity-run\conflicts\24_conflict.md).
+        var listInv_CostPriceHist = await GetInv_CostPriceHistAsync<ExportExcel_Inv_CostPriceHistItem>(productCodeUser, productName,
+            flagIsCurrent, null, null, invCode);
+
+        // Nguồn 756: `objRT != null && objRT.Lst_Inv_CostPriceHist != null && Count > 0`.
+        if (listInv_CostPriceHist.Count > 0)
+        {
+            // Nguồn 759 + 829-843: GetExportDicColumsTemplate() — 9 cột, ĐÚNG thứ tự khai báo của từ điển nguồn.
+            // 3 cột mp_* là cột join của Mst_Product (Form.cs:200622-200624) ⇒ lấy từ ExportExcel_Inv_CostPriceHistItem.
+            var dicColNames = new Dictionary<string, string>
+            {
+                { "EffectDTimeUTC", "Thời gian hiệu lực" },
+                { "mp_ProductCodeUser", "Mã hàng hóa" },
+                { "mp_ProductName", "Tên hàng hóa" },
+                { "mp_UnitCode", "Đơn vị tính" },
+                { "UPInv", "Giá vốn" },
+                { "FormNo", "Số phiếu nhập" },
+                { "UpdBy", "Người cập nhật" },
+                { "UpdDTimeUTC", "Ngày cập nhật" },
+                { "InvCode", "Mã kho" },
+            };
+
+            // Nguồn 760-762: GenExcelExportFilePath(typeof(Inv_CostPriceHist).Name, ref url) +
+            // ExcelExport.ExportToExcelFromList(list, dicColNames, filePath, "Inv_CostPriceHist").
+            // Phần ghi file bọc try/catch riêng (bài học A.2).
+            try
+            {
+                var webRoot = env?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                var (filePath, virtualPath) = PortExcel.GenExcelExportFilePath(webRoot, nameof(Inv_CostPriceHist));
+                PortExcel.ExportToExcelFromList(listInv_CostPriceHist, dicColNames, filePath, "Inv_CostPriceHist");
+
+                // Nguồn 764: Json(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = url }).
+                return Ok(new { Success = true, Title = "Đã xuất excel thành công!", CheckSuccess = "1", strUrl = virtualPath });
+            }
+            catch (Exception ex)
+            {
+                // Nguồn 771-776: catch ⇒ resultEntry.SetFailed().AddException; Json(new { Success = false, Detail = resultEntry.Detail }).
+                return Ok(new { Success = false, Detail = ex.Message });
+            }
+        }
+
+        // Nguồn 765-768: không có dữ liệu ⇒ Json(new { Success = false, Title = "Không có dữ liệu xuất!", CheckSuccess = "0" }).
+        return Ok(new { Success = false, Title = "Không có dữ liệu xuất!", CheckSuccess = "0" });
+    }
+
+    /// <summary>
     /// Body của Index. Nguồn KHÔNG có tham số action; các trường dưới đây là dữ liệu nguồn lấy từ phiên
     /// (UserState / RT_Mst_Sys_Config) — thiếu thì để null, KHÔNG tự đặt mặc định.
     /// </summary>
@@ -458,7 +571,7 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
         // GAP: Sys_User_CheckAuthorize / Sys_Access_CheckDenyV30 / Sys_User_GetAbilityViewOfUser / zzzzClauseSelect_Mst_NNT_ViewAbility_Get
         //      (Form.cs:200264-200284, 200554-200558) là tầng xác thực + phân quyền theo phiên — đích không có phiên
         //      (UserState/AccessToken/ListSysAccess của biz) ⇒ bỏ qua, KHÔNG tự chế. Xem .parity-run\conflicts\24_conflict.md.
-        var listInv_CostPriceHist = await GetInv_CostPriceHistAsync(rq.ProductCodeUser, rq.ProductName,
+        var listInv_CostPriceHist = await GetInv_CostPriceHistAsync<DoSearch_Inv_CostPriceHistItem>(rq.ProductCodeUser, rq.ProductName,
             rq.FlagIsCurrent, rq.EffectDTimeUTCFrom, rq.EffectDTimeUTCTo, rq.InvCode);
 
         // Nguồn 135-140: chỉ gán khi Lst_Inv_CostPriceHist != null && Count > 0; rỗng ⇒ danh sách rỗng.
@@ -475,10 +588,13 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
     /// port 1:1 Form.cs:200498-200669 — Inv_CostPriceHist_GetX_New20240916 (bản LIVE được Inv_CostPriceHist_Get gọi, dòng 200290).
     /// Trả danh sách dòng `Inv_CostPriceHist` + 6 cột join (mp_ProductCodeUser, mp_ProductName, mp_UnitCode, mu_UnitName,
     /// mi_InvCode, mi_InvName — dòng 200620-200643).
+    /// Dùng chung cho #24 `DoSearch_Inv_CostPriceHist` và #30 `ExportExcel` (cùng gọi `WA_Inv_CostPriceHist_Get`).
+    /// <typeparam name="TItem">Kiểu dòng trả về — phải kế thừa `DoSearch_Inv_CostPriceHistItem` (dùng chung cho #24 và #30).</typeparam>
     /// </summary>
-    private async Task<List<DoSearch_Inv_CostPriceHistItem>> GetInv_CostPriceHistAsync(
+    private async Task<List<TItem>> GetInv_CostPriceHistAsync<TItem>(
         string? productCodeUser, string? productName, string? flagIsCurrent,
         string? effectDTimeUTCFrom, string? effectDTimeUTCTo, string? invCode)
+        where TItem : DoSearch_Inv_CostPriceHistItem, new()
     {
         // Nguồn 200538-200543: Refine — StdParam (Trim+ToUpper, rỗng ⇒ null), StdStr (Trim, rỗng ⇒ null),
         // StdFlag ("1" nếu đúng "1", mọi giá trị khác ⇒ "0"), StdDTime.
@@ -539,7 +655,7 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
         // inner join Mst_Inventory mi (InvCode + OrgID); where (1=1).
         // GAP: Mst_Inventory ở đích chỉ có khoá InvCode (Models/Port/Mst_Inventory.cs:29) — nguồn join thêm `t.OrgID = mi.OrgID`
         //      (dòng 200642) nhưng cột OrgID của Mst_Inventory KHÔNG có trong nguồn được trích ⇒ bỏ điều kiện OrgID, ghi GAP.
-        var result = new List<DoSearch_Inv_CostPriceHistItem>();
+        var result = new List<TItem>();
         foreach (var f in filterRows)
         {
             var rows = await (from t in db.Set<Inv_CostPriceHist>()
@@ -554,7 +670,7 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
                                     && t.EffectDTimeUTC == f.EffectDTimeUTC
                                     && t.OrgID == f.OrgID
                                     && t.InvCode == f.InvCode
-                              select new DoSearch_Inv_CostPriceHistItem
+                              select new TItem
                               {
                                   Id = t.Id,
                                   ProductCode = t.ProductCode,
@@ -568,6 +684,25 @@ public class Inv_CostPriceHistControllerPort(AppDbContext db, IWebHostEnvironmen
                                   mi_InvCode = mi.InvCode,
                                   mi_InvName = mi.InvName,
                               }).ToListAsync();
+            // #30 ExportExcel: 4 cột `t.*` của bảng (Inv_CostPriceHistController.cs:837-840) — gán sau khi truy vấn
+            // (TItem chỉ ràng buộc lớp cơ sở nên không chiếu trực tiếp trong biểu thức LINQ).
+            if (typeof(TItem) == typeof(ExportExcel_Inv_CostPriceHistItem))
+            {
+                var ids = rows.Select(r => r.Id).ToList();
+                var extra = await db.Set<Inv_CostPriceHist>().AsNoTracking()
+                    .Where(x => ids.Contains(x.Id))
+                    .Select(x => new { x.Id, x.UPInv, x.FormNo, x.UpdBy, x.UpdDTimeUTC })
+                    .ToDictionaryAsync(x => x.Id);
+                foreach (var r in rows)
+                {
+                    if (!extra.TryGetValue(r.Id, out var e)) continue;
+                    var item = (ExportExcel_Inv_CostPriceHistItem)(object)r;
+                    item.UPInv = e.UPInv;
+                    item.FormNo = e.FormNo;
+                    item.UpdBy = e.UpdBy;
+                    item.UpdDTimeUTC = e.UpdDTimeUTC;
+                }
+            }
             result.AddRange(rows);
         }
 
@@ -640,4 +775,21 @@ public class DoSearch_Inv_CostPriceHistItem
     public string? mi_InvCode { get; set; }
     /// <summary>Nguồn 200627 — `mi.InvName mi_InvName`.</summary>
     public string? mi_InvName { get; set; }
+}
+
+/// <summary>
+/// Một dòng kết quả của ExportExcel — `t.*` (Form.cs:200621) + 3 cột join Mst_Product (dòng 200622-200624).
+/// Nguồn 759-762 xuất Excel từ `Lst_Inv_CostPriceHist` (kiểu `Inv_CostPriceHist`) với từ điển cột 829-843, trong đó
+/// `mp_ProductCodeUser`/`mp_ProductName`/`mp_UnitCode` là cột join ⇒ dùng lại item của #24 (đã có đủ 3 cột đó).
+/// </summary>
+public class ExportExcel_Inv_CostPriceHistItem : DoSearch_Inv_CostPriceHistItem
+{
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:837 — `TblInv_CostPriceHist.UPInv` (Giá vốn).</summary>
+    public double? UPInv { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:838 — `TblInv_CostPriceHist.FormNo` (Số phiếu nhập).</summary>
+    public string? FormNo { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:839 — `TblInv_CostPriceHist.UpdBy` (Người cập nhật).</summary>
+    public string? UpdBy { get; set; }
+    /// <summary>Nguồn Inv_CostPriceHistController.cs:840 — `TblInv_CostPriceHist.UpdDTimeUTC` (Ngày cập nhật).</summary>
+    public DateTime? UpdDTimeUTC { get; set; }
 }
