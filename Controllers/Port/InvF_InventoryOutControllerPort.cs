@@ -6,8 +6,8 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryOutController.cs — DoSearch
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryOutController.cs:317-426
+/// port 1:1 InvF_InventoryOutController.cs — DoSearch & Save
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryOutController.cs:317-426, 588-688
 /// </summary>
 [ApiController]
 public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
@@ -120,5 +120,64 @@ public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
             Success = true,
             PageInfo = pageInfo
         });
+    }
+
+    public class SaveReq
+    {
+        public InvF_InventoryOut? InvF_InventoryOut { get; set; }
+        public string? FlagIsDelete { get; set; }
+    }
+
+    [HttpPost("/api/invf_inventoryout/save")]
+    public async Task<ActionResult> Save([FromBody] SaveReq? req)
+    {
+        if (req?.InvF_InventoryOut == null || string.IsNullOrEmpty(req.InvF_InventoryOut.IF_InvOutNo))
+        {
+            return BadRequest(PortResult.Fail("InvF_InventoryOut_Save", "Check.strJson", null));
+        }
+
+        using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var entity = await db.Set<InvF_InventoryOut>().FirstOrDefaultAsync(x => x.IF_InvOutNo == req.InvF_InventoryOut.IF_InvOutNo);
+            var isDelete = req.FlagIsDelete == "1";
+
+            if (isDelete)
+            {
+                if (entity != null)
+                {
+                    db.Set<InvF_InventoryOut>().Remove(entity);
+                    await db.SaveChangesAsync();
+                }
+            }
+            else
+            {
+                if (entity == null)
+                {
+                    req.InvF_InventoryOut.CreateDTimeUTC ??= DateTime.UtcNow;
+                    db.Set<InvF_InventoryOut>().Add(req.InvF_InventoryOut);
+                }
+                else
+                {
+                    entity.InvOutType = req.InvF_InventoryOut.InvOutType ?? entity.InvOutType;
+                    entity.CustomerCode = req.InvF_InventoryOut.CustomerCode ?? entity.CustomerCode;
+                    entity.InvCodeOut = req.InvF_InventoryOut.InvCodeOut ?? entity.InvCodeOut;
+                    entity.RefNo = req.InvF_InventoryOut.RefNo ?? entity.RefNo;
+                    entity.RefType = req.InvF_InventoryOut.RefType ?? entity.RefType;
+                    entity.BusinessGroupCode = req.InvF_InventoryOut.BusinessGroupCode ?? entity.BusinessGroupCode;
+                    entity.ProfileStatus = req.InvF_InventoryOut.ProfileStatus ?? entity.ProfileStatus;
+                    entity.IF_InvOutStatus = req.InvF_InventoryOut.IF_InvOutStatus ?? entity.IF_InvOutStatus;
+                }
+                await db.SaveChangesAsync();
+            }
+
+            await tx.CommitAsync();
+            return Ok(new { Success = true, Messages = isDelete ? "Xóa phiếu xuất kho thành công!" : "Lưu phiếu xuất kho thành công!" });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return BadRequest(PortResult.Fail("InvF_InventoryOut_Save", "Exception", ex.Message));
+        }
     }
 }
