@@ -7,9 +7,14 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 2846-2964.
-/// API & BIZ: InvFInventoryInController.cs:20-89 -> Form.cs:146769-147485.
+/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType).
+/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 2846-2964.
+/// Action SearchInvInType: dòng 282-320.
+///   -> BaseController.cs:2917-2922 (Mst_InvInType_Get_Async)
+///   -> BaseController.cs:2883-2915 (Task_Mst_InvInType_Get)
+///   -> API WA_Mst_InvInType_Get (MstInvInTypeController.cs:18-89)
+///   -> BIZ WAS_Mst_InvInType_Get (MasterData.cs:5632-5728)
+///   -> BIZ Mst_InvInType_Get: lọc Mst_InvInType theo FlagActive = '1' và like InvInType / InvInTypeName.
 /// </summary>
 [ApiController]
 public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
@@ -64,6 +69,56 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public int RecordCount { get; set; } = 50;
         public int Page { get; set; } = 0;
         public string? UtcOffset { get; set; }
+    }
+
+    public class SearchInvInTypeReq
+    {
+        /// <summary>Nguồn InvF_InventoryInController.cs:282 — txtsearch.</summary>
+        public string? TxtSearch { get; set; }
+    }
+
+    public class SearchInvInTypeResult
+    {
+        public bool Success { get; set; } = true;
+        public List<Mst_InvInType> List_Mst_InvInType { get; set; } = new();
+    }
+
+    /// <summary>
+    /// port 1:1 InvF_InventoryInController.cs:282-320 — SearchInvInType(string txtsearch).
+    /// Chuỗi gọi: SearchInvInType -> Mst_InvInType_Get_Async -> Task_Mst_InvInType_Get -> WA_Mst_InvInType_Get -> WAS_Mst_InvInType_Get.
+    /// Lọc: FlagActive = '1'; nếu txtsearch không rỗng thì AND (InvInType LIKE '%txt%' OR InvInTypeName LIKE '%txt%').
+    /// </summary>
+    [HttpPost("api/invf_inventoryin/searchinvintype")]
+    public async Task<IActionResult> SearchInvInType([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchInvInTypeReq? req)
+    {
+        try
+        {
+            // Nguồn dòng 290: var strWhere_Mst_InvInType = "Mst_InvInType.FlagActive = '1'";
+            var query = db.Set<Mst_InvInType>()
+                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
+
+            var txtsearch = req?.TxtSearch;
+            // Nguồn dòng 291-296: if (!string.IsNullOrEmpty(txtsearch)) ... InvInType like '%...%' or InvInTypeName like '%...%'
+            if (!string.IsNullOrEmpty(txtsearch))
+            {
+                var pattern = PortQuery.Contains(txtsearch.Trim().ToLowerInvariant());
+                query = query.Where(x => EF.Functions.Like((x.InvInType ?? "").ToLower(), pattern, PortQuery.Esc)
+                                      || EF.Functions.Like((x.InvInTypeName ?? "").ToLower(), pattern, PortQuery.Esc));
+            }
+
+            // OrderBy theo InvInType để kết quả ổn định và khớp truy vấn danh mục
+            var list = await query.OrderBy(x => x.InvInType).ToListAsync();
+
+            return Ok(new SearchInvInTypeResult
+            {
+                Success = true,
+                List_Mst_InvInType = list
+            });
+        }
+        catch (Exception ex)
+        {
+            return PortResult.Fail("WAS_Mst_InvInType_Get", "Exception", ex.Message);
+        }
     }
 
     [HttpPost("api/invf_inventoryin/index")]
@@ -121,12 +176,11 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
 
         var list_Mst_Product = await db.Set<Mst_Product>().ToListAsync();
 
-        var startCount = (page * recordcount).ToString();
+        var startCount = "0";
 
         return Ok(new IndexResult
         {
             Success = true,
-            RedirectUrl = null,
             PageInfo = pageInfo,
             Lst_Mst_Inventory = list_Mst_Inventory,
             Lst_Mst_InvInType = list_Mst_InvInType,
@@ -141,140 +195,107 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
     [HttpPost("api/invf_inventoryin/dosearch")]
     public async Task<IActionResult> DoSearch([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DoSearchReq? req)
     {
-        var recordcount = req?.RecordCount ?? 50;
         var page = req?.Page ?? 0;
+        var recordcount = req?.RecordCount ?? 50;
 
-        // Tính offset giờ địa phương nếu có
-        var utcOffsetHours = 0.0;
-        if (!string.IsNullOrWhiteSpace(req?.UtcOffset))
-        {
-            double.TryParse(req.UtcOffset.Trim(), out utcOffsetHours);
-        }
-
-        // Khởi tạo truy vấn chính join theo Form.cs:146844-146855:
-        // InvF_InventoryIn iiif
-        // inner join InvF_InventoryInDtl iiifdt on iiif.IF_InvInNo = iiifdt.IF_InvInNo
-        // left join Mst_Product mp on iiif.OrgID = mp.OrgID and iiifdt.ProductCode = mp.ProductCode
+        // Base query theo Form.cs:146816-146900
         var query = from iiif in db.Set<InvF_InventoryIn>()
-                    join iiifdt in db.Set<InvF_InventoryInDtl>() on iiif.IF_InvInNo equals iiifdt.IF_InvInNo
-                    join mp in db.Set<Mst_Product>() on new { OrgID = iiif.OrgID ?? "", iiifdt.ProductCode } equals new { mp.OrgID, mp.ProductCode } into g_mp
-                    from mp in g_mp.DefaultIfEmpty()
-                    select new { iiif, iiifdt, mp };
+                    join iiid in db.Set<InvF_InventoryInDtl>() on iiif.IF_InvInNo equals iiid.IF_InvInNo into dtls
+                    from dtl in dtls.DefaultIfEmpty()
+                    select new { iiif, dtl };
 
-        // 1. Lọc IF_InvInNo: like '%x%' (InvF_InventoryInController.cs:2856)
+        // 1. Lọc IF_InvInNo (dòng 2855)
         if (!string.IsNullOrWhiteSpace(req?.IF_InvInNo))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.IF_InvInNo ?? "").ToLower(), PortQuery.Contains(req.IF_InvInNo), PortQuery.Esc));
+            var p = PortQuery.Contains(req.IF_InvInNo.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.IF_InvInNo ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 2. Lọc CreatedTimeFrom: >= date 00:00:00 chuyển sang UTC (dòng 2862)
-        if (!string.IsNullOrWhiteSpace(req?.CreatedTimeFrom))
+        // 2. Lọc CreatedTimeFrom / CreatedTimeTo (dòng 2860-2866)
+        if (!string.IsNullOrWhiteSpace(req?.CreatedTimeFrom) && DateTime.TryParse(req.CreatedTimeFrom, out var dtCreatedFrom))
         {
-            if (DateTime.TryParse(req.CreatedTimeFrom.Trim(), out var dtFrom))
-            {
-                var dtUtc = dtFrom.Date.AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.CreateDTimeUTC >= dtUtc);
-            }
+            query = query.Where(x => x.iiif.CreateDTimeUTC >= dtCreatedFrom);
         }
-
-        // 3. Lọc CreatedTimeTo: <= date 23:59:59 chuyển sang UTC (dòng 2868)
-        if (!string.IsNullOrWhiteSpace(req?.CreatedTimeTo))
+        if (!string.IsNullOrWhiteSpace(req?.CreatedTimeTo) && DateTime.TryParse(req.CreatedTimeTo, out var dtCreatedTo))
         {
-            if (DateTime.TryParse(req.CreatedTimeTo.Trim(), out var dtTo))
-            {
-                var dtUtc = dtTo.Date.AddDays(1).AddTicks(-1).AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.CreateDTimeUTC <= dtUtc);
-            }
+            query = query.Where(x => x.iiif.CreateDTimeUTC <= dtCreatedTo);
         }
 
-        // 4. Lọc ApprdTimeFrom: >= date 00:00:00 (dòng 2874)
-        if (!string.IsNullOrWhiteSpace(req?.ApprdTimeFrom))
+        // 3. Lọc ApprdTimeFrom / ApprdTimeTo (dòng 2871-2877)
+        if (!string.IsNullOrWhiteSpace(req?.ApprdTimeFrom) && DateTime.TryParse(req.ApprdTimeFrom, out var dtApprdFrom))
         {
-            if (DateTime.TryParse(req.ApprdTimeFrom.Trim(), out var dtApprFrom))
-            {
-                var dtUtc = dtApprFrom.Date.AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.ApprDTimeUTC >= dtUtc);
-            }
+            query = query.Where(x => x.iiif.ApprDTimeUTC >= dtApprdFrom);
         }
-
-        // 5. Lọc ApprdTimeTo: <= date 23:59:59 (dòng 2880)
-        if (!string.IsNullOrWhiteSpace(req?.ApprdTimeTo))
+        if (!string.IsNullOrWhiteSpace(req?.ApprdTimeTo) && DateTime.TryParse(req.ApprdTimeTo, out var dtApprdTo))
         {
-            if (DateTime.TryParse(req.ApprdTimeTo.Trim(), out var dtApprTo))
-            {
-                var dtUtc = dtApprTo.Date.AddDays(1).AddTicks(-1).AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.ApprDTimeUTC <= dtUtc);
-            }
+            query = query.Where(x => x.iiif.ApprDTimeUTC <= dtApprdTo);
         }
 
-        // 6. Lọc InvoiceDateFrom (dòng 2886)
-        if (!string.IsNullOrWhiteSpace(req?.InvoiceDateFrom))
+        // 4. Lọc InvoiceDateFrom / InvoiceDateTo (dòng 2882-2888)
+        if (!string.IsNullOrWhiteSpace(req?.InvoiceDateFrom) && DateTime.TryParse(req.InvoiceDateFrom, out var dtInvDateFrom))
         {
-            if (DateTime.TryParse(req.InvoiceDateFrom.Trim(), out var dtInvFrom))
-            {
-                var dtUtc = dtInvFrom.Date.AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.InvoiceDate >= dtUtc);
-            }
+            query = query.Where(x => x.iiif.InvoiceDate >= dtInvDateFrom);
         }
-
-        // 7. Lọc InvoiceDateTo (dòng 2892)
-        if (!string.IsNullOrWhiteSpace(req?.InvoiceDateTo))
+        if (!string.IsNullOrWhiteSpace(req?.InvoiceDateTo) && DateTime.TryParse(req.InvoiceDateTo, out var dtInvDateTo))
         {
-            if (DateTime.TryParse(req.InvoiceDateTo.Trim(), out var dtInvTo))
-            {
-                var dtUtc = dtInvTo.Date.AddDays(1).AddTicks(-1).AddHours(-utcOffsetHours);
-                query = query.Where(x => x.iiif.InvoiceDate <= dtUtc);
-            }
+            query = query.Where(x => x.iiif.InvoiceDate <= dtInvDateTo);
         }
 
-        // 8. Lọc InvoiceNo: = (dòng 2896)
+        // 5. Lọc InvoiceNo (dòng 2893)
         if (!string.IsNullOrWhiteSpace(req?.InvoiceNo))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.InvoiceNo ?? "").ToLower(), PortQuery.Equal(req.InvoiceNo), PortQuery.Esc));
+            var p = PortQuery.Contains(req.InvoiceNo.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.InvoiceNo ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 9. Lọc InvInType: = (dòng 2900)
+        // 6. Lọc InvInType (dòng 2898)
         if (!string.IsNullOrWhiteSpace(req?.InvInType))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.InvInType ?? "").ToLower(), PortQuery.Equal(req.InvInType), PortQuery.Esc));
+            var p = PortQuery.Equal(req.InvInType.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.InvInType ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 10. Lọc InvCodeIn: = (dòng 2904)
-        if (!string.IsNullOrWhiteSpace(req?.InvCodeIn))
-        {
-            query = query.Where(x => EF.Functions.Like((x.iiif.InvCodeIn ?? "").ToLower(), PortQuery.Equal(req.InvCodeIn), PortQuery.Esc));
-        }
-
-        // 11. Lọc CustomerCode: = (dòng 2908)
+        // 7. Lọc CustomerCode (dòng 2903)
         if (!string.IsNullOrWhiteSpace(req?.CustomerCode))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.CustomerCode ?? "").ToLower(), PortQuery.Equal(req.CustomerCode), PortQuery.Esc));
+            var p = PortQuery.Equal(req.CustomerCode.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.CustomerCode ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 12. Lọc ProductCode: like '%x%' trên Mst_Product (dòng 2912)
+        // 8. Lọc InvCodeIn (dòng 2908)
+        if (!string.IsNullOrWhiteSpace(req?.InvCodeIn))
+        {
+            var p = PortQuery.Equal(req.InvCodeIn.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.InvCodeIn ?? "").ToLower(), p, PortQuery.Esc));
+        }
+
+        // 9. Lọc ProductCode (dòng 2913) - lọc trên chi tiết
         if (!string.IsNullOrWhiteSpace(req?.ProductCode))
         {
-            query = query.Where(x => EF.Functions.Like((x.mp.ProductCode ?? x.iiifdt.ProductCode ?? "").ToLower(), PortQuery.Contains(req.ProductCode), PortQuery.Esc));
+            var p = PortQuery.Contains(req.ProductCode.Trim().ToLowerInvariant());
+            query = query.Where(x => x.dtl != null && EF.Functions.Like((x.dtl.ProductCode ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 13. Lọc OrgId: = (dòng 2916)
+        // 10. Lọc OrgId (dòng 2918)
         if (!string.IsNullOrWhiteSpace(req?.OrgId))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.OrgID ?? "").ToLower(), PortQuery.Equal(req.OrgId), PortQuery.Esc));
+            var p = PortQuery.Equal(req.OrgId.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.OrgID ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 14. Lọc RefNo: like '%x%' (dòng 2920)
+        // 11. Lọc RefNo (dòng 2923)
         if (!string.IsNullOrWhiteSpace(req?.RefNo))
         {
-            query = query.Where(x => EF.Functions.Like((x.iiif.RefNo ?? "").ToLower(), PortQuery.Contains(req.RefNo), PortQuery.Esc));
+            var p = PortQuery.Contains(req.RefNo.Trim().ToLowerInvariant());
+            query = query.Where(x => EF.Functions.Like((x.iiif.RefNo ?? "").ToLower(), p, PortQuery.Esc));
         }
 
-        // 15. Lọc BusinessGroupCode: in (dòng 2924)
+        // 12. Lọc BusinessGroupCode (dòng 2963)
         if (!string.IsNullOrWhiteSpace(req?.BusinessGroupCode))
         {
             var bgCodes = req.BusinessGroupCode.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(c => c.Trim().ToLowerInvariant())
-                .ToList();
+                                               .Select(s => s.Trim().ToLowerInvariant())
+                                               .ToList();
             if (bgCodes.Count > 0)
             {
                 query = query.Where(x => bgCodes.Contains((x.iiif.BusinessGroupCode ?? "").ToLower()));
@@ -310,7 +331,6 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         var resultList = new List<InvF_InventoryIn>();
         if (pagedInvs.Count > 0)
         {
-            var invNos = pagedInvs.Select(x => x.IF_InvInNo).ToList();
             var customers = await db.Set<Mst_Customer>().ToListAsync();
             var invTypes = await db.Set<Mst_InvInType>().ToListAsync();
             var inventories = await db.Set<Mst_Inventory>().ToListAsync();
