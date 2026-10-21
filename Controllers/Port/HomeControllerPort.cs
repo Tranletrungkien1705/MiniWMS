@@ -13,6 +13,10 @@ namespace MiniWMS.Controllers.Port;
 ///   → WA_MstSv_Sys_User_Login (MasterServerController.cs:20-91 → MasterServer.cs:765-856)
 ///   → WA_Sys_User_GetForCurrentUser (SysUserController.cs:273-344 → System.cs:7659-7750).
 ///
+/// port 1:1 HomeController.cs:332-337 — About() (hạng mục #19): action KHÔNG có tham số, KHÔNG gọi service,
+/// KHÔNG đọc/ghi bảng nào; chỉ gán `ViewBag.Message = "Your application description page."` rồi `return View()`.
+/// Đích: POST /api/home/about trả đúng chuỗi đó (PortResult không dùng vì nguồn không có nhánh lỗi).
+///
 /// GAP (xem .parity-run\conflicts\18_conflict.md): toàn bộ dữ liệu của action đến từ DỊCH VỤ NGOÀI
 /// (inos SSO `AccountService.GetCurrentUser`, `OS_Inos_OrgService.Instance.WA_OS_Inos_Org_GetMyOrgList`,
 /// `MasterServerService.Instance.WA_MstSv_Sys_User_Login`, `Sys_UserService.Instance.WA_Sys_User_GetForCurrentUser`,
@@ -136,5 +140,17 @@ public class HomeControllerPort(AppDbContext db) : ControllerBase
                 "UserState/Session (HomeController.cs:293-308) — GAP: đích không có phiên"
             }
         });
+    }
+
+    /// <summary>
+    /// port 1:1 HomeController.cs:332-337 — About().
+    /// Nguồn: `ViewBag.Message = "Your application description page."; return View();` — không tham số,
+    /// không guard, không mã lỗi, không bảng, không dịch vụ ngoài.
+    /// </summary>
+    [HttpPost("about")]
+    public IActionResult About()
+    {
+        // Nguồn dòng 334: chuỗi chép nguyên văn.
+        return Ok(new { Success = true, Message = "Your application description page." });
     }
 }
