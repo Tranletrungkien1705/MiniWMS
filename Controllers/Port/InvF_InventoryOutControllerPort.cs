@@ -1,143 +1,61 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using MiniWMS.Data;
 using MiniWMS.Models.Port;
-using System.Text.Json;
 
-namespace MiniWMS.Controllers.Port;
-
-/// <summary>
-/// port 1:1 InvF_InventoryOutController.DeleteMulti & UpdBusinessGroupCode
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryOutController.cs:861-918
-/// </summary>
-[ApiController]
-public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
+namespace MiniWMS.Controllers.Port
 {
-    public class DeleteMultiReq
+    [ApiController]
+    [Route("api/invf_inventoryout")]
+    public class InvF_InventoryOutControllerPort(AppDbContext db) : ControllerBase
     {
-        public List<InvF_InventoryOut>? Lst_InvF_InventoryOut { get; set; }
-        public string? LstJson { get; set; }
-        public string? lstInvF_InventoryOut { get; set; }
-    }
-
-    [HttpPost("/api/invf_inventoryout/deletemulti")]
-    public async Task<ActionResult> DeleteMulti([FromBody] DeleteMultiReq? req)
-    {
-        List<InvF_InventoryOut>? listInvF_InventoryOut = req?.Lst_InvF_InventoryOut;
-        if (listInvF_InventoryOut == null && !string.IsNullOrEmpty(req?.LstJson))
+        [HttpPost("update")]
+        public async Task<IActionResult> Update([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] InvF_InventoryOutUpdateRequest? req)
         {
+            if (req == null || string.IsNullOrEmpty(req.IF_InvOutNo))
+            {
+                return PortResult.Fail("InvF_InventoryOut_Update", "Check.IF_InvOutNo", null);
+            }
+
+            using var tx = await db.Database.BeginTransactionAsync();
             try
             {
-                listInvF_InventoryOut = JsonSerializer.Deserialize<List<InvF_InventoryOut>>(req.LstJson);
-            }
-            catch
-            {
-            }
-        }
-        if (listInvF_InventoryOut == null && !string.IsNullOrEmpty(req?.lstInvF_InventoryOut))
-        {
-            try
-            {
-                listInvF_InventoryOut = JsonSerializer.Deserialize<List<InvF_InventoryOut>>(req.lstInvF_InventoryOut);
-            }
-            catch
-            {
-            }
-        }
-
-        if (listInvF_InventoryOut == null || listInvF_InventoryOut.Count == 0)
-        {
-            return BadRequest(PortResult.Fail("InvF_InventoryOut_DeleteMulti", "Check.strJson", "Không tồn tại danh sách cần xóa !"));
-        }
-
-        using var tx = await db.Database.BeginTransactionAsync();
-        try
-        {
-            foreach (var item in listInvF_InventoryOut)
-            {
-                if (item == null || string.IsNullOrEmpty(item.IF_InvOutNo)) continue;
-
-                var ifInvOutNo = item.IF_InvOutNo.Trim().ToUpper();
-                var entity = await db.Set<InvF_InventoryOut>().FirstOrDefaultAsync(x => x.IF_InvOutNo != null && x.IF_InvOutNo.ToUpper() == ifInvOutNo);
-
-                if (entity != null)
+                var item = await db.Set<InvF_InventoryOut>().FirstOrDefaultAsync(x => x.IF_InvOutNo == req.IF_InvOutNo);
+                if (item == null)
                 {
-                    entity.FlagIsDelete = "1";
-                    entity.LogLUDTimeUTC = DateTime.UtcNow;
+                    await tx.RollbackAsync();
+                    return PortResult.Fail("InvF_InventoryOut_Update", "Check.IF_InvOutNoNotFound", req.IF_InvOutNo);
                 }
+
+                item.CustomerCode = !string.IsNullOrEmpty(req.CustomerCode) ? req.CustomerCode.Trim() : item.CustomerCode;
+                item.InvCodeOut = !string.IsNullOrEmpty(req.InvCodeOut) ? req.InvCodeOut.Trim() : item.InvCodeOut;
+                item.RefNo = !string.IsNullOrEmpty(req.RefNo) ? req.RefNo.Trim() : item.RefNo;
+                item.RefType = !string.IsNullOrEmpty(req.RefType) ? req.RefType.Trim() : item.RefType;
+                item.BusinessGroupCode = !string.IsNullOrEmpty(req.BusinessGroupCode) ? req.BusinessGroupCode.Trim() : item.BusinessGroupCode;
+                item.LUDTimeUTC = DateTime.UtcNow;
+
+                db.Set<InvF_InventoryOut>().Update(item);
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return Ok(new { Success = true, Data = item });
             }
-
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
-
-            return Ok(new
-            {
-                Success = true,
-                Messages = "Xóa phiếu xuất kho thành công!"
-            });
-        }
-        catch (Exception ex)
-        {
-            await tx.RollbackAsync();
-            return BadRequest(PortResult.Fail("InvF_InventoryOut_DeleteMulti", "Exception", ex.Message));
-        }
-    }
-
-    public class UpdBusinessGroupCodeReq
-    {
-        public InvF_InventoryOut? InvF_InventoryOut { get; set; }
-        public string? model { get; set; }
-    }
-
-    [HttpPost("/api/invf_inventoryout/updbusinessgroupcode")]
-    public async Task<ActionResult> UpdBusinessGroupCode([FromBody] UpdBusinessGroupCodeReq? req)
-    {
-        InvF_InventoryOut? invOut = req?.InvF_InventoryOut;
-        if (invOut == null && !string.IsNullOrEmpty(req?.model))
-        {
-            try
-            {
-                invOut = JsonSerializer.Deserialize<InvF_InventoryOut>(req.model);
-            }
-            catch
-            {
-            }
-        }
-
-        if (invOut == null || string.IsNullOrEmpty(invOut.IF_InvOutNo))
-        {
-            return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Check.strJson", "Dữ liệu không hợp lệ!"));
-        }
-
-        using var tx = await db.Database.BeginTransactionAsync();
-        try
-        {
-            var ifInvOutNo = invOut.IF_InvOutNo.Trim().ToUpper();
-            var entity = await db.Set<InvF_InventoryOut>().FirstOrDefaultAsync(x => x.IF_InvOutNo != null && x.IF_InvOutNo.ToUpper() == ifInvOutNo);
-
-            if (entity == null)
+            catch (Exception ex)
             {
                 await tx.RollbackAsync();
-                return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Check.IF_InvOutNo", "Không tồn tại phiếu xuất kho!"));
+                return PortResult.Fail("InvF_InventoryOut_Update", "Exception", ex.Message);
             }
-
-            entity.BusinessGroupCode = invOut.BusinessGroupCode?.Trim();
-            entity.LUDTimeUTC = DateTime.UtcNow;
-            entity.LogLUDTimeUTC = DateTime.UtcNow;
-
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
-
-            return Ok(new
-            {
-                Success = true,
-                Messages = "Cập nhật CN thành công!"
-            });
         }
-        catch (Exception ex)
-        {
-            await tx.RollbackAsync();
-            return BadRequest(PortResult.Fail("InvF_InventoryOut_UpdBusinessGroupCode", "Exception", ex.Message));
-        }
+    }
+
+    public class InvF_InventoryOutUpdateRequest
+    {
+        public string? IF_InvOutNo { get; set; }
+        public string? CustomerCode { get; set; }
+        public string? InvCodeOut { get; set; }
+        public string? RefNo { get; set; }
+        public string? RefType { get; set; }
+        public string? BusinessGroupCode { get; set; }
     }
 }
