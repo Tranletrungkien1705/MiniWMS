@@ -7,13 +7,19 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_MoveOrdController.cs — InvF_MoveOrd (action Index).
+/// port 1:1 InvF_MoveOrdController.cs — InvF_MoveOrd (action Index, DoSearch).
 /// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_MoveOrdController.cs:23-85.
 ///   -> BaseController.cs:3245-3269 (SysAccessCheckDeny)
 ///   -> Mst_InventoryService.Instance.WA_Mst_Inventory_Get (dòng 76)
 ///   -> API WA_Mst_Inventory_Get (MstInventoryController.cs:18-89)
 ///   -> BIZ WAS_Mst_Inventory_Get (MasterData.cs:9254-9368) -> Mst_Inventory_Get.
 /// Gate KHÔNG đọc InvF_MoveOrd: chỉ dựng PageInfo rỗng (dòng 43-46) rồi trả View(pageInfo) (dòng 84).
+///
+/// #143 DoSearch: InvF_MoveOrdController.cs:89-151 (+ strWhereClause_InvF_MoveOrd dòng 3696-3780)
+///   -> InvF_MoveOrdService.Instance.WA_InvF_MoveOrd_Get (dòng 137)
+///   -> API InvFMoveOrdController.cs:20-89 (WA_InvF_MoveOrd_Get)
+///   -> BIZ Form.cs:183838-183975 (WAS_InvF_MoveOrd_Get) -> Form.cs:183663-183836 (InvF_MoveOrd_Get)
+///   -> Form.cs:183334-183660 (InvF_MoveOrd_GetX).
 /// </summary>
 [ApiController]
 public class InvF_MoveOrdControllerPort(AppDbContext db) : ControllerBase
