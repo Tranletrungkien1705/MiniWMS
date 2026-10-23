@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 67/521 (12.86%)
+**Tiến độ hiện tại**: 68/521 (13.05%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -41,7 +41,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 29 | Inv_CostPriceHistController/Import | Chưa làm | - |
 | 30 | Inv_CostPriceHistController/ExportExcel | Đã làm | 10a867d |
 | 31 | Inv_CostPriceHistController/Inv_CostPriceHistExportExcel | Chưa làm | - |
-| 32 | InvF_InventoryCusReturnController/Index | Chưa làm | - |
+| 32 | InvF_InventoryCusReturnController/Index | Đã làm | 0808a7d |
 | 33 | InvF_InventoryCusReturnController/DoSearch | Chưa làm | - |
 | 34 | InvF_InventoryCusReturnController/SearchInvInType | Chưa làm | - |
 | 35 | InvF_InventoryCusReturnController/SearchInventoryIn | Chưa làm | - |
