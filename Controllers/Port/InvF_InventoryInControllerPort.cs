@@ -7,42 +7,22 @@ using MiniWMS.Models.Port;
 namespace MiniWMS.Controllers.Port;
 
 /// <summary>
-/// port 1:1 InvF_InventoryInController.cs — InvF_InventoryIn (actions Index, DoSearch, SearchInvInType, SearchInventoryIn, ShowInvCodeInActual, ShowLo, ShowSerial, SearchCustomer, Create).
-/// Nguồn: D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inventory.Website\Controllers\InvF_InventoryInController.cs:190-275, 282-320, 323-361, 365-411, 415-461, 465-512, 566-623, 726-888, 2846-2964.
-/// Action SearchInvInType: dòng 282-320 -> BaseController.cs:2917-2922 -> API WA_Mst_InvInType_Get -> BIZ WAS_Mst_InvInType_Get.
-/// Action SearchInventoryIn: dòng 323-361 (#74) -> BaseController.cs:2752-2757 -> API WA_Mst_Inventory_Get -> BIZ WAS_Mst_Inventory_Get.
-/// Action ShowInvCodeInActual: dòng 365-411 (#75) -> Mst_Inventory_Get (FlagActive='1', like InvBUPattern).
-/// Action ShowLo: dòng 415-461 (#76) -> Mst_Inventory_Get (FlagActive='1', like InvBUPattern).
-/// Action ShowSerial: dòng 465-512 (#77) -> Mst_Inventory_Get (FlagActive='1', like InvBUPattern).
-/// Action SearchCustomer: dòng 566-623 (#79) -> List_Mst_Customer_Async (FlagActive='1' AND FlagSupplier='1').
-/// Action Create: dòng 726-888 (#82).
-///   -> SysAccessCheckDeny(UserState, "MNU_INVF_INVENTORYIN_CREATE") — false ⇒ RedirectToAction("Index","AccessDeny") (dòng 728-732).
-///   -> SeqNo(new Seq_Common { SequenceType = SeqType.IFInvInNo, Param_Prefix="", Param_Postfix="" }) (dòng 738-743):
-///        BaseController.cs:2214-2237 → Seq_CommonService.WA_Seq_Common_Get (API SeqController.cs:164-233)
-///        → biz WAS_Seq_Common_Get (Seq.cs:2642-2719) → Seq_Common_Get (Seq.cs:126-220)
-///        → Seq_Common_MyGet (Seq.cs:42-124, htMap IFInvInNo: "Seq_IF_InvInNo", "{0}PN.{3}.{1:00000}{2}", 100000)
-///        → Seq_Common_Raw (Seq.cs:28-41): insert/delete trên Seq_IF_InvInNo để lấy AutoId (commit riêng).
-///   -> 5 truy vấn song song (Task.WhenAll dòng 832):
-///        Mst_InvInType: FlagActive='1' (dòng 748);
-///        Mst_Inventory: FlagActive='1' AND FlagIn_Out='1' (dòng 752);
-///        Mst_Customer: FlagActive='1' AND FlagSupplier='1' (dòng 771);
-///        Mst_VATRate: FlagActive='1' (dòng 792);
-///        Mst_BusinessGroup: BusinessType='DV' AND FlagActive='1' (dòng 802-807 + strWhereClause 3197-3213).
-///   -> return View(new RT_InvF_InventoryIn { skeleton PENDING, 4 list con RỖNG }) (dòng 871-886).
+/// port 1:1 InvF_InventoryInController.cs — actions Index, DoSearch, SearchInvInType, SearchInventoryIn,
+/// ShowInvCodeInActual, ShowLo, ShowSerial, SearchCustomer, Create, UpdateData.
+/// Action UpdateData (#84): dòng 1267-1326 → WA_InvF_InventoryIn_Save (API InvFInventoryInController.cs:92-161)
+///   → WAS_InvF_InventoryIn_Save_New20240606 (Form.cs:169677-169823)
+///   → InvF_InventoryIn_Save_New20241112 (Form.cs:169830-170089)
+///   → InvF_InventoryIn_SaveX_New20241112 (Form.cs:170091-172363).
 /// </summary>
 [ApiController]
-public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
+public partial class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
 {
     public class IndexReq
     {
         public int Page { get; set; } = 0;
         public int RecordCount { get; set; } = 10;
-
-        /// <summary>Nguồn BaseController.cs:3250 — userState.IsSysAdmin.</summary>
         public bool? IsSysAdmin { get; set; }
-        /// <summary>Nguồn BaseController.cs:3258-3260 — userState.ListSysAccess[].ObjectCode.</summary>
         public List<string>? ListSysAccess { get; set; }
-        /// <summary>Nguồn dòng 119 — UserState.Mst_NNT.MSTBUPattern.</summary>
         public string? MSTBUPattern { get; set; }
     }
 
@@ -85,59 +65,22 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public string? UtcOffset { get; set; }
     }
 
-    public class SearchInvInTypeReq
-    {
-        /// <summary>Nguồn InvF_InventoryInController.cs:282 — txtsearch.</summary>
-        public string? TxtSearch { get; set; }
-    }
-
-    public class SearchInvInTypeResult
-    {
-        public bool Success { get; set; } = true;
-        public List<Mst_InvInType> List_Mst_InvInType { get; set; } = new();
-    }
-
-    public class SearchInventoryInReq
-    {
-        /// <summary>Nguồn InvF_InventoryInController.cs:323 — txtsearch.</summary>
-        public string? TxtSearch { get; set; }
-    }
-
-    public class SearchInventoryInResult
-    {
-        public bool Success { get; set; } = true;
-        public List<Mst_Inventory> List_Mst_Inventory { get; set; } = new();
-    }
-
-    public class SearchCustomerReq
-    {
-        /// <summary>Nguồn InvF_InventoryInController.cs:566 — txtsearch.</summary>
-        public string? TxtSearch { get; set; }
-    }
-
-    public class SearchCustomerResult
-    {
-        public bool Success { get; set; } = true;
-        public List<Mst_Customer> List_Mst_Customer { get; set; } = new();
-    }
+    public class SearchInvInTypeReq { public string? TxtSearch { get; set; } }
+    public class SearchInvInTypeResult { public bool Success { get; set; } = true; public List<Mst_InvInType> List_Mst_InvInType { get; set; } = new(); }
+    public class SearchInventoryInReq { public string? TxtSearch { get; set; } }
+    public class SearchInventoryInResult { public bool Success { get; set; } = true; public List<Mst_Inventory> List_Mst_Inventory { get; set; } = new(); }
+    public class SearchCustomerReq { public string? TxtSearch { get; set; } }
+    public class SearchCustomerResult { public bool Success { get; set; } = true; public List<Mst_Customer> List_Mst_Customer { get; set; } = new(); }
 
     public class ShowInvCodeInActualReq
     {
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcode.</summary>
         public string? ProductCode { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcodeuser.</summary>
         public string? ProductCodeUser { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productcodebase.</summary>
         public string? ProductCodeBase { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — productname.</summary>
         public string? ProductName { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — invbupattern.</summary>
         public string? InvBUPattern { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — listdetail (JSON mảng InvF_InventoryInDtl hoặc truyền đối tượng).</summary>
         public string? ListDetail { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — ifinvinstatus.</summary>
         public string? IF_InvInStatus { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:365 — viewtype.</summary>
         public string? ViewType { get; set; }
     }
 
@@ -154,19 +97,12 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
 
     public class ShowLoReq
     {
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — productcode.</summary>
         public string? ProductCode { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — productcodeuser.</summary>
         public string? ProductCodeUser { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — productname.</summary>
         public string? ProductName { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — invbupattern.</summary>
         public string? InvBUPattern { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — listlot (JSON mảng InvF_InventoryInInstLot).</summary>
         public string? ListLot { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — ifinvinstatus.</summary>
         public string? IF_InvInStatus { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:415 — viewtype.</summary>
         public string? ViewType { get; set; }
     }
 
@@ -183,19 +119,12 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
 
     public class ShowSerialReq
     {
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productcode.</summary>
         public string? ProductCode { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productcodeuser.</summary>
         public string? ProductCodeUser { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — productname.</summary>
         public string? ProductName { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — invbupattern.</summary>
         public string? InvBUPattern { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — listserial (JSON mảng InvF_InventoryInInstSerial).</summary>
         public string? ListSerial { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — ifinvinstatus.</summary>
         public string? IF_InvInStatus { get; set; }
-        /// <summary>Nguồn InvF_InventoryInController.cs:465 — viewtype.</summary>
         public string? ViewType { get; set; }
     }
 
@@ -210,20 +139,11 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public string? ViewType { get; set; }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:726-888 — Create().
-    /// GAP: đích không có phiên ⇒ nhận IsSysAdmin + ListSysAccess (cho SysAccessCheckDeny), OrgID + NetworkID
-    /// (cho skeleton) qua body tuỳ chọn. Nguồn đọc từ UserState (dòng 728, 735-736).
-    /// </summary>
     public class CreateReq
     {
-        /// <summary>Nguồn BaseController.cs:3250 — userState.IsSysAdmin.</summary>
         public bool? IsSysAdmin { get; set; }
-        /// <summary>Nguồn BaseController.cs:3258-3260 — userState.ListSysAccess[].ObjectCode.</summary>
         public List<string>? ListSysAccess { get; set; }
-        /// <summary>Nguồn dòng 735 — UserState.Mst_NNT.OrgID.</summary>
         public string? OrgId { get; set; }
-        /// <summary>Nguồn dòng 736 — UserState.Mst_NNT.NetworkID.</summary>
         public string? NetworkId { get; set; }
     }
 
@@ -242,10 +162,316 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         public List<Mst_BusinessGroup>? Lst_Mst_BusinessGroup { get; set; }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:282-320 — SearchInvInType(string txtsearch).
-    /// Lọc: FlagActive = '1'; nếu txtsearch không rỗng thì AND (InvInType LIKE '%txt%' OR InvInTypeName LIKE '%txt%').
-    /// </summary>
+    public class UpdateDataReq
+    {
+        public bool? IsSysAdmin { get; set; }
+        public List<string>? ListSysAccess { get; set; }
+        public string? OrgId { get; set; }
+        public string? NetworkId { get; set; }
+        public string? WaUserCode { get; set; }
+        public InvF_InventoryInSaveReq? Model { get; set; }
+    }
+
+    public class InvF_InventoryInSaveReq
+    {
+        public InvF_InventoryIn? Obj_InvF_InventoryIn { get; set; }
+        public List<InvF_InventoryInDtl>? Lst_InvF_InventoryInDtl { get; set; }
+        public List<InvF_InventoryInInstLot>? Lst_InvF_InventoryInInstLot { get; set; }
+        public List<InvF_InventoryInInstSerial>? Lst_InvF_InventoryInInstSerial { get; set; }
+        public List<InvF_InventoryInQR>? Lst_InvF_InventoryInQR { get; set; }
+        public string? FlagRedirect { get; set; }
+    }
+
+    public class UpdateDataResult
+    {
+        public bool Success { get; set; }
+        public string? RedirectUrl { get; set; }
+        public List<string>? Messages { get; set; }
+        public string? ErrorCode { get; set; }
+        public string? Detail { get; set; }
+        public List<InvF_InventoryIn>? Lst_InvF_InventoryIn { get; set; }
+    }
+
+    private const string ErrDefault = "InvF_InventoryIn_Save";
+    private const string ErrInvalidIF_InvInNo = "InvF_InventoryIn_SaveX_InvalidIF_InvInNo";
+    private const string ErrInvalidStatus = "InvF_InventoryIn_SaveX_InvalidStatus";
+    private const string ErrInvalidCustomerCode = "InvF_InventoryIn_SaveX_InvalidCustomerCode";
+    private const string ErrInvalidRefNoSys = "InvF_InventoryIn_SaveX_InvalidRefNoSys";
+    private const string ErrInvalidRefType = "InvF_InventoryIn_SaveX_InvalidRefType";
+    private const string ErrInvalidValues = "InvF_InventoryIn_SaveX_InvalidValues";
+    private const string FlagYes = "1";
+    private const string StatusPending = "PENDING";
+
+    [HttpPost("api/invf_inventoryin/updatedata")]
+    public async Task<IActionResult> UpdateData([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UpdateDataReq? req)
+    {
+        try
+        {
+            if (!SysAccessCheckDenyUpdate(req?.IsSysAdmin, req?.ListSysAccess))
+                return Ok(new UpdateDataResult { Success = false, RedirectUrl = "/AccessDeny/Index", Messages = new() { "Access denied" } });
+
+            if (req?.Model == null || req.Model.Obj_InvF_InventoryIn == null)
+                return PortResult.Fail(ErrDefault, "Check.model", null);
+
+            var save = req.Model;
+            var header = save.Obj_InvF_InventoryIn;
+
+            header.OrgID = req.OrgId;
+            header.NetworkID = req.NetworkId;
+
+            var waUserCode = req.WaUserCode ?? "";
+
+            var strIF_InvInNo = StdParam(header.IF_InvInNo);
+            var strOrgID = StdParam(header.OrgID);
+            var strInvInType = StdParam(header.InvInType);
+            var strInvCodeIn = StdParam(header.InvCodeIn);
+            var strCustomerCode = StdParam(header.CustomerCode);
+            var strInvoiceNo = StdParam(header.InvoiceNo);
+            var strOrderNoSys = StdParam(header.OrderNoSys);
+            var strOrderNo = StdParam(header.OrderNo);
+            var strOrderType = StdParam(header.OrderType);
+            var strRefNoSys = StdParam(header.RefNoSys);
+            var strRefNo = StdParam(header.RefNo);
+            var strRefType = StdParam(header.RefType);
+            var strUserDeliver = (header.UserDeliver ?? "").Trim();
+            var strRemark = (header.Remark ?? "").Trim();
+            var strBusinessGroupCode = StdParam(header.BusinessGroupCode);
+            var strInvoiceSign = StdStr(header.InvoiceSign);
+
+            if (string.IsNullOrEmpty(strIF_InvInNo))
+                return PortResult.Fail(ErrInvalidIF_InvInNo, "Check.strIF_InvInNo", strIF_InvInNo);
+
+            var dtDB = await db.Set<InvF_InventoryIn>().AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IF_InvInNo == strIF_InvInNo);
+            var hasOld = dtDB != null;
+
+            string strCreateBy;
+            string strCodeGuid;
+            if (hasOld)
+            {
+                if (!StringEqualIgnoreCase(dtDB!.IF_InvInStatus, StatusPending))
+                    return PortResult.Fail(ErrInvalidStatus, "Check.DB.IF_InvInStatus",
+                        dtDB.IF_InvInStatus, "Check.IF_InvInStatus.Expected", StatusPending);
+                strCreateBy = StdParam(dtDB.CreateBy) ?? "";
+                var guidDB = StdStr(dtDB.CodeGuid);
+                strCodeGuid = string.IsNullOrEmpty(guidDB) ? Guid.NewGuid().ToString() : guidDB!;
+            }
+            else
+            {
+                strCreateBy = waUserCode;
+                strCodeGuid = Guid.NewGuid().ToString();
+            }
+
+            if (string.IsNullOrEmpty(strOrgID))
+                return PortResult.Fail("Mst_Org_CheckDB_OrgNotFound", "Check.strOrgID", strOrgID);
+            var orgDb = await db.Set<Mst_Org>().AsNoTracking().FirstOrDefaultAsync(x => x.OrgID == strOrgID);
+            if (orgDb == null)
+                return PortResult.Fail("Mst_Org_CheckDB_OrgNotFound", "Check.strOrgID", strOrgID);
+            if (!StringEqual(orgDb.FlagActive, FlagYes))
+                return PortResult.Fail("Mst_Org_CheckDB_FlagActiveNotMatched", "Check.FlagActive", orgDb.FlagActive, "Check.strFlagActiveListToCheck", FlagYes);
+
+            if (string.IsNullOrEmpty(strCustomerCode))
+                return PortResult.Fail(ErrInvalidCustomerCode, "Check.strIF_InvInNo", strIF_InvInNo, "Check.strCustomerCode", strCustomerCode);
+
+            var dblTotalValIn = header.TotalValIn ?? 0d;
+            if (dblTotalValIn < 0) return PortResult.Fail(ErrInvalidValues, "Check.dblTotalValIn", dblTotalValIn);
+            var dblTotalValInDesc = header.TotalValInDesc ?? 0d;
+            if (dblTotalValInDesc < 0) return PortResult.Fail(ErrInvalidValues, "Check.dblTotalValInDesc", dblTotalValInDesc);
+            var dblTotalValInAfterDesc = header.TotalValInAfterDesc ?? 0d;
+            if (dblTotalValInAfterDesc < 0) return PortResult.Fail(ErrInvalidValues, "Check.dblTotalValInAfterDesc", dblTotalValInAfterDesc);
+            var dblTotalValVAT = header.TotalValVAT ?? 0d;
+            if (dblTotalValVAT < 0) return PortResult.Fail(ErrInvalidValues, "Check.TotalValVAT", dblTotalValVAT);
+
+            if (!string.IsNullOrEmpty(strRefNo))
+            {
+                if (string.IsNullOrEmpty(strRefNoSys))
+                    return PortResult.Fail(ErrInvalidRefNoSys, "Check.strIF_InvInNo", strIF_InvInNo, "Check.strRefNo", strRefNo, "Check.strRefNoSys", strRefNoSys);
+                if (string.IsNullOrEmpty(strRefType))
+                    return PortResult.Fail(ErrInvalidRefType, "Check.strIF_InvInNo", strIF_InvInNo, "Check.strRefNo", strRefNo, "Check.stRefType", strRefType);
+            }
+
+            var lstDtl = save.Lst_InvF_InventoryInDtl ?? new List<InvF_InventoryInDtl>();
+            var lstLot = save.Lst_InvF_InventoryInInstLot ?? new List<InvF_InventoryInInstLot>();
+            var lstSerial = save.Lst_InvF_InventoryInInstSerial ?? new List<InvF_InventoryInInstSerial>();
+            var lstQR = save.Lst_InvF_InventoryInQR ?? new List<InvF_InventoryInQR>();
+
+            var dtimeSys = DateTime.UtcNow;
+
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                if (hasOld)
+                {
+                    await db.Set<InvF_InventoryInDtl>().Where(x => x.IF_InvInNo == strIF_InvInNo).ExecuteDeleteAsync();
+                    await db.Set<InvF_InventoryInInstSerial>().Where(x => x.IF_InvInNo == strIF_InvInNo).ExecuteDeleteAsync();
+                    await db.Set<InvF_InventoryInInstLot>().Where(x => x.IF_InvInNo == strIF_InvInNo).ExecuteDeleteAsync();
+                    await db.Set<InvF_InventoryInQR>().Where(x => x.IF_InvInNo == strIF_InvInNo).ExecuteDeleteAsync();
+                    await db.Set<InvF_InventoryIn>().Where(x => x.IF_InvInNo == strIF_InvInNo).ExecuteDeleteAsync();
+                }
+
+                var headerRow = new InvF_InventoryIn
+                {
+                    IF_InvInNo = strIF_InvInNo!,
+                    NetworkID = header.NetworkID,
+                    OrgID = strOrgID,
+                    InvInType = strInvInType,
+                    InvCodeIn = strInvCodeIn,
+                    IF_InvAudNo = StdParam(header.IF_InvAudNo),
+                    CustomerCode = strCustomerCode,
+                    InvoiceNo = strInvoiceNo,
+                    OrderNoSys = strOrderNoSys,
+                    OrderNo = strOrderNo,
+                    OrderType = strOrderType,
+                    RefNoSys = strRefNoSys,
+                    RefNo = strRefNo,
+                    RefType = strRefType,
+                    UserDeliver = strUserDeliver,
+                    TotalValIn = header.TotalValIn,
+                    TotalValInDesc = header.TotalValInDesc,
+                    TotalValInAfterDesc = header.TotalValInAfterDesc,
+                    CreateDTimeUTC = hasOld ? dtDB!.CreateDTimeUTC : dtimeSys,
+                    CreateBy = strCreateBy,
+                    LUDTimeUTC = null,
+                    LUBy = null,
+                    ApprDTimeUTC = null,
+                    ApprBy = null,
+                    FlagQR = "0",
+                    IF_InvInStatus = StatusPending,
+                    Remark = strRemark,
+                    InvFCFInCode01 = (header.InvFCFInCode01 ?? "").Trim(),
+                    InvFCFInCode02 = (header.InvFCFInCode02 ?? "").Trim(),
+                    InvFCFInCode03 = (header.InvFCFInCode03 ?? "").Trim(),
+                    InvFCFInCode04 = (header.InvFCFInCode04 ?? "").Trim(),
+                    InvFCFInCode05 = (header.InvFCFInCode05 ?? "").Trim(),
+                    InvFCFInCode06 = (header.InvFCFInCode06 ?? "").Trim(),
+                    InvFCFInCode07 = (header.InvFCFInCode07 ?? "").Trim(),
+                    InvFCFInCode08 = (header.InvFCFInCode08 ?? "").Trim(),
+                    InvFCFInCode09 = (header.InvFCFInCode09 ?? "").Trim(),
+                    InvFCFInCode10 = (header.InvFCFInCode10 ?? "").Trim(),
+                    InvoiceDate = header.InvoiceDate,
+                    InvoiceSign = strInvoiceSign,
+                    FlagSynced = "0",
+                    LogLUDTimeUTC = dtimeSys,
+                    LogLUBy = waUserCode,
+                    CodeGuid = strCodeGuid,
+                    TotalValVAT = header.TotalValVAT,
+                    BusinessGroupCode = strBusinessGroupCode,
+                    FlagActive = "1"
+                };
+                db.Set<InvF_InventoryIn>().Add(headerRow);
+
+                foreach (var d in lstDtl)
+                {
+                    d.IF_InvInNo = strIF_InvInNo!;
+                    d.NetworkID = header.NetworkID;
+                    d.InvCodeInActual = StdParam(d.InvCodeInActual);
+                    d.ProductCode = StdParam(d.ProductCode) ?? "";
+                    d.IF_InvInStatusDtl = StatusPending;
+                    d.LogLUDTimeUTC = dtimeSys;
+                    d.LogLUBy = waUserCode;
+                    db.Set<InvF_InventoryInDtl>().Add(d);
+                }
+
+                foreach (var l in lstLot)
+                {
+                    l.IF_InvInNo = strIF_InvInNo;
+                    l.NetworkID = header.NetworkID;
+                    l.InvCodeInActual = StdParam(l.InvCodeInActual);
+                    l.ProductCode = StdParam(l.ProductCode);
+                    l.ProductLotNo = StdParam(l.ProductLotNo);
+                    l.IF_InvInILStatus = StatusPending;
+                    l.LogLUDTimeUTC = dtimeSys;
+                    l.LogLUBy = waUserCode;
+                    db.Set<InvF_InventoryInInstLot>().Add(l);
+                }
+
+                foreach (var s in lstSerial)
+                {
+                    s.IF_InvInNo = strIF_InvInNo;
+                    s.NetworkID = header.NetworkID;
+                    s.InvCodeInActual = StdParam(s.InvCodeInActual);
+                    s.ProductCode = StdParam(s.ProductCode);
+                    s.SerialNo = StdParam(s.SerialNo);
+                    s.IF_InvInISStatus = StatusPending;
+                    s.LogLUDTimeUTC = dtimeSys;
+                    s.LogLUBy = waUserCode;
+                    db.Set<InvF_InventoryInInstSerial>().Add(s);
+                }
+
+                foreach (var q in lstQR)
+                {
+                    q.IF_InvInNo = strIF_InvInNo;
+                    q.NetworkID = header.NetworkID;
+                    q.QRCode = StdParam(q.QRCode);
+                    q.ProductCode = StdParam(q.ProductCode);
+                    q.BoxNo = StdParam(q.BoxNo);
+                    q.CanNo = StdParam(q.CanNo);
+                    q.ProductLotNo = StdParam(q.ProductLotNo);
+                    q.ShiftInCode = StdParam(q.ShiftInCode);
+                    q.LogLUDTimeUTC = dtimeSys;
+                    q.LogLUBy = waUserCode;
+                    db.Set<InvF_InventoryInQR>().Add(q);
+                }
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (Exception)
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+
+            var redirect = (save.FlagRedirect ?? "").Equals("1", StringComparison.Ordinal)
+                ? "/api/invf_inventoryin/create"
+                : "/api/invf_inventoryin/index";
+
+            var savedList = await db.Set<InvF_InventoryIn>().AsNoTracking()
+                .Where(x => x.IF_InvInNo == strIF_InvInNo).ToListAsync();
+
+            return Ok(new UpdateDataResult
+            {
+                Success = true,
+                RedirectUrl = redirect,
+                Messages = new() { "Sửa phiếu nhập kho thành công!" },
+                Lst_InvF_InventoryIn = savedList
+            });
+        }
+        catch (Exception ex)
+        {
+            return PortResult.Fail(ErrDefault, "Exception", ex.Message);
+        }
+    }
+
+    private static string? StdParam(string? s)
+    {
+        if (s == null) return null;
+        var t = s.Trim();
+        return t.Length == 0 ? null : t.ToUpperInvariant();
+    }
+
+    private static string? StdStr(string? s)
+    {
+        if (s == null) return null;
+        var t = s.Trim();
+        return t.Length == 0 ? null : t;
+    }
+
+    private static bool StringEqual(string? a, string? b)
+        => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
+
+    private static bool StringEqualIgnoreCase(object? a, object? b)
+        => string.Equals(Convert.ToString(a) ?? "", Convert.ToString(b) ?? "", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SysAccessCheckDenyUpdate(bool? isSysAdmin, List<string>? listSysAccess)
+    {
+        if (isSysAdmin == true) return true;
+        const string fn = "MNU_INVF_INVENTORYIN_UPDATE";
+        if (listSysAccess != null && listSysAccess.Any(a => string.Equals(a, fn, StringComparison.InvariantCultureIgnoreCase)))
+            return true;
+        return false;
+    }
+
     [HttpPost("api/invf_inventoryin/searchinvintype")]
     public async Task<IActionResult> SearchInvInType([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchInvInTypeReq? req)
     {
@@ -253,7 +479,6 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         {
             var query = db.Set<Mst_InvInType>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var txtsearch = req?.TxtSearch;
             if (!string.IsNullOrEmpty(txtsearch))
             {
@@ -261,25 +486,12 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 query = query.Where(x => EF.Functions.Like((x.InvInType ?? "").ToLower(), pattern, PortQuery.Esc)
                                       || EF.Functions.Like((x.InvInTypeName ?? "").ToLower(), pattern, PortQuery.Esc));
             }
-
             var list = await query.OrderBy(x => x.InvInType).ToListAsync();
-
-            return Ok(new SearchInvInTypeResult
-            {
-                Success = true,
-                List_Mst_InvInType = list
-            });
+            return Ok(new SearchInvInTypeResult { Success = true, List_Mst_InvInType = list });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_InvInType_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_InvInType_Get", "Exception", ex.Message); }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:323-361 — SearchInventoryIn(string txtsearch).
-    /// Lọc: FlagActive = '1' and FlagIn_Out = '1'; nếu txtsearch không rỗng thì AND (InvCode LIKE '%txt%' OR InvName LIKE '%txt%').
-    /// </summary>
     [HttpPost("api/invf_inventoryin/searchinventoryin")]
     public async Task<IActionResult> SearchInventoryIn([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchInventoryInReq? req)
     {
@@ -288,7 +500,6 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
             var query = db.Set<Mst_Inventory>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
                          && EF.Functions.Like((x.FlagIn_Out ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var txtsearch = req?.TxtSearch;
             if (!string.IsNullOrEmpty(txtsearch))
             {
@@ -296,25 +507,12 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 query = query.Where(x => EF.Functions.Like((x.InvCode ?? "").ToLower(), pattern, PortQuery.Esc)
                                       || EF.Functions.Like((x.InvName ?? "").ToLower(), pattern, PortQuery.Esc));
             }
-
             var list = await query.OrderBy(x => x.InvCode).ToListAsync();
-
-            return Ok(new SearchInventoryInResult
-            {
-                Success = true,
-                List_Mst_Inventory = list
-            });
+            return Ok(new SearchInventoryInResult { Success = true, List_Mst_Inventory = list });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message); }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:566-623 — SearchCustomer(string txtsearch).
-    /// Lọc: FlagActive = '1' and FlagSupplier = '1'; nếu txtsearch không rỗng thì AND (CustomerCode LIKE '%txt%' OR CustomerName LIKE '%txt%').
-    /// </summary>
     [HttpPost("api/invf_inventoryin/searchcustomer")]
     public async Task<IActionResult> SearchCustomer([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchCustomerReq? req)
     {
@@ -323,7 +521,6 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
             var query = db.Set<Mst_Customer>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
                          && EF.Functions.Like((x.FlagSupplier ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var txtsearch = req?.TxtSearch;
             if (!string.IsNullOrEmpty(txtsearch))
             {
@@ -333,25 +530,12 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                                       || EF.Functions.Like((x.CustomerName ?? "").ToLower(), pattern, PortQuery.Esc)
                                       || (x.CustomerName != null && EF.Functions.Like(x.CustomerName, "%" + normSearch + "%")));
             }
-
             var list = await query.OrderBy(x => x.CustomerCode).ToListAsync();
-
-            return Ok(new SearchCustomerResult
-            {
-                Success = true,
-                List_Mst_Customer = list
-            });
+            return Ok(new SearchCustomerResult { Success = true, List_Mst_Customer = list });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_Customer_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_Customer_Get", "Exception", ex.Message); }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:365-411 — ShowInvCodeInActual.
-    /// Lọc Mst_Inventory: FlagActive = '1' (dòng 371); nếu invbupattern không rỗng thì AND Mst_Inventory.InvBUPattern like 'invbupattern' (dòng 373-377).
-    /// </summary>
     [HttpPost("api/invf_inventoryin/showinvcodeinactual")]
     public async Task<IActionResult> ShowInvCodeInActual([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowInvCodeInActualReq? req)
     {
@@ -359,35 +543,24 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         {
             var query = db.Set<Mst_Inventory>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var invbupattern = req?.InvBUPattern;
             if (!string.IsNullOrEmpty(invbupattern))
             {
                 var pattern = invbupattern.Trim().ToLowerInvariant().Replace(@"\", @"\\");
                 query = query.Where(x => EF.Functions.Like((x.InvBUPattern ?? "").ToLower(), pattern, PortQuery.Esc));
             }
-
             var listMstInventory = await query.OrderBy(x => x.InvCode).ToListAsync();
-
             var productCodeUser = req?.ProductCodeUser ?? "";
             var productNameRaw = req?.ProductName ?? "";
             var productDisplayName = string.IsNullOrEmpty(productCodeUser) && string.IsNullOrEmpty(productNameRaw)
-                ? null
-                : $"{productCodeUser} - {productNameRaw}";
-
+                ? null : $"{productCodeUser} - {productNameRaw}";
             var lstDetail = new List<InvF_InventoryInDtl>();
             if (!string.IsNullOrEmpty(req?.ListDetail))
             {
-                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInDtl>>(
-                    req.ListDetail,
-                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                );
-                if (parsed != null)
-                {
-                    lstDetail.AddRange(parsed);
-                }
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInDtl>>(req.ListDetail,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (parsed != null) lstDetail.AddRange(parsed);
             }
-
             return Ok(new ShowInvCodeInActualResult
             {
                 Success = true,
@@ -399,15 +572,9 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 ViewType = req?.ViewType
             });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message); }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:415-461 — ShowLo.
-    /// </summary>
     [HttpPost("api/invf_inventoryin/showlo")]
     public async Task<IActionResult> ShowLo([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowLoReq? req)
     {
@@ -415,35 +582,24 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         {
             var query = db.Set<Mst_Inventory>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var invbupattern = req?.InvBUPattern;
             if (!string.IsNullOrEmpty(invbupattern))
             {
                 var pattern = invbupattern.Trim().ToLowerInvariant().Replace(@"\", @"\\");
                 query = query.Where(x => EF.Functions.Like((x.InvBUPattern ?? "").ToLower(), pattern, PortQuery.Esc));
             }
-
             var listMstInventory = await query.OrderBy(x => x.InvCode).ToListAsync();
-
             var productCodeUser = req?.ProductCodeUser ?? "";
             var productNameRaw = req?.ProductName ?? "";
             var productDisplayName = string.IsNullOrEmpty(productCodeUser) && string.IsNullOrEmpty(productNameRaw)
-                ? null
-                : $"{productCodeUser} - {productNameRaw}";
-
+                ? null : $"{productCodeUser} - {productNameRaw}";
             var lstLot = new List<InvF_InventoryInInstLot>();
             if (!string.IsNullOrEmpty(req?.ListLot))
             {
-                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInInstLot>>(
-                    req.ListLot,
-                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                );
-                if (parsed != null)
-                {
-                    lstLot.AddRange(parsed);
-                }
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInInstLot>>(req.ListLot,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (parsed != null) lstLot.AddRange(parsed);
             }
-
             return Ok(new ShowLoResult
             {
                 Success = true,
@@ -455,15 +611,9 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 ViewType = req?.ViewType
             });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message); }
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:465-512 — ShowSerial.
-    /// </summary>
     [HttpPost("api/invf_inventoryin/showserial")]
     public async Task<IActionResult> ShowSerial([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowSerialReq? req)
     {
@@ -471,35 +621,24 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         {
             var query = db.Set<Mst_Inventory>()
                 .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
             var invbupattern = req?.InvBUPattern;
             if (!string.IsNullOrEmpty(invbupattern))
             {
                 var pattern = invbupattern.Trim().ToLowerInvariant().Replace(@"\", @"\\");
                 query = query.Where(x => EF.Functions.Like((x.InvBUPattern ?? "").ToLower(), pattern, PortQuery.Esc));
             }
-
             var listMstInventory = await query.OrderBy(x => x.InvCode).ToListAsync();
-
             var productCodeUser = req?.ProductCodeUser ?? "";
             var productNameRaw = req?.ProductName ?? "";
             var productDisplayName = string.IsNullOrEmpty(productCodeUser) && string.IsNullOrEmpty(productNameRaw)
-                ? null
-                : $"{productCodeUser} - {productNameRaw}";
-
+                ? null : $"{productCodeUser} - {productNameRaw}";
             var lstSerial = new List<InvF_InventoryInInstSerial>();
             if (!string.IsNullOrEmpty(req?.ListSerial))
             {
-                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInInstSerial>>(
-                    req.ListSerial,
-                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                );
-                if (parsed != null)
-                {
-                    lstSerial.AddRange(parsed);
-                }
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryInInstSerial>>(req.ListSerial,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (parsed != null) lstSerial.AddRange(parsed);
             }
-
             return Ok(new ShowSerialResult
             {
                 Success = true,
@@ -511,10 +650,7 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 ViewType = req?.ViewType
             });
         }
-        catch (Exception ex)
-        {
-            return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Mst_Inventory_Get", "Exception", ex.Message); }
     }
 
     [HttpPost("api/invf_inventoryin/index")]
@@ -522,24 +658,10 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
     {
         var page = req?.Page ?? 0;
         var recordcount = req?.RecordCount ?? 10;
-
         if (!SysAccessCheckDeny(req, "MNU_INVF_INVENTORYIN"))
-        {
-            return Ok(new IndexResult
-            {
-                Success = true,
-                RedirectUrl = "/AccessDeny/Index"
-            });
-        }
-
+            return Ok(new IndexResult { Success = true, RedirectUrl = "/AccessDeny/Index" });
         var pageInfo = new PageInfo<InvF_InventoryIn>(
-            DataList: new List<InvF_InventoryIn>(),
-            ItemCount: 0,
-            PageCount: 0,
-            PageIndex: page,
-            PageSize: recordcount
-        );
-
+            DataList: new List<InvF_InventoryIn>(), ItemCount: 0, PageCount: 0, PageIndex: page, PageSize: recordcount);
         return Ok(new IndexResult
         {
             Success = true,
@@ -558,9 +680,7 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
     {
         var page = req?.Page ?? 0;
         var recordcount = req?.RecordCount ?? 50;
-
         var query = db.Set<InvF_InventoryIn>().AsQueryable();
-
         if (req != null)
         {
             if (!string.IsNullOrEmpty(req.IF_InvInNo))
@@ -599,65 +719,43 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 query = query.Where(x => EF.Functions.Like((x.InvoiceNo ?? "").ToLower(), pat, PortQuery.Esc));
             }
             if (!string.IsNullOrEmpty(req.CreatedTimeFrom) && DateTime.TryParse(req.CreatedTimeFrom, out var dFrom))
-            {
                 query = query.Where(x => x.CreateDTimeUTC >= dFrom);
-            }
             if (!string.IsNullOrEmpty(req.CreatedTimeTo) && DateTime.TryParse(req.CreatedTimeTo, out var dTo))
-            {
                 query = query.Where(x => x.CreateDTimeUTC <= dTo);
-            }
             if (!string.IsNullOrEmpty(req.ApprdTimeFrom) && DateTime.TryParse(req.ApprdTimeFrom, out var aFrom))
-            {
                 query = query.Where(x => x.ApprDTimeUTC >= aFrom);
-            }
             if (!string.IsNullOrEmpty(req.ApprdTimeTo) && DateTime.TryParse(req.ApprdTimeTo, out var aTo))
-            {
                 query = query.Where(x => x.ApprDTimeUTC <= aTo);
-            }
-
             var statusList = new List<string>();
             if (req.ChkPending == "1") statusList.Add("PENDING");
             if (req.ChkApproved == "1") statusList.Add("APPROVED");
             if (req.ChkCanceled == "1") statusList.Add("CANCELED");
             if (statusList.Count > 0)
-            {
                 query = query.Where(x => statusList.Contains(x.IF_InvInStatus ?? ""));
-            }
         }
-
         var total = await query.CountAsync();
-        var itemCount = total;
         var pageCount = recordcount > 0 ? (int)Math.Ceiling((double)total / recordcount) : 0;
-
         var list = new List<InvF_InventoryIn>();
         if (recordcount > 0 && page >= 0)
         {
             var skip = (int)Math.Min((long)page * recordcount, int.MaxValue);
             var take = (int)Math.Min(recordcount, int.MaxValue);
-            list = await query.OrderByDescending(x => x.CreateDTimeUTC)
-                              .ThenBy(x => x.IF_InvInNo)
-                              .Skip(skip)
-                              .Take(take)
-                              .ToListAsync();
+            list = await query.OrderByDescending(x => x.CreateDTimeUTC).ThenBy(x => x.IF_InvInNo).Skip(skip).Take(take).ToListAsync();
         }
-
         var resultList = new List<InvF_InventoryIn>();
         if (list.Count > 0)
         {
             var custCodes = list.Select(x => x.CustomerCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
             var invCodes = list.Select(x => x.InvCodeIn).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
             var userCodes = list.Select(x => x.LogLUBy).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
-
             var custMap = await db.Set<Mst_Customer>().Where(c => custCodes.Contains(c.CustomerCode)).ToDictionaryAsync(c => c.CustomerCode);
             var invMap = await db.Set<Mst_Inventory>().Where(i => invCodes.Contains(i.InvCode)).ToDictionaryAsync(i => i.InvCode);
             var userMap = await db.Set<Sys_User>().Where(u => userCodes.Contains(u.UserCode)).ToDictionaryAsync(u => u.UserCode);
-
             foreach (var inv in list)
             {
                 custMap.TryGetValue(inv.CustomerCode ?? "", out var c);
                 invMap.TryGetValue(inv.InvCodeIn ?? "", out var iv);
                 userMap.TryGetValue(inv.LogLUBy ?? "", out var u);
-
                 inv.mct_CustomerCode = c?.CustomerCode;
                 inv.mct_CustomerName = c?.CustomerName;
                 inv.mii_InvCode = iv?.InvCode;
@@ -667,83 +765,37 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 resultList.Add(inv);
             }
         }
-
         var pageInfo = new PageInfo<InvF_InventoryIn>(
-            DataList: resultList,
-            ItemCount: itemCount,
-            PageCount: pageCount,
-            PageIndex: page,
-            PageSize: recordcount
-        );
-
-        return Ok(new
-        {
-            Success = true,
-            Data = pageInfo
-        });
+            DataList: resultList, ItemCount: total, PageCount: pageCount, PageIndex: page, PageSize: recordcount);
+        return Ok(new { Success = true, Data = pageInfo });
     }
 
-    /// <summary>
-    /// port 1:1 InvF_InventoryInController.cs:726-888 — Create() (form nạp dữ liệu phiếu nhập kho).
-    /// GAP: đích không có phiên ⇒ nhận IsSysAdmin + ListSysAccess (SysAccessCheckDeny), OrgID + NetworkID (skeleton)
-    ///      qua body tuỳ chọn. Nguồn đọc từ UserState (dòng 728, 735-736).
-    /// </summary>
     [HttpPost("api/invf_inventoryin/create")]
     public async Task<IActionResult> Create([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateReq? req)
     {
         try
         {
-            // Nguồn dòng 728-732: SysAccessCheckDeny(UserState, "MNU_INVF_INVENTORYIN_CREATE")
             if (!SysAccessCheckDeny(req?.IsSysAdmin, req?.ListSysAccess, "MNU_INVF_INVENTORYIN_CREATE"))
-            {
                 return Ok(new CreateResult { Success = true, RedirectUrl = "/AccessDeny/Index" });
-            }
-
-            // Nguồn dòng 735-736: orgID / networkID từ UserState.Mst_NNT (GAP: đích nhận qua body).
             var orgID = req?.OrgId ?? "";
             var networkID = req?.NetworkId ?? "";
-
-            // Nguồn dòng 738-743: SeqNo(Seq_Common { SequenceType = SeqType.IFInvInNo, Param_Prefix="", Param_Postfix="" })
-            // → BaseController.cs:2214-2237 → WA_Seq_Common_Get → Seq_Common_Get (Seq.cs:126-220)
-            // → Seq_Common_MyGet (Seq.cs:42-124): htMap IFInvInNo = { "Seq_IF_InvInNo", "{0}PN.{3}.{1:00000}{2}", "100000" }
-            // → Seq_Common_Raw (Seq.cs:28-41): insert/delete trên Seq_IF_InvInNo → lấy AutoId tăng dần (transaction riêng).
             var seq = await PortSeq.NextAsync<Seq_IF_InvInNo>(db);
             var iFInvInNo = PortSeq.Build("{0}PN.{3}.{1:00000}{2}", null, seq, 100000, null, DateTime.UtcNow);
-
-            // Nguồn dòng 748-832: Task.WhenAll(5 truy vấn danh mục).
-            var tInvInType = db.Set<Mst_InvInType>()
-                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc))
-                .ToListAsync();
-            var tInventory = db.Set<Mst_Inventory>()
-                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
-                         && EF.Functions.Like((x.FlagIn_Out ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc))
-                .ToListAsync();
-            var tCustomer = db.Set<Mst_Customer>()
-                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
-                         && EF.Functions.Like((x.FlagSupplier ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc))
-                .ToListAsync();
-            var tVATRate = db.Set<Mst_VATRate>()
-                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc))
-                .ToListAsync();
-            var tBusinessGroup = db.Set<Mst_BusinessGroup>()
-                .Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
-                         && EF.Functions.Like((x.BusinessType ?? "").ToLower(), PortQuery.Equal("DV"), PortQuery.Esc))
-                .ToListAsync();
+            var tInvInType = db.Set<Mst_InvInType>().Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)).ToListAsync();
+            var tInventory = db.Set<Mst_Inventory>().Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
+                          && EF.Functions.Like((x.FlagIn_Out ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)).ToListAsync();
+            var tCustomer = db.Set<Mst_Customer>().Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
+                          && EF.Functions.Like((x.FlagSupplier ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)).ToListAsync();
+            var tVATRate = db.Set<Mst_VATRate>().Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)).ToListAsync();
+            var tBusinessGroup = db.Set<Mst_BusinessGroup>().Where(x => EF.Functions.Like((x.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc)
+                          && EF.Functions.Like((x.BusinessType ?? "").ToLower(), PortQuery.Equal("DV"), PortQuery.Esc)).ToListAsync();
             await Task.WhenAll(tInvInType, tInventory, tCustomer, tVATRate, tBusinessGroup);
-
-            // Nguồn dòng 871-886: return View(new RT_InvF_InventoryIn {...}); skeleton PENDING, 4 list con RỖNG.
             return Ok(new CreateResult
             {
                 Success = true,
                 Lst_InvF_InventoryIn = new List<InvF_InventoryIn>
                 {
-                    new InvF_InventoryIn
-                    {
-                        NetworkID = networkID,
-                        OrgID = orgID,
-                        IF_InvInNo = iFInvInNo,
-                        IF_InvInStatus = "PENDING",
-                    }
+                    new InvF_InventoryIn { NetworkID = networkID, OrgID = orgID, IF_InvInNo = iFInvInNo, IF_InvInStatus = "PENDING" }
                 },
                 Lst_InvF_InventoryInDtl = new List<InvF_InventoryInDtl>(),
                 Lst_InvF_InventoryInInstLot = new List<InvF_InventoryInInstLot>(),
@@ -755,11 +807,7 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
                 Lst_Mst_BusinessGroup = tBusinessGroup.Result,
             });
         }
-        catch (Exception ex)
-        {
-            // Mã mặc định nguồn của chuỗi Seq (biz WAS_Seq_Common_Get, Seq.cs:2659) — bao trọn Create khi bước Seq lỗi.
-            return PortResult.Fail("WAS_Seq_Common_Get", "Exception", ex.Message);
-        }
+        catch (Exception ex) { return PortResult.Fail("WAS_Seq_Common_Get", "Exception", ex.Message); }
     }
 
     private static bool SysAccessCheckDeny(IndexReq? req, string functionNames)
@@ -768,21 +816,16 @@ public class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
         {
             if (req.IsSysAdmin == true) return true;
             if (!string.IsNullOrWhiteSpace(functionNames) && req.ListSysAccess != null)
-            {
                 return req.ListSysAccess.Any(a => string.Equals(a, functionNames.Trim(), StringComparison.InvariantCultureIgnoreCase));
-            }
         }
         return false;
     }
 
-    /// <summary>Overload dùng cho Create (CreateReq mang IsSysAdmin + ListSysAccess). Logic y hệt Index.</summary>
     private static bool SysAccessCheckDeny(bool? isSysAdmin, List<string>? listSysAccess, string functionNames)
     {
         if (isSysAdmin == true) return true;
         if (!string.IsNullOrWhiteSpace(functionNames) && listSysAccess != null)
-        {
             return listSysAccess.Any(a => string.Equals(a, functionNames.Trim(), StringComparison.InvariantCultureIgnoreCase));
-        }
         return false;
     }
 }
