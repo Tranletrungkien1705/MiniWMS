@@ -37,6 +37,9 @@ public class InvF_InventoryIn
     public string? ApprBy { get; set; }
     public string? FlagQR { get; set; }
     public string? IF_InvInStatus { get; set; }
+    // #88 Cancel — 2 cột ghi khi hủy phiếu (InvF_InventoryIn_CancelX Form.cs:157546-157579)
+    public DateTime? CancelDTimeUTC { get; set; }
+    public string? CancelBy { get; set; }
     public string? Remark { get; set; }
     public string? InvInDesc { get; set; }
     public string? FlagActive { get; set; } = "1";
@@ -87,6 +90,7 @@ public class InvF_InventoryInConfiguration : IEntityTypeConfiguration<InvF_Inven
         b.Property(x => x.OrderNo).HasMaxLength(100);
         b.Property(x => x.RefNo).HasMaxLength(100);
         b.Property(x => x.IF_InvInStatus).HasMaxLength(50);
+        b.Property(x => x.CancelBy).HasMaxLength(50);
         b.Property(x => x.BusinessGroupCode).HasMaxLength(50);
         b.Property(x => x.InvInDesc).HasMaxLength(500);
         b.Property(x => x.Remark).HasMaxLength(500);
