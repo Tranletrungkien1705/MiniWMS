@@ -8,6 +8,10 @@ namespace MiniWMS.Models.Port;
 /// port 1:1 Mst_Product.cs — Mst_Product (danh mục hàng hoá).
 /// Cột lấy theo SQL nguồn của #24 `Inv_CostPriceHist_GetX_New20240916` (Form.cs:200572-200639)
 /// cộng với cột join dùng ở #86 `InvF_InventoryIn_GetX` (Form.cs:146951-146957, 147027-147033, 147059-147061).
+/// #90 bổ sung FlagActive/FlagBuy/ProductType/UPBuy/UPSell theo nguồn model
+/// `idn.Skycic.Inventory.Common\Models\ProductCentrer\Mst_Product.cs:19,29-30,35-37,55` để port
+/// `InvF_InventoryInController.GetProductExactly` (gate InvF_InventoryInController.cs:2980-3001 lọc
+/// `FlagActive='1' AND FlagBuy='1' AND ProductType='PRODUCT'`).
 /// Khoá: (OrgID, ProductCode) — theo đúng cặp cột dùng để join ở nguồn.
 /// </summary>
 public class Mst_Product
@@ -38,6 +42,16 @@ public class Mst_Product
     public string? FlagSerial { get; set; }
     /// <summary>Nguồn #86 Form.cs:146957 — `mp.ValConvert` (double vì SQLite SUM/đọc số).</summary>
     public double? ValConvert { get; set; }
+    /// <summary>Nguồn #90 Mst_Product.cs:55 — `FlagActive` (lọc `= '1'` ở gate 2986/3114).</summary>
+    public string? FlagActive { get; set; }
+    /// <summary>Nguồn #90 Mst_Product.cs:35 — `FlagBuy` (lọc `= '1'` ở gate 2987/3115).</summary>
+    public string? FlagBuy { get; set; }
+    /// <summary>Nguồn #90 Mst_Product.cs:19 — `ProductType` (lọc `= 'PRODUCT'` ở gate 2988/3116).</summary>
+    public string? ProductType { get; set; }
+    /// <summary>Nguồn #90 Mst_Product.cs:36 — `UPBuy` (đưa vào Mst_ProductUI, gate dòng 2002).</summary>
+    public double? UPBuy { get; set; }
+    /// <summary>Nguồn #90 Mst_Product.cs:37 — `UPSell` (đưa vào Mst_ProductUI, gate dòng 2003).</summary>
+    public double? UPSell { get; set; }
 }
 
 public class Mst_ProductConfiguration : IEntityTypeConfiguration<Mst_Product>
@@ -56,14 +70,19 @@ public class Mst_ProductConfiguration : IEntityTypeConfiguration<Mst_Product>
         b.Property(x => x.ProductCodeBase).HasMaxLength(50);
         b.Property(x => x.FlagLot).HasMaxLength(10);
         b.Property(x => x.FlagSerial).HasMaxLength(10);
+        b.Property(x => x.FlagActive).HasMaxLength(10);
+        b.Property(x => x.FlagBuy).HasMaxLength(10);
+        b.Property(x => x.ProductType).HasMaxLength(50);
     }
 }
 
 /// <summary>
 /// Seed demo Mst_Product (Order 14 — danh mục hàng hoá, sau Mst_Sys_Config Order 13).
 /// Dữ liệu khớp với seed của #24: Mst_Inventory (KHO01/KHO02/KHO03), Mst_Unit (U01/U02), Inv_CostPriceHist (Order 200).
-/// #27 LoadData: thêm 2 dòng cấp 2 (ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01") để có ca lọc ra số dòng khác nhau.
+/// #27 LoadData: 2 dòng cấp 2 (ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01") để có ca lọc ra số dòng khác nhau.
 /// #86 bổ sung `ProductCodeBase`/`FlagLot`/`FlagSerial`/`ValConvert` để port Detail gom UI đúng như nguồn.
+/// #90 GetProductExactly: SP01@ORG01, SP01@ORG02, SP01-L2A, SP01-L2B gán FlagActive='1', FlagBuy='1',
+///      ProductType='PRODUCT', ProductCodeBase='SP01' để port đúng 2 bước truy vấn (SP02/SP03 không gán → 0 dòng, đúng guard).
 /// </summary>
 public class Mst_ProductSeeder : IPortSeeder
 {
@@ -73,12 +92,16 @@ public class Mst_ProductSeeder : IPortSeeder
     {
         if (await db.Set<Mst_Product>().AnyAsync()) return;
         db.Set<Mst_Product>().AddRange(
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
+            // #90: SP01 có FlagActive/FlagBuy/ProductType = PRODUCT, ProductCodeBase=SP01 (gốc của chuỗi cấp 2)
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1, ProductType = "PRODUCT", FlagActive = "1", FlagBuy = "1", UPBuy = 100, UPSell = 150 },
+            // #90: SP02/SP03 KHÔNG gán FlagActive/FlagBuy/ProductType — dùng làm ca guard trả 400
             new Mst_Product { OrgID = "ORG01", ProductCode = "SP02", ProductCodeUser = "PT-LOC-GIO", ProductName = "Lọc gió động cơ", UnitCode = "U01", ProductCodeBase = "SP02", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
             new Mst_Product { OrgID = "ORG01", ProductCode = "SP03", ProductCodeUser = "PT-BUGI", ProductName = "Bugi đánh lửa", UnitCode = "U02", ProductCodeBase = "SP03", FlagLot = "0", FlagSerial = "1", ValConvert = 1 },
-            new Mst_Product { OrgID = "ORG02", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2A", ProductCodeUser = "PT-LOC-DAU-L2A", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2B", ProductCodeUser = "PT-LOC-DAU-L2B", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 }
+            // #90: ORG02/SP01 cùng flag, cùng ProductCodeBase
+            new Mst_Product { OrgID = "ORG02", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1, ProductType = "PRODUCT", FlagActive = "1", FlagBuy = "1", UPBuy = 100, UPSell = 150 },
+            // #90: 2 dòng cấp 2 của SP01, cùng flag + ProductCodeBase=SP01 (sẽ nằm ở query 2 của GetProductExactly)
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2A", ProductCodeUser = "PT-LOC-DAU-L2A", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1, ProductType = "PRODUCT", FlagActive = "1", FlagBuy = "1", UPBuy = 120, UPSell = 180 },
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2B", ProductCodeUser = "PT-LOC-DAU-L2B", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1, ProductType = "PRODUCT", FlagActive = "1", FlagBuy = "1", UPBuy = 120, UPSell = 180 }
         );
         await db.SaveChangesAsync();
     }
