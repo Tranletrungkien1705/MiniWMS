@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 66/521 (12.67%)
+**Tiến độ hiện tại**: 67/521 (12.86%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -243,7 +243,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 231 | InvFTempPrintController/GetTempPrint | Chưa làm | - |
 | 232 | InvFTempPrintController/UploadFileServer | Chưa làm | - |
 | 233 | InvFTempPrintController/CreateTempPrintGroup | Chưa làm | - |
-| 234 | LoadDataController/LoadMst_District | Chưa làm | - |
+| 234 | LoadDataController/LoadMst_District | Đã làm | b4ac44c |
 | 235 | LoadDataController/LoadMst_Ward | Chưa làm | - |
 | 236 | LoadDataController/SearchProduct | Chưa làm | - |
 | 237 | LoadDataController/GetProductExactly | Chưa làm | - |
