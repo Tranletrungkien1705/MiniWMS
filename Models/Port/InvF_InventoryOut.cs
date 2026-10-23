@@ -53,6 +53,11 @@ public class InvF_InventoryOut
     public DateTime? LUDTimeUTC { get; set; }
 
     public DateTime? LogLUDTimeUTC { get; set; }
+
+    public double? TotalValOutAfterDesc { get; set; }
+
+    [StringLength(1000)]
+    public string? Remark { get; set; }
 }
 
 public class InvF_InventoryOutConfiguration : IEntityTypeConfiguration<InvF_InventoryOut>
