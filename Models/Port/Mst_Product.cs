@@ -6,12 +6,9 @@ namespace MiniWMS.Models.Port;
 
 /// <summary>
 /// port 1:1 Mst_Product.cs — Mst_Product (danh mục hàng hoá).
-/// Cột lấy theo SQL nguồn của #24 `Inv_CostPriceHist_GetX_New20240916` (Form.cs:200572-200639):
-///   - join `Mst_Product f on t.ProductCode = f.ProductCode and t.OrgID = f.OrgID` (dòng 200572-200574);
-///   - lọc `f.ProductCodeUser like '%x%'` (dòng 200576), `f.ProductName like '%x%'` (dòng 200577);
-///   - chiếu `mp.ProductCodeUser`, `mp.ProductName`, `mp.UnitCode` (dòng 200622-200624).
+/// Cột lấy theo SQL nguồn của #24 `Inv_CostPriceHist_GetX_New20240916` (Form.cs:200572-200639)
+/// cộng với cột join dùng ở #86 `InvF_InventoryIn_GetX` (Form.cs:146951-146957, 147027-147033, 147059-147061).
 /// Khoá: (OrgID, ProductCode) — theo đúng cặp cột dùng để join ở nguồn.
-/// GAP: model/DDL đầy đủ của Mst_Product KHÔNG có trong excerpt #24 ⇒ chỉ khai các cột nguồn dùng tới.
 /// </summary>
 public class Mst_Product
 {
@@ -33,6 +30,14 @@ public class Mst_Product
     /// điều kiện `ProductCodeRoot = productcode` ở strWhereClause_Mst_Product_Get_Level2 dòng 885).
     /// </summary>
     public string? ProductCodeRoot { get; set; }
+    /// <summary>Nguồn #86 Form.cs:146954 — `mp.ProductCodeBase` (join `iiif.OrgID = mp.OrgID and iiifdt.ProductCode = mp.ProductCode`; dùng cho gom UI).</summary>
+    public string? ProductCodeBase { get; set; }
+    /// <summary>Nguồn #86 Form.cs:146955 — `mp.FlagLot`.</summary>
+    public string? FlagLot { get; set; }
+    /// <summary>Nguồn #86 Form.cs:146956 — `mp.FlagSerial`.</summary>
+    public string? FlagSerial { get; set; }
+    /// <summary>Nguồn #86 Form.cs:146957 — `mp.ValConvert` (double vì SQLite SUM/đọc số).</summary>
+    public double? ValConvert { get; set; }
 }
 
 public class Mst_ProductConfiguration : IEntityTypeConfiguration<Mst_Product>
@@ -48,6 +53,9 @@ public class Mst_ProductConfiguration : IEntityTypeConfiguration<Mst_Product>
         b.Property(x => x.UnitCode).HasMaxLength(50);
         b.Property(x => x.ProductLevelSys).HasMaxLength(50);
         b.Property(x => x.ProductCodeRoot).HasMaxLength(50);
+        b.Property(x => x.ProductCodeBase).HasMaxLength(50);
+        b.Property(x => x.FlagLot).HasMaxLength(10);
+        b.Property(x => x.FlagSerial).HasMaxLength(10);
     }
 }
 
@@ -55,6 +63,7 @@ public class Mst_ProductConfiguration : IEntityTypeConfiguration<Mst_Product>
 /// Seed demo Mst_Product (Order 14 — danh mục hàng hoá, sau Mst_Sys_Config Order 13).
 /// Dữ liệu khớp với seed của #24: Mst_Inventory (KHO01/KHO02/KHO03), Mst_Unit (U01/U02), Inv_CostPriceHist (Order 200).
 /// #27 LoadData: thêm 2 dòng cấp 2 (ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01") để có ca lọc ra số dòng khác nhau.
+/// #86 bổ sung `ProductCodeBase`/`FlagLot`/`FlagSerial`/`ValConvert` để port Detail gom UI đúng như nguồn.
 /// </summary>
 public class Mst_ProductSeeder : IPortSeeder
 {
@@ -64,12 +73,12 @@ public class Mst_ProductSeeder : IPortSeeder
     {
         if (await db.Set<Mst_Product>().AnyAsync()) return;
         db.Set<Mst_Product>().AddRange(
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01" },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP02", ProductCodeUser = "PT-LOC-GIO", ProductName = "Lọc gió động cơ", UnitCode = "U01" },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP03", ProductCodeUser = "PT-BUGI", ProductName = "Bugi đánh lửa", UnitCode = "U02" },
-            new Mst_Product { OrgID = "ORG02", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01" },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2A", ProductCodeUser = "PT-LOC-DAU-L2A", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01" },
-            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2B", ProductCodeUser = "PT-LOC-DAU-L2B", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01" }
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP02", ProductCodeUser = "PT-LOC-GIO", ProductName = "Lọc gió động cơ", UnitCode = "U01", ProductCodeBase = "SP02", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP03", ProductCodeUser = "PT-BUGI", ProductName = "Bugi đánh lửa", UnitCode = "U02", ProductCodeBase = "SP03", FlagLot = "0", FlagSerial = "1", ValConvert = 1 },
+            new Mst_Product { OrgID = "ORG02", ProductCode = "SP01", ProductCodeUser = "PT-LOC-DAU", ProductName = "Lọc dầu động cơ", UnitCode = "U01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2A", ProductCodeUser = "PT-LOC-DAU-L2A", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 },
+            new Mst_Product { OrgID = "ORG01", ProductCode = "SP01-L2B", ProductCodeUser = "PT-LOC-DAU-L2B", ProductName = "Lọc dầu động cơ (cấp 2)", UnitCode = "U01", ProductLevelSys = "L2PRD", ProductCodeRoot = "SP01", ProductCodeBase = "SP01", FlagLot = "1", FlagSerial = "0", ValConvert = 1 }
         );
         await db.SaveChangesAsync();
     }
