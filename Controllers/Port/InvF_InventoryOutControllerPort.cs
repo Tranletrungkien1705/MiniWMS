@@ -357,6 +357,61 @@ namespace MiniWMS.Controllers.Port
             }
         }
 
+        /// <summary>
+        /// port 1:1 InvF_InventoryOutController.cs:2290-2344 — ComboAppr.
+        /// Chuỗi: gate ComboAppr → WhereClauseInvF_InventoryOut (chỉ IF_InvOutNo, nguồn 2375-2378)
+        ///       → WA_InvF_InventoryOut_Get (Form.cs:33724) → InvF_InventoryOut_Get_New20210707 (Form.cs:33895)
+        ///       → InvF_InventoryOut_GetX_New20210707 (Form.cs:34079).
+        /// Nguồn dòng 2331: chỉ trả Lst_InvF_InventoryOutDtl khi header tồn tại (Lst_InvF_InventoryOut.Count != 0);
+        /// KHÔNG Fail — trả về danh sách rỗng.
+        /// `productCode` trong chữ ký gate KHÔNG tham gia lọc (nguồn comment dòng 2419-2422).
+        /// GAP: (1) view ability (Mst_NNT, Mst_Inventory) bị bỏ qua (không có auth ở đích);
+        ///      (2) chiếu DTL đầy đủ ở nguồn (FlagLot/FlagSerial/ProductType/ValConvert/mp_*/mi_*/QtyInv/mu_*/VAT — biz 34560-34599)
+        ///      chỉ trả 2 cột có trong entity InvF_InventoryOutDtl hiện tại (IF_InvOutNo, ProductCode) như các port khác của controller.
+        /// </summary>
+        [HttpPost("comboappr")]
+        public async Task<IActionResult> ComboAppr([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ComboApprReq? req)
+        {
+            try
+            {
+                var ifInvOutNo = req?.IF_InvOutNo;
+
+                // Nguồn biz (Form.cs:34161-34165) inner join InvF_InventoryOutDtl + InvF_InventoryOut ⇒
+                // DTL chỉ trả khi header tồn tại (kể cả body rỗng).
+                // SQL Server `=` case-insensitive; port so bằng lower() hai vế (Lessons A.14/A.17).
+                var dtlQuery = from d in db.Set<InvF_InventoryOutDtl>()
+                               join h in db.Set<InvF_InventoryOut>()
+                                   on (d.IF_InvOutNo ?? "").ToLower() equals (h.IF_InvOutNo ?? "").ToLower()
+                               select d;
+
+                // Nguồn gate 2305-2306 + WhereClauseInvF_InventoryOut (2375-2378) — chỉ áp IF_InvOutNo = X (khi có).
+                if (!string.IsNullOrEmpty(ifInvOutNo))
+                {
+                    var p = PortQuery.Equal(ifInvOutNo);
+                    dtlQuery = dtlQuery.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
+                }
+
+                var dtl = await dtlQuery
+                    .OrderBy(x => x.IF_InvOutNo).ThenBy(x => x.ProductCode)
+                    .ToListAsync();
+
+                return Ok(new ComboApprResult
+                {
+                    Success = true,
+                    ViewName = "ComboAppr",
+                    IF_InvOutNo = ifInvOutNo,
+                    ProductCode = req?.ProductCode,
+                    ProductCodeUser = req?.ProductCodeUser,
+                    ProductName = req?.ProductName,
+                    Lst_InvF_InventoryOutDtl = dtl
+                });
+            }
+            catch (Exception ex)
+            {
+                return PortResult.Fail("InvF_InventoryOut_Get", "Exception", ex.Message);
+            }
+        }
+
         private static string CUtilsStrValue(object? val)
         {
             return val?.ToString() ?? string.Empty;
@@ -429,5 +484,33 @@ namespace MiniWMS.Controllers.Port
         public string? ViewType { get; set; }
         public List<Inv_InventoryBalanceLot> Lst_Inv_InventoryBalanceLot { get; set; } = new();
         public List<InvF_InventoryOutInstLot> Lst_InvF_InventoryOutInstLot { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Body cho action ComboAppr (nguồn InvF_InventoryOutController.cs:2290 — 4 tham số).
+    /// `ProductCode` và `ProductCodeUser/ProductName` khớp chữ ký gate nhưng nguồn KHÔNG dùng để lọc
+    /// (dòng 2419-2422 comment) — chỉ để ViewBag / hiển thị.
+    /// </summary>
+    public class ComboApprReq
+    {
+        public string? IF_InvOutNo { get; set; }
+        public string? ProductCode { get; set; }
+        public string? ProductCodeUser { get; set; }
+        public string? ProductName { get; set; }
+    }
+
+    /// <summary>
+    /// Kết quả ComboAppr — thay `JsonView("ComboAppr", Lst_InvF_InventoryOutDtl)` của nguồn.
+    /// Nguồn: Lst_InvF_InventoryOutDtl rỗng khi không có header (dòng 2331 — Success, KHÔNG Fail).
+    /// </summary>
+    public class ComboApprResult
+    {
+        public bool Success { get; set; } = true;
+        public string? ViewName { get; set; } = "ComboAppr";
+        public string? IF_InvOutNo { get; set; }
+        public string? ProductCode { get; set; }
+        public string? ProductCodeUser { get; set; }
+        public string? ProductName { get; set; }
+        public List<InvF_InventoryOutDtl> Lst_InvF_InventoryOutDtl { get; set; } = new();
     }
 }
