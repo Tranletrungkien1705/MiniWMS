@@ -8,11 +8,15 @@ namespace MiniWMS.Controllers.Port;
 
 /// <summary>
 /// port 1:1 InvF_InventoryInController.cs — actions Index, DoSearch, SearchInvInType, SearchInventoryIn,
-/// ShowInvCodeInActual, ShowLo, ShowSerial, SearchCustomer, Create, UpdateData.
+/// ShowInvCodeInActual, ShowLo, ShowSerial, SearchCustomer, Create, UpdateData, UpdAfterAppr.
 /// Action UpdateData (#84): dòng 1267-1326 → WA_InvF_InventoryIn_Save (API InvFInventoryInController.cs:92-161)
 ///   → WAS_InvF_InventoryIn_Save_New20240606 (Form.cs:169677-169823)
 ///   → InvF_InventoryIn_Save_New20241112 (Form.cs:169830-170089)
 ///   → InvF_InventoryIn_SaveX_New20241112 (Form.cs:170091-172363).
+/// Action UpdAfterAppr (#85): dòng 1330-1383 → WA_InvF_InventoryIn_UpdAfterAppr (API InvFInventoryInController.cs:236-305)
+///   → WAS_InvF_InventoryIn_UpdAfterAppr (Form.cs:157400-157479)
+///   → InvF_InventoryIn_UpdAfterAppr (Form.cs:157236-157398)
+///   → InvF_InventoryIn_UpdAfterApprX (Form.cs:157083-157234).
 /// </summary>
 [ApiController]
 public partial class InvF_InventoryInControllerPort(AppDbContext db) : ControllerBase
@@ -192,6 +196,25 @@ public partial class InvF_InventoryInControllerPort(AppDbContext db) : Controlle
         public List<InvF_InventoryIn>? Lst_InvF_InventoryIn { get; set; }
     }
 
+    public class UpdAfterApprReq
+    {
+        public bool? IsSysAdmin { get; set; }
+        public List<string>? ListSysAccess { get; set; }
+        public string? OrgId { get; set; }
+        public string? NetworkId { get; set; }
+        public string? WaUserCode { get; set; }
+        public InvF_InventoryInSaveReq? Model { get; set; }
+    }
+
+    public class UpdAfterApprResult
+    {
+        public bool Success { get; set; }
+        public string? RedirectUrl { get; set; }
+        public List<string>? Messages { get; set; }
+        public string? ErrorCode { get; set; }
+        public string? Detail { get; set; }
+    }
+
     private const string ErrDefault = "InvF_InventoryIn_Save";
     private const string ErrInvalidIF_InvInNo = "InvF_InventoryIn_SaveX_InvalidIF_InvInNo";
     private const string ErrInvalidStatus = "InvF_InventoryIn_SaveX_InvalidStatus";
@@ -199,8 +222,12 @@ public partial class InvF_InventoryInControllerPort(AppDbContext db) : Controlle
     private const string ErrInvalidRefNoSys = "InvF_InventoryIn_SaveX_InvalidRefNoSys";
     private const string ErrInvalidRefType = "InvF_InventoryIn_SaveX_InvalidRefType";
     private const string ErrInvalidValues = "InvF_InventoryIn_SaveX_InvalidValues";
+    private const string ErrUpdAfterApprDefault = "InvF_InventoryIn_UpdAfterAppr";
+    private const string ErrUpdAfterApprNotFound = "InvF_InventoryIn_CheckDB_InvInNoNotFound";
+    private const string ErrUpdAfterApprStatusNotMatched = "InvF_InventoryIn_CheckDB_StatusNotMatched";
     private const string FlagYes = "1";
     private const string StatusPending = "PENDING";
+    private const string StatusApprove = "APPROVE";
 
     [HttpPost("api/invf_inventoryin/updatedata")]
     public async Task<IActionResult> UpdateData([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UpdateDataReq? req)
@@ -440,6 +467,99 @@ public partial class InvF_InventoryInControllerPort(AppDbContext db) : Controlle
         catch (Exception ex)
         {
             return PortResult.Fail(ErrDefault, "Exception", ex.Message);
+        }
+    }
+
+    [HttpPost("api/invf_inventoryin/updafterappr")]
+    public async Task<IActionResult> UpdAfterAppr([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UpdAfterApprReq? req)
+    {
+        try
+        {
+            // Gate InvF_InventoryInController.cs:1332-1336: SysAccessCheckDeny(UserState, "MNU_INVF_INVENTORYIN_UPDATE")
+            if (!SysAccessCheckDenyUpdate(req?.IsSysAdmin, req?.ListSysAccess))
+            {
+                return Ok(new UpdAfterApprResult
+                {
+                    Success = false,
+                    RedirectUrl = "/AccessDeny/Index",
+                    Messages = new() { "Access denied" }
+                });
+            }
+
+            // Body check: deserialize model (dòng 1345)
+            if (req?.Model == null || req.Model.Obj_InvF_InventoryIn == null)
+            {
+                return PortResult.Fail(ErrUpdAfterApprDefault, "Check.model", null);
+            }
+
+            var save = req.Model;
+            var header = save.Obj_InvF_InventoryIn;
+            var strWAUserCode = req.WaUserCode ?? "";
+
+            // Biz InvF_InventoryIn_UpdAfterApprX (Form.cs:157128-157131):
+            // StdParam cho IF_InvInNo, InvoiceNo; Trim() cho UserDeliver, Remark
+            var strIF_InvInNo = StdParam(header.IF_InvInNo);
+            var strInvoiceNo = StdParam(header.InvoiceNo);
+            var strUserDeliver = (header.UserDeliver ?? "").Trim();
+            var strRemark = (header.Remark ?? "").Trim();
+
+            if (string.IsNullOrEmpty(strIF_InvInNo))
+            {
+                return PortResult.Fail(ErrUpdAfterApprNotFound, "Check.IF_InvInNo", strIF_InvInNo);
+            }
+
+            // InvF_InventoryIn_CheckDB (Form.cs:146703-146767):
+            // Kiểm tra tồn tại (TConst.Flag.Yes) và status = APPROVE
+            var record = await db.Set<InvF_InventoryIn>()
+                .FirstOrDefaultAsync(x => x.IF_InvInNo == strIF_InvInNo);
+
+            if (record == null)
+            {
+                return PortResult.Fail(ErrUpdAfterApprNotFound, "Check.IF_InvInNo", strIF_InvInNo);
+            }
+
+            if (!StringEqualIgnoreCase(record.IF_InvInStatus, StatusApprove))
+            {
+                return PortResult.Fail(ErrUpdAfterApprStatusNotMatched,
+                    "Check.IF_InvInNo", strIF_InvInNo,
+                    "Check.strFlagActiveListToCheck", StatusApprove,
+                    "DB.IF_InvInStatus", record.IF_InvInStatus);
+            }
+
+            // Transaction update (Form.cs:157183-157201 & 157285, 157353)
+            var nowUtc = DateTime.UtcNow;
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                record.InvoiceNo = strInvoiceNo;
+                record.UserDeliver = strUserDeliver;
+                record.Remark = strRemark;
+                record.LogLUDTimeUTC = nowUtc;
+                record.LogLUBy = strWAUserCode;
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (Exception)
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+
+            // Gate InvF_InventoryInController.cs:1364-1375
+            var flagRedirect = StdParam(save.FlagRedirect) ?? "0";
+            var redirectUrl = flagRedirect == "1" ? "/InvF_InventoryIn/Detail" : "/InvF_InventoryIn/Index";
+
+            return Ok(new UpdAfterApprResult
+            {
+                Success = true,
+                RedirectUrl = redirectUrl,
+                Messages = new() { "Sửa phiếu nhập kho thành công!" }
+            });
+        }
+        catch (Exception ex)
+        {
+            return PortResult.Fail(ErrUpdAfterApprDefault, "Exception", ex.Message);
         }
     }
 
