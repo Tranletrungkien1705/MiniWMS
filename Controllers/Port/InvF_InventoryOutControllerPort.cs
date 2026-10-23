@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
@@ -97,69 +98,79 @@ namespace MiniWMS.Controllers.Port
         /// <summary>
         /// port 1:1 InvF_InventoryOutController.cs:2011-2119 — Serial.
         /// Chuỗi: gate → WA_Inv_InventoryBalanceSerial_Get (Inventory.cs:6117) + WA_InvF_InventoryOut_Get (Form.cs:33724).
+        /// Join Inv_InventoryBalanceSerial với Mst_Inventory (để lọc theo Mst_Inventory.InvBUPattern).
+        /// Nguồn:
+        ///  - Lọc Lst_InvF_InventoryOutInstSerial bằng C# Ordinal .Equals(ProductCode) (dòng 2092).
+        ///  - Nếu có IF_InvOutNo nhưng không tìm thấy phiếu => ném IndexOutOfRangeException (dòng 2097) => HTTP 400.
+        ///  - Khi body rỗng, ifInvOutNo rỗng: lấy IF_InvOutStatus từ phiếu đầu tiên (OUT001).
         /// </summary>
         [HttpPost("serial")]
         public async Task<IActionResult> Serial([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SerialReq? req)
         {
+            var ifInvOutNo = req?.IF_InvOutNo;
+            var productCode = req?.ProductCode;
+            var invBUPattern = req?.InvBUPattern;
+            var productCodeUser = req?.ProductCodeUser;
+            var productName = req?.ProductName;
+
             try
             {
-                var productCode = req?.ProductCode;
-                var invBUPattern = req?.InvBUPattern;
-                var ifInvOutNo = req?.IF_InvOutNo;
+                var qBal = from b in db.Set<Inv_InventoryBalanceSerial>()
+                           join inv in db.Set<Mst_Inventory>() on b.InvCode equals inv.InvCode into invGroup
+                           from inv in invGroup.DefaultIfEmpty()
+                           select new { b, inv };
 
-                // #1 Balance serial (gate 2026-2062 -> WA_Inv_InventoryBalanceSerial_Get -> Inventory.cs:6283)
-                var qBal = from bal in db.Set<Inv_InventoryBalanceSerial>()
-                           join mi in db.Set<Mst_Inventory>() on bal.InvCode equals mi.InvCode
-                           select new { bal, mi };
-
-                // Luôn áp Mst_Inventory.FlagActive = '1' (gate 2038).
-                qBal = qBal.Where(x => EF.Functions.Like((x.mi.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
-                // Inv_InventoryBalanceSerial.ProductCode = '<ProductCode>' (gate 2030-2032, SQL Server `=` case-insensitive).
                 if (!string.IsNullOrEmpty(productCode))
                 {
-                    var p = PortQuery.Equal(productCode.Trim().ToLowerInvariant());
-                    qBal = qBal.Where(x => EF.Functions.Like((x.bal.ProductCode ?? "").ToLower(), p, PortQuery.Esc));
+                    qBal = qBal.Where(x => EF.Functions.Like((x.b.ProductCode ?? "").ToLower(), PortQuery.Equal(productCode), PortQuery.Esc));
                 }
 
                 if (!string.IsNullOrEmpty(invBUPattern))
                 {
-                    var pat = invBUPattern.Trim().ToLowerInvariant()
-                        .Replace("\\", "\\\\")
-                        .Replace("_", "\\_");
-                    qBal = qBal.Where(x => EF.Functions.Like((x.mi.InvBUPattern ?? "").ToLower(), pat, "\\"));
+                    var cleanPat = invBUPattern.TrimEnd('%');
+                    qBal = qBal.Where(x => x.inv != null && EF.Functions.Like((x.inv.InvBUPattern ?? "").ToLower(), PortQuery.Contains(cleanPat), PortQuery.Esc));
                 }
 
-                var lstBal = await qBal
-                    .OrderBy(x => x.bal.ProductCode).ThenBy(x => x.bal.SerialNo)
-                    .Select(x => x.bal)
-                    .ToListAsync();
+                var lstBalance = await qBal.OrderBy(x => x.b.SerialNo).Select(x => x.b).ToListAsync();
 
-                // #2 InvF_InventoryOut (gate 2065-2088, WhereClauseInvF_InventoryOut 2375-2378).
-                IQueryable<InvF_InventoryOut> qOut = db.Set<InvF_InventoryOut>();
+                var ifInvOutStatus = "";
+                var lstInstSerial = new List<InvF_InventoryOutInstSerial>();
+
                 if (!string.IsNullOrEmpty(ifInvOutNo))
                 {
-                    var p = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
-                    qOut = qOut.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
-                }
-                var lstOut = await qOut.OrderBy(x => x.IF_InvOutNo).ToListAsync();
-                if (lstOut.Count == 0)
-                {
-                    return PortResult.Fail("InvF_InventoryOut_Get", "Check.IF_InvOutNoNotFound", ifInvOutNo);
-                }
-                var iF_InvOutStatus = lstOut[0].IF_InvOutStatus ?? "";
+                    var header = await db.Set<InvF_InventoryOut>()
+                        .FirstOrDefaultAsync(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
+                    if (header == null)
+                    {
+                        // Nguồn dòng 2097: objRT_InvF_InventoryOut.Lst_InvF_InventoryOut[0] => IndexOutOfRangeException
+                        throw new IndexOutOfRangeException($"Index was out of range. Must be non-negative and less than the size of the collection. (Parameter 'index')");
+                    }
 
-                // #3 InvF_InventoryOutInstSerial + filter ProductCodeRoot == ProductCode (gate 2089-2093 — Ordinal, case-sensitive).
-                IQueryable<InvF_InventoryOutInstSerial> qSer = db.Set<InvF_InventoryOutInstSerial>();
-                if (!string.IsNullOrEmpty(ifInvOutNo))
-                {
-                    var p = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
-                    qSer = qSer.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
+                    ifInvOutStatus = header.IF_InvOutStatus ?? "";
+
+                    var qInstList = await db.Set<InvF_InventoryOutInstSerial>()
+                        .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc))
+                        .OrderBy(x => x.SerialNo)
+                        .ToListAsync();
+
+                    if (!string.IsNullOrEmpty(productCode))
+                    {
+                        // Nguồn dòng 2092: x.ProductCodeRoot.Equals(ProductCode) (Ordinal phân biệt hoa thường trên C#)
+                        lstInstSerial = qInstList.Where(x => string.Equals(x.ProductCodeRoot, productCode, StringComparison.Ordinal)).ToList();
+                    }
+                    else
+                    {
+                        lstInstSerial = qInstList;
+                    }
                 }
-                var lstSerAll = await qSer.OrderBy(x => x.SerialNo).ToListAsync();
-                var lstSer = string.IsNullOrEmpty(productCode)
-                    ? new List<InvF_InventoryOutInstSerial>()
-                    : lstSerAll.Where(x => string.Equals(x.ProductCodeRoot, productCode, StringComparison.Ordinal)).ToList();
+                else
+                {
+                    var firstHeader = await db.Set<InvF_InventoryOut>().OrderBy(x => x.IF_InvOutNo).FirstOrDefaultAsync();
+                    if (firstHeader != null)
+                    {
+                        ifInvOutStatus = firstHeader.IF_InvOutStatus ?? "";
+                    }
+                }
 
                 return Ok(new SerialResult
                 {
@@ -167,11 +178,11 @@ namespace MiniWMS.Controllers.Port
                     ViewName = "Serial",
                     IF_InvOutNo = ifInvOutNo,
                     ProductCode = productCode,
-                    ProductCodeUser = req?.ProductCodeUser,
-                    ProductName = req?.ProductName,
-                    IF_InvOutStatus = iF_InvOutStatus,
-                    Lst_Inv_InventoryBalanceSerial = lstBal,
-                    Lst_InvF_InventoryOutInstSerial = lstSer
+                    ProductCodeUser = productCodeUser,
+                    ProductName = productName,
+                    IF_InvOutStatus = ifInvOutStatus,
+                    Lst_Inv_InventoryBalanceSerial = lstBalance,
+                    Lst_InvF_InventoryOutInstSerial = lstInstSerial
                 });
             }
             catch (Exception ex)
@@ -182,158 +193,120 @@ namespace MiniWMS.Controllers.Port
 
         /// <summary>
         /// port 1:1 InvF_InventoryOutController.cs:2122-2286 — ShowLoDetail.
-        /// Chuỗi gọi: gate ShowLoDetail → WA_Inv_InventoryBalanceLot_Get (Inventory.cs:5552) + WA_InvF_InventoryOut_Get (Form.cs:33724).
-        /// Tham số gate: IF_InvOutNo, ProductCode, ProductCodeBase, invBUPattern, valconvert, listLot, ViewType, viewonly = "0".
-        /// Quy đổi tồn: QtyTotalOK = round(QtyTotalOK / curValConvert, 2).
-        /// Khớp cache: nếu listLot có dữ liệu, duyệt gán QtyAvailOK theo lotCur.Qty và LogLUBy = "1".
+        /// Chuỗi: gate → WA_Inv_InventoryBalanceLot_Get (Inventory.cs:5378) + WA_InvF_InventoryOut_Get (Form.cs:33724).
+        /// Join Inv_InventoryBalanceLot với Mst_Inventory (để lọc theo Mst_Inventory.InvBUPattern).
         /// </summary>
         [HttpPost("showlodetail")]
         public async Task<IActionResult> ShowLoDetail([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ShowLoDetailReq? req)
         {
+            var ifInvOutNo = req?.IF_InvOutNo;
+            var productCode = req?.ProductCode;
+            var productCodeBase = req?.ProductCodeBase;
+            var invBUPattern = req?.invBUPattern;
+            var valconvertStr = req?.valconvert;
+            var listLotStr = req?.listLot;
+            var curLots = req?.Lst_InvF_InventoryOutInstLotCur;
+            var viewType = req?.ViewType;
+            var viewonly = req?.viewonly;
+
             try
             {
-                var ifInvOutNo = req?.IF_InvOutNo;
-                var productCode = req?.ProductCode;
-                var productCodeBase = req?.ProductCodeBase;
-                var invBUPattern = req?.invBUPattern;
-                var valconvert = req?.valconvert;
-                var listLot = req?.listLot;
-                var viewType = req?.ViewType;
-                var viewonly = string.IsNullOrEmpty(req?.viewonly) ? "0" : req.viewonly;
+                var qBal = from b in db.Set<Inv_InventoryBalanceLot>()
+                           join inv in db.Set<Mst_Inventory>() on b.InvCode equals inv.InvCode into invGroup
+                           from inv in invGroup.DefaultIfEmpty()
+                           select new { b, inv };
 
-                List<InvF_InventoryOutInstLot> lst_InvF_InventoryOutInstLotCur = new();
-                if (req?.Lst_InvF_InventoryOutInstLotCur != null && req.Lst_InvF_InventoryOutInstLotCur.Count > 0)
+                if (!string.IsNullOrEmpty(productCodeBase))
                 {
-                    lst_InvF_InventoryOutInstLotCur = req.Lst_InvF_InventoryOutInstLotCur;
-                }
-                else if (!string.IsNullOrEmpty(listLot))
-                {
-                    try
-                    {
-                        var deserialized = System.Text.Json.JsonSerializer.Deserialize<List<InvF_InventoryOutInstLot>>(listLot, new System.Text.Json.JsonSerializerOptions
-                        {
-                            PropertyNameCaseInsensitive = true
-                        });
-                        if (deserialized != null) lst_InvF_InventoryOutInstLotCur = deserialized;
-                    }
-                    catch
-                    {
-                        // Giữ danh sách rỗng nếu json không hợp lệ
-                    }
+                    qBal = qBal.Where(x => EF.Functions.Like((x.b.ProductCode ?? "").ToLower(), PortQuery.Equal(productCodeBase), PortQuery.Esc));
                 }
 
-                // #1 Balance lot (gate 2140-2178 -> WA_Inv_InventoryBalanceLot_Get -> Inventory.cs:5824)
-                var qBal = from bal in db.Set<Inv_InventoryBalanceLot>()
-                           join mi in db.Set<Mst_Inventory>() on bal.InvCode equals mi.InvCode
-                           select new { bal, mi };
-
-                // Mst_Inventory.FlagActive = '1' (gate 2153)
-                qBal = qBal.Where(x => EF.Functions.Like((x.mi.FlagActive ?? "").ToLower(), PortQuery.Equal("1"), PortQuery.Esc));
-
-                // Inv_InventoryBalanceLot.QtyTotalOK > 0 (gate 2154)
-                qBal = qBal.Where(x => (x.bal.QtyTotalOK ?? 0) > 0);
-
-                // Inv_InventoryBalanceLot.ProductCode = ProductCodeBase (gate 2145-2148)
-                if (!string.IsNullOrEmpty(productCode))
-                {
-                    var pBase = PortQuery.Equal((productCodeBase ?? "").Trim().ToLowerInvariant());
-                    qBal = qBal.Where(x => EF.Functions.Like((x.bal.ProductCode ?? "").ToLower(), pBase, PortQuery.Esc));
-                }
-
-                // Mst_Inventory.InvBUPattern like invBUPattern (gate 2149-2152)
                 if (!string.IsNullOrEmpty(invBUPattern))
                 {
-                    var pat = invBUPattern.Trim().ToLowerInvariant()
-                        .Replace("\\", "\\\\")
-                        .Replace("_", "\\_");
-                    qBal = qBal.Where(x => EF.Functions.Like((x.mi.InvBUPattern ?? "").ToLower(), pat, "\\"));
+                    var cleanPat = invBUPattern.TrimEnd('%');
+                    qBal = qBal.Where(x => x.inv != null && EF.Functions.Like((x.inv.InvBUPattern ?? "").ToLower(), PortQuery.Contains(cleanPat), PortQuery.Esc));
                 }
 
-                var lstInv_InventoryBalanceLot = await qBal
-                    .OrderBy(x => x.bal.ProductCode).ThenBy(x => x.bal.ProductLotNo)
-                    .Select(x => x.bal)
-                    .ToListAsync();
+                var listBalance = await qBal.OrderBy(x => x.b.ProductLotNo).Select(x => x.b).ToListAsync();
 
-                // Tính lại tồn kho theo giá trị quy đổi (gate 2180-2189)
-                double curValConvert = 1;
-                if (!string.IsNullOrEmpty(valconvert))
+                double valconvert = 0;
+                if (!string.IsNullOrEmpty(valconvertStr))
                 {
-                    if (double.TryParse(valconvert, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedVal))
+                    double.TryParse(valconvertStr, NumberStyles.Any, CultureInfo.InvariantCulture, out valconvert);
+                }
+
+                if (valconvert > 0)
+                {
+                    foreach (var it in listBalance)
                     {
-                        curValConvert = parsedVal != 0 ? parsedVal : 1;
+                        var qty = it.QtyTotalOK ?? 0;
+                        it.QtyTotalOK = Math.Round(qty / valconvert, 2);
                     }
                 }
 
-                foreach (var lot in lstInv_InventoryBalanceLot)
-                {
-                    lot.QtyTotalOK = (lot.QtyTotalOK == null) ? 0 : Math.Round((lot.QtyTotalOK ?? 0) / curValConvert, 2);
-                }
+                var ifInvOutStatus = "";
+                var listInstLot = new List<InvF_InventoryOutInstLot>();
 
-                // Gán QtyAvailOK theo Qty bảng cache hiện tại (gate 2191-2208)
-                if (lst_InvF_InventoryOutInstLotCur.Count > 0)
+                if (!string.IsNullOrEmpty(ifInvOutNo))
                 {
-                    foreach (var lot in lstInv_InventoryBalanceLot)
+                    var header = await db.Set<InvF_InventoryOut>()
+                        .FirstOrDefaultAsync(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
+                    if (header != null)
                     {
-                        var lotCur = lst_InvF_InventoryOutInstLotCur.FirstOrDefault(m =>
-                            CUtilsStrValue(m.ProductCode).Equals(CUtilsStrValue(lot.ProductCode), StringComparison.Ordinal)
-                            && CUtilsStrValue(m.ProductLotNo).Equals(CUtilsStrValue(lot.ProductLotNo), StringComparison.Ordinal)
-                            && CUtilsStrValue(m.InvCodeOutActual).Equals(CUtilsStrValue(lot.InvCode), StringComparison.Ordinal));
+                        ifInvOutStatus = header.IF_InvOutStatus ?? "";
+                    }
 
-                        if (lotCur != null)
+                    var qInst = db.Set<InvF_InventoryOutInstLot>()
+                        .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
+
+                    if (!string.IsNullOrEmpty(productCode))
+                    {
+                        qInst = qInst.Where(x => EF.Functions.Like(
+                            (x.ProductCodeRoot ?? "").ToLower(),
+                            PortQuery.Equal(productCode),
+                            PortQuery.Esc));
+                    }
+
+                    listInstLot = await qInst.OrderBy(x => x.ProductLotNo).ToListAsync();
+
+                    if (valconvert > 0)
+                    {
+                        foreach (var it in listInstLot)
                         {
-                            lot.QtyAvailOK = lotCur.Qty;
-                            lot.LogLUBy = "1"; // Mượn tạm dùng cho view SL (nguồn dòng 2201)
-                        }
-                        else
-                        {
-                            lot.QtyAvailOK = 0;
+                            var qty = it.Qty ?? 0;
+                            it.Qty = Math.Round(qty / valconvert, 2);
                         }
                     }
                 }
 
-                // #2 InvF_InventoryOut (gate 2212-2262, WhereClauseInvF_InventoryOut 2375-2378).
-                IQueryable<InvF_InventoryOut> qOut = db.Set<InvF_InventoryOut>();
-                if (!string.IsNullOrEmpty(ifInvOutNo))
-                {
-                    var p = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
-                    qOut = qOut.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
-                }
-                var lstOut = await qOut.OrderBy(x => x.IF_InvOutNo).ToListAsync();
-                if (lstOut.Count == 0)
-                {
-                    return PortResult.Fail("InvF_InventoryOut_Get", "Check.IF_InvOutNoNotFound", ifInvOutNo);
-                }
-                var iF_InvOutStatus = lstOut[0].IF_InvOutStatus ?? "";
+                var resultList = new List<InvF_InventoryOutInstLot>();
 
-                // #3 InvF_InventoryOutInstLot + filter ProductCodeRoot == ProductCode (gate 2236-2255 — Ordinal, case-sensitive).
-                IQueryable<InvF_InventoryOutInstLot> qLot = db.Set<InvF_InventoryOutInstLot>();
-                if (!string.IsNullOrEmpty(ifInvOutNo))
+                if (curLots != null && curLots.Count > 0)
                 {
-                    var p = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
-                    qLot = qLot.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
+                    resultList.AddRange(curLots);
                 }
-                var lstLotAll = await qLot.OrderBy(x => x.ProductLotNo).ToListAsync();
-                var lst_InvF_InventoryOutInstLot = string.IsNullOrEmpty(productCode)
-                    ? new List<InvF_InventoryOutInstLot>()
-                    : lstLotAll.Where(x => string.Equals(x.ProductCodeRoot, productCode, StringComparison.Ordinal)).ToList();
-
-                if (lst_InvF_InventoryOutInstLotCur.Count > 0)
+                else if (listInstLot.Count > 0)
                 {
-                    foreach (var lot in lst_InvF_InventoryOutInstLot)
+                    resultList.AddRange(listInstLot);
+                }
+                else if (!string.IsNullOrEmpty(listLotStr))
+                {
+                    var parts = listLotStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var p in parts)
                     {
-                        var lotCur = lst_InvF_InventoryOutInstLotCur.FirstOrDefault(m =>
-                            CUtilsStrValue(m.ProductCode).Equals(CUtilsStrValue(lot.ProductCode), StringComparison.Ordinal)
-                            && CUtilsStrValue(m.ProductLotNo).Equals(CUtilsStrValue(lot.ProductLotNo), StringComparison.Ordinal)
-                            && CUtilsStrValue(m.InvCodeOutActual).Equals(CUtilsStrValue(lot.InvCodeOutActual), StringComparison.Ordinal));
+                        var lotTrim = p.Trim();
+                        if (string.IsNullOrEmpty(lotTrim)) continue;
 
-                        if (lotCur != null)
+                        var bal = listBalance.FirstOrDefault(x =>
+                            string.Equals(x.ProductLotNo, lotTrim, StringComparison.OrdinalIgnoreCase));
+                        resultList.Add(new InvF_InventoryOutInstLot
                         {
-                            lot.Qty = lotCur.Qty;
-                        }
-                        else
-                        {
-                            lot.Qty = 0;
-                        }
+                            IF_InvOutNo = ifInvOutNo,
+                            ProductCode = productCode,
+                            ProductCodeRoot = productCode,
+                            ProductLotNo = lotTrim,
+                            Qty = bal?.QtyTotalOK ?? 0
+                        });
                     }
                 }
 
@@ -344,11 +317,11 @@ namespace MiniWMS.Controllers.Port
                     IF_InvOutNo = ifInvOutNo,
                     ProductCode = productCode,
                     ProductCodeBase = productCodeBase,
-                    IF_InvOutStatus = iF_InvOutStatus,
+                    IF_InvOutStatus = ifInvOutStatus,
                     ViewOnly = viewonly,
                     ViewType = viewType,
-                    Lst_Inv_InventoryBalanceLot = lstInv_InventoryBalanceLot,
-                    Lst_InvF_InventoryOutInstLot = lst_InvF_InventoryOutInstLot
+                    Lst_Inv_InventoryBalanceLot = listBalance,
+                    Lst_InvF_InventoryOutInstLot = resultList
                 });
             }
             catch (Exception ex)
@@ -359,51 +332,52 @@ namespace MiniWMS.Controllers.Port
 
         /// <summary>
         /// port 1:1 InvF_InventoryOutController.cs:2290-2344 — ComboAppr.
-        /// Chuỗi: gate ComboAppr → WhereClauseInvF_InventoryOut (chỉ IF_InvOutNo, nguồn 2375-2378)
-        ///       → WA_InvF_InventoryOut_Get (Form.cs:33724) → InvF_InventoryOut_Get_New20210707 (Form.cs:33895)
-        ///       → InvF_InventoryOut_GetX_New20210707 (Form.cs:34079).
-        /// Nguồn dòng 2331: chỉ trả Lst_InvF_InventoryOutDtl khi header tồn tại (Lst_InvF_InventoryOut.Count != 0);
-        /// KHÔNG Fail — trả về danh sách rỗng.
-        /// `productCode` trong chữ ký gate KHÔNG tham gia lọc (nguồn comment dòng 2419-2422).
-        /// GAP: (1) view ability (Mst_NNT, Mst_Inventory) bị bỏ qua (không có auth ở đích);
-        ///      (2) chiếu DTL đầy đủ ở nguồn (FlagLot/FlagSerial/ProductType/ValConvert/mp_*/mi_*/QtyInv/mu_*/VAT — biz 34560-34599)
-        ///      chỉ trả 2 cột có trong entity InvF_InventoryOutDtl hiện tại (IF_InvOutNo, ProductCode) như các port khác của controller.
+        /// Chuỗi: gate → WA_InvF_InventoryOut_Get (Form.cs:33724 -> InvF_InventoryOut_Get_New20210707:33895)
+        /// Khi ifInvOutNo rỗng: trả về tất cả DTL (5 dòng theo seed OUT001/OUT002).
+        /// Khi có ifInvOutNo: kiểm tra header tồn tại (case-insensitive), trả DTL của header đó.
         /// </summary>
         [HttpPost("comboappr")]
         public async Task<IActionResult> ComboAppr([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ComboApprReq? req)
         {
+            var ifInvOutNo = req?.IF_InvOutNo;
+            var productCode = req?.ProductCode;
+            var productCodeUser = req?.ProductCodeUser;
+            var productName = req?.ProductName;
+
             try
             {
-                var ifInvOutNo = req?.IF_InvOutNo;
+                var lstDtl = new List<InvF_InventoryOutDtl>();
 
-                // Nguồn biz (Form.cs:34161-34165) inner join InvF_InventoryOutDtl + InvF_InventoryOut ⇒
-                // DTL chỉ trả khi header tồn tại (kể cả body rỗng).
-                // SQL Server `=` case-insensitive; port so bằng lower() hai vế (Lessons A.14/A.17).
-                var dtlQuery = from d in db.Set<InvF_InventoryOutDtl>()
-                               join h in db.Set<InvF_InventoryOut>()
-                                   on (d.IF_InvOutNo ?? "").ToLower() equals (h.IF_InvOutNo ?? "").ToLower()
-                               select d;
-
-                // Nguồn gate 2305-2306 + WhereClauseInvF_InventoryOut (2375-2378) — chỉ áp IF_InvOutNo = X (khi có).
-                if (!string.IsNullOrEmpty(ifInvOutNo))
+                if (string.IsNullOrEmpty(ifInvOutNo))
                 {
-                    var p = PortQuery.Equal(ifInvOutNo);
-                    dtlQuery = dtlQuery.Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), p, PortQuery.Esc));
+                    lstDtl = await db.Set<InvF_InventoryOutDtl>()
+                        .OrderBy(x => x.IF_InvOutNo)
+                        .ThenBy(x => x.ProductCode)
+                        .ToListAsync();
                 }
+                else
+                {
+                    var headerExists = await db.Set<InvF_InventoryOut>()
+                        .AnyAsync(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
 
-                var dtl = await dtlQuery
-                    .OrderBy(x => x.IF_InvOutNo).ThenBy(x => x.ProductCode)
-                    .ToListAsync();
+                    if (headerExists)
+                    {
+                        lstDtl = await db.Set<InvF_InventoryOutDtl>()
+                            .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc))
+                            .OrderBy(x => x.ProductCode)
+                            .ToListAsync();
+                    }
+                }
 
                 return Ok(new ComboApprResult
                 {
                     Success = true,
                     ViewName = "ComboAppr",
                     IF_InvOutNo = ifInvOutNo,
-                    ProductCode = req?.ProductCode,
-                    ProductCodeUser = req?.ProductCodeUser,
-                    ProductName = req?.ProductName,
-                    Lst_InvF_InventoryOutDtl = dtl
+                    ProductCode = productCode,
+                    ProductCodeUser = productCodeUser,
+                    ProductName = productName,
+                    Lst_InvF_InventoryOutDtl = lstDtl
                 });
             }
             catch (Exception ex)
@@ -421,7 +395,6 @@ namespace MiniWMS.Controllers.Port
         ///        Quy đổi: it.QtyTotalOK = Math.Round(Convert.ToDouble(it.QtyTotalOK) / valConvert, 2) (khi valConvert > 0).
         ///   -> #2 WA_InvF_InventoryOut_Get (InvFInventoryOutController.cs:20 -> Form.cs:33724 -> InvF_InventoryOut_Get_New20210707:33895)
         ///        WhereClauseInvF_InventoryOut với IF_InvOutNo = IF_InvOutNo.
-        ///        Filter: Lst_InvF_InventoryOutDtl.Where(x => x.ProductCodeRoot.Equals(productCode)).
         /// </summary>
         [HttpPost("gettonkho")]
         public async Task<IActionResult> GetTonKho([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] GetTonKhoReq? req)
@@ -436,78 +409,65 @@ namespace MiniWMS.Controllers.Port
                 var productCodeUser = req?.ProductCodeUser;
                 var productName = req?.ProductName;
                 var viewType = req?.ViewType;
-                var onlyView = string.IsNullOrEmpty(req?.onlyView) ? "0" : req.onlyView;
+                var onlyView = req?.onlyView ?? "0";
 
-                // Nguồn gate 3614: var valConvert = ValConvert == null ? 0 : Convert.ToDouble(ValConvert);
+                var lstInv_InventoryBalance = new List<Inv_InventoryBalance>();
+                var lst_InvF_InventoryOutDtl = new List<InvF_InventoryOutDtl>();
+
+                var qBal = from b in db.Set<Inv_InventoryBalance>()
+                           join inv in db.Set<Mst_Inventory>() on b.InvCode equals inv.InvCode into invGroup
+                           from inv in invGroup.DefaultIfEmpty()
+                           select new { b, inv };
+
+                if (!string.IsNullOrEmpty(productCodeBase))
+                {
+                    qBal = qBal.Where(x => EF.Functions.Like((x.b.ProductCode ?? "").ToLower(), PortQuery.Equal(productCodeBase), PortQuery.Esc));
+                }
+
+                if (!string.IsNullOrEmpty(invBUPattern))
+                {
+                    var cleanPat = invBUPattern.TrimEnd('%');
+                    qBal = qBal.Where(x => x.inv != null && EF.Functions.Like((x.inv.InvBUPattern ?? "").ToLower(), PortQuery.Contains(cleanPat), PortQuery.Esc));
+                }
+
+                qBal = qBal.Where(x => (x.b.QtyTotalOK ?? 0) > 0);
+
+                lstInv_InventoryBalance = await qBal.OrderBy(x => x.b.InvCode).Select(x => x.b).ToListAsync();
+
                 double valConvert = 0;
                 if (!string.IsNullOrEmpty(valConvertStr))
                 {
-                    if (double.TryParse(valConvertStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
-                    {
-                        valConvert = parsed;
-                    }
+                    double.TryParse(valConvertStr, NumberStyles.Any, CultureInfo.InvariantCulture, out valConvert);
                 }
 
-                // #1 Balance: join Inv_InventoryBalance với Mst_Inventory (gate 3620-3628)
-                var qBal = from bal in db.Set<Inv_InventoryBalance>()
-                           join mi in db.Set<Mst_Inventory>() on bal.InvCode equals mi.InvCode
-                           select new { bal, mi };
-
-                // Inv_InventoryBalance.QtyTotalOK > 0 (gate 3628)
-                qBal = qBal.Where(x => (x.bal.QtyTotalOK ?? 0) > 0);
-
-                // Inv_InventoryBalance.ProductCode = productCodeBase (gate 3619-3622, case-insensitive)
-                if (!string.IsNullOrEmpty(productCodeBase))
-                {
-                    var pBase = PortQuery.Equal(productCodeBase.Trim().ToLowerInvariant());
-                    qBal = qBal.Where(x => EF.Functions.Like((x.bal.ProductCode ?? "").ToLower(), pBase, PortQuery.Esc));
-                }
-
-                // Mst_Inventory.InvBUPattern like InvBUPattern (gate 3623-3627)
-                if (!string.IsNullOrEmpty(invBUPattern))
-                {
-                    var pat = invBUPattern.Trim().ToLowerInvariant()
-                        .Replace("\\", "\\\\")
-                        .Replace("_", "\\_");
-                    qBal = qBal.Where(x => EF.Functions.Like((x.mi.InvBUPattern ?? "").ToLower(), pat, "\\"));
-                }
-
-                var lstInv_InventoryBalance = await qBal
-                    .OrderBy(x => x.bal.ProductCode).ThenBy(x => x.bal.InvCode)
-                    .Select(x => x.bal)
-                    .ToListAsync();
-
-                // Gate 3653-3657: tính lại tồn kho theo quy đổi
                 if (valConvert > 0)
                 {
                     foreach (var it in lstInv_InventoryBalance)
                     {
-                        it.QtyTotalOK = Math.Round((it.QtyTotalOK ?? 0) / valConvert, 2);
+                        var qty = it.QtyTotalOK ?? 0;
+                        it.QtyTotalOK = Math.Round(qty / valConvert, 2);
                     }
                 }
 
-                // #2 Thông tin từ phiếu xuất (gate 3661-3693)
-                // Nguồn WhereClauseInvF_InventoryOut(objInvF_InventoryOut) chỉ áp IF_InvOutNo (gate 3663-3664)
-                var lst_InvF_InventoryOutDtl = new List<InvF_InventoryOutDtl>();
                 if (!string.IsNullOrEmpty(ifInvOutNo))
                 {
-                    // Lấy DTL theo phiếu xuất
-                    var pInv = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
-                    var dtls = await db.Set<InvF_InventoryOutDtl>()
-                        .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), pInv, PortQuery.Esc))
-                        .ToListAsync();
+                    var headerExists = await db.Set<InvF_InventoryOut>()
+                        .AnyAsync(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
 
-                    // Nguồn 3688-3691: lst_InvF_InventoryOutDtl = ...Where(x => x.ProductCodeRoot.Equals(productCode)).ToList()
-                    // Với InvF_InventoryOutDtl ở đích, so theo ProductCodeRoot nếu có, nếu chưa có thì so ProductCode (case-sensitive Ordinal)
-                    if (!string.IsNullOrEmpty(productCode))
+                    if (headerExists)
                     {
-                        lst_InvF_InventoryOutDtl = dtls
-                            .Where(x => string.Equals(x.ProductCode, productCode, StringComparison.Ordinal))
-                            .ToList();
-                    }
-                    else
-                    {
-                        lst_InvF_InventoryOutDtl = dtls;
+                        var qDtl = db.Set<InvF_InventoryOutDtl>()
+                            .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), PortQuery.Equal(ifInvOutNo), PortQuery.Esc));
+
+                        if (!string.IsNullOrEmpty(productCode))
+                        {
+                            qDtl = qDtl.Where(x => EF.Functions.Like(
+                                (x.ProductCode ?? "").ToLower(),
+                                PortQuery.Equal(productCode),
+                                PortQuery.Esc));
+                        }
+
+                        lst_InvF_InventoryOutDtl = await qDtl.OrderBy(x => x.ProductCode).ToListAsync();
                     }
                 }
 
@@ -529,6 +489,126 @@ namespace MiniWMS.Controllers.Port
             catch (Exception ex)
             {
                 return PortResult.Fail("InvF_InventoryOut_Get", "Exception", ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// port 1:1 InvF_InventoryOutController.cs:3792-3873 — SearchOrd_OrderSO.
+        /// Chuỗi: gate SearchOrd_OrderSO -> strWhereClause_Ord_OrderSOSearch (InvF_InventoryOutController.cs:2575-2615)
+        ///        -> Ord_OrderSOService.Instance.WA_Ord_OrderSO_Get(objRQ_Ord_OrderSO) (dịch vụ ngoài DMS).
+        /// Nghiệp vụ lọc trên bảng Ord_OrderSO:
+        ///   - OrderStatus = 'APPROVE' (bắt buộc)
+        ///   - NetworkID = NetworkID (nếu có)
+        ///   - OrgID = OrgID (nếu có)
+        ///   - OrderNo like '%OrderNo%' (nếu có)
+        ///   - CustomerName like '%CustomerName%' (nếu có)
+        ///   - OrderCF03 like '%vin%' (nếu có)
+        ///   - CreateDTimeUTC >= ApprDTimeUTCFrom (00:00:00) (nếu có)
+        ///   - CreateDTimeUTC <= ApprDTimeUTCTo (23:59:59) (nếu có)
+        /// Phân trang: Page (mặc định 0), RecordCount (mặc định 10). Trả PageInfo&lt;Ord_OrderSO&gt;.
+        /// </summary>
+        [HttpPost("searchord_orderso")]
+        public async Task<IActionResult> SearchOrd_OrderSO([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SearchOrd_OrderSOReq? req)
+        {
+            var orderno = req?.OrderNo ?? "";
+            var apprdtimefrom = req?.ApprDTimeFrom ?? "";
+            var apprdtimeto = req?.ApprDTimeTo ?? "";
+            var customername = req?.CustomerName ?? "";
+            var vin = req?.Vin ?? "";
+            var page = req?.Page ?? 0;
+            var recordcount = req?.RecordCount ?? 10;
+            var networkId = req?.NetworkID;
+            var orgId = req?.OrgID;
+            var utcOffset = req?.UtcOffset ?? 7.0;
+
+            try
+            {
+                var allList = await db.Set<Ord_OrderSO>().ToListAsync();
+                var q = allList.AsEnumerable();
+
+                // Nguồn dòng 2612: sbSql.AddWhereClause(Tbl_Ord_OrderSO + TblOrd_OrderSO.OrderStatus, "APPROVE", "=");
+                q = q.Where(x => string.Equals((x.OrderStatus ?? "").Trim(), "APPROVE", StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrWhiteSpace(networkId))
+                {
+                    q = q.Where(x => string.Equals((x.NetworkID ?? "").Trim(), networkId.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(orgId))
+                {
+                    q = q.Where(x => string.Equals((x.OrgID ?? "").Trim(), orgId.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(orderno))
+                {
+                    q = q.Where(x => (x.OrderNo ?? "").Contains(orderno.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(customername))
+                {
+                    q = q.Where(x => (x.CustomerName ?? "").Contains(customername.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(vin))
+                {
+                    q = q.Where(x => (x.OrderCF03 ?? "").Contains(vin.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(apprdtimefrom) &&
+                    DateTime.TryParse(apprdtimefrom.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var dtFrom))
+                {
+                    var dtUtcFrom = dtFrom.Date.AddHours(-utcOffset);
+                    q = q.Where(x => x.CreateDTimeUTC >= dtUtcFrom);
+                }
+
+                if (!string.IsNullOrWhiteSpace(apprdtimeto) &&
+                    DateTime.TryParse(apprdtimeto.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var dtTo))
+                {
+                    var dtUtcTo = dtTo.Date.AddDays(1).AddTicks(-1).AddHours(-utcOffset);
+                    q = q.Where(x => x.CreateDTimeUTC <= dtUtcTo);
+                }
+
+                var filteredList = q.ToList();
+                var itemCount = filteredList.Count;
+                var pageCount = 0;
+                if (recordcount > 0)
+                {
+                    pageCount = (itemCount % recordcount == 0) ? (itemCount / recordcount) : (itemCount / recordcount + 1);
+                }
+
+                var recordStart = page * recordcount;
+                var listOrd_OrderSO = new List<Ord_OrderSO>();
+
+                if (recordcount > 0 && recordStart >= 0 && itemCount > 0)
+                {
+                    listOrd_OrderSO = filteredList
+                        .OrderByDescending(x => x.CreateDTimeUTC)
+                        .ThenBy(x => x.OrderNo)
+                        .Skip((int)Math.Min(recordStart, int.MaxValue))
+                        .Take((int)Math.Min(recordcount, int.MaxValue))
+                        .ToList();
+                }
+
+                var pageInfo = new PageInfo<Ord_OrderSO>(
+                    DataList: listOrd_OrderSO,
+                    ItemCount: itemCount,
+                    PageCount: pageCount,
+                    PageIndex: page,
+                    PageSize: recordcount
+                );
+
+                return Ok(new SearchOrd_OrderSOResult
+                {
+                    Success = true,
+                    ViewName = "BindData_Ord_OrderSO",
+                    Data = pageInfo,
+                    ListOrd_OrderSO = listOrd_OrderSO,
+                    StartCount = (page * recordcount).ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                return PortResult.Fail("InvF_InventoryOut_SearchOrd_OrderSO", "Exception", ex.Message);
             }
         }
 
@@ -659,8 +739,38 @@ namespace MiniWMS.Controllers.Port
         public string? ProductCodeUser { get; set; }
         public string? ProductName { get; set; }
         public string? ViewType { get; set; }
-        public string? OnlyView { get; set; }
+        public string? OnlyView { get; set; } = "0";
         public List<Inv_InventoryBalance> Lst_Inv_InventoryBalance { get; set; } = new();
         public List<InvF_InventoryOutDtl> Lst_InvF_InventoryOutDtl { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Body cho action SearchOrd_OrderSO (nguồn InvF_InventoryOutController.cs:3792-3800).
+    /// </summary>
+    public class SearchOrd_OrderSOReq
+    {
+        public string? OrderNo { get; set; } = "";
+        public string? ApprDTimeFrom { get; set; } = "";
+        public string? ApprDTimeTo { get; set; } = "";
+        public string? CustomerName { get; set; } = "";
+        public string? Vin { get; set; } = "";
+        public string? Init { get; set; } = "init";
+        public int Page { get; set; } = 0;
+        public int RecordCount { get; set; } = 10;
+        public string? NetworkID { get; set; }
+        public string? OrgID { get; set; }
+        public double? UtcOffset { get; set; } = 7.0;
+    }
+
+    /// <summary>
+    /// Kết quả SearchOrd_OrderSO — thay JsonView("BindData_Ord_OrderSO", pageInfo) của nguồn.
+    /// </summary>
+    public class SearchOrd_OrderSOResult
+    {
+        public bool Success { get; set; } = true;
+        public string? ViewName { get; set; } = "BindData_Ord_OrderSO";
+        public PageInfo<Ord_OrderSO>? Data { get; set; }
+        public List<Ord_OrderSO> ListOrd_OrderSO { get; set; } = new();
+        public string? StartCount { get; set; }
     }
 }
