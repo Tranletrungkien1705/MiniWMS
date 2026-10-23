@@ -4,7 +4,7 @@ Nguồn mẫu số: `D:\idocNet\2020.3.Skycic.Inventory\Dev\V10\idn.Skycic.Inven
 
 **Mẫu số (N)**: 521
 
-**Tiến độ hiện tại**: 54/521 (10.36%)
+**Tiến độ hiện tại**: 55/521 (10.56%)
 
 Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã có` (đã port từ trước, có bằng chứng) · `Bỏ` (scaffold/không nghiệp vụ, ghi lý do) · `Cần xem tay`.
 
@@ -95,7 +95,7 @@ Trạng thái: `Chưa làm` · `Đã làm` (có commit, review PASS) · `Đã c�
 | 83 | InvF_InventoryInController/Update | Đã làm | f62987f |
 | 84 | InvF_InventoryInController/UpdateData | Đã làm | af1e341 |
 | 85 | InvF_InventoryInController/UpdAfterAppr | Đã làm | c3e7e70 |
-| 86 | InvF_InventoryInController/Detail | Chưa làm | - |
+| 86 | InvF_InventoryInController/Detail | Đã làm | 4c5013a |
 | 87 | InvF_InventoryInController/Approve | Chưa làm | - |
 | 88 | InvF_InventoryInController/Cancel | Chưa làm | - |
 | 89 | InvF_InventoryInController/Delete | Chưa làm | - |
