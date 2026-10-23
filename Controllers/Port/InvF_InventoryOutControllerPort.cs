@@ -412,6 +412,126 @@ namespace MiniWMS.Controllers.Port
             }
         }
 
+        /// <summary>
+        /// port 1:1 InvF_InventoryOutController.cs:3602-3711 — GetTonKho.
+        /// Chuỗi gọi: gate GetTonKho
+        ///   -> #1 WA_Inv_InventoryBalance_Get (InvInventoryBalanceController.cs:20 -> Inventory.cs:4776 -> Inv_InventoryBalance_Get:4902)
+        ///        Filter: Inv_InventoryBalance.ProductCode = productCodeBase (nếu có), Mst_Inventory.InvBUPattern like InvBUPattern (nếu có),
+        ///                Inv_InventoryBalance.QtyTotalOK > 0.
+        ///        Quy đổi: it.QtyTotalOK = Math.Round(Convert.ToDouble(it.QtyTotalOK) / valConvert, 2) (khi valConvert > 0).
+        ///   -> #2 WA_InvF_InventoryOut_Get (InvFInventoryOutController.cs:20 -> Form.cs:33724 -> InvF_InventoryOut_Get_New20210707:33895)
+        ///        WhereClauseInvF_InventoryOut với IF_InvOutNo = IF_InvOutNo.
+        ///        Filter: Lst_InvF_InventoryOutDtl.Where(x => x.ProductCodeRoot.Equals(productCode)).
+        /// </summary>
+        [HttpPost("gettonkho")]
+        public async Task<IActionResult> GetTonKho([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] GetTonKhoReq? req)
+        {
+            try
+            {
+                var ifInvOutNo = req?.IF_InvOutNo;
+                var productCode = req?.ProductCode;
+                var productCodeBase = req?.ProductCodeBase;
+                var invBUPattern = req?.InvBUPattern;
+                var valConvertStr = req?.ValConvert;
+                var productCodeUser = req?.ProductCodeUser;
+                var productName = req?.ProductName;
+                var viewType = req?.ViewType;
+                var onlyView = string.IsNullOrEmpty(req?.onlyView) ? "0" : req.onlyView;
+
+                // Nguồn gate 3614: var valConvert = ValConvert == null ? 0 : Convert.ToDouble(ValConvert);
+                double valConvert = 0;
+                if (!string.IsNullOrEmpty(valConvertStr))
+                {
+                    if (double.TryParse(valConvertStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        valConvert = parsed;
+                    }
+                }
+
+                // #1 Balance: join Inv_InventoryBalance với Mst_Inventory (gate 3620-3628)
+                var qBal = from bal in db.Set<Inv_InventoryBalance>()
+                           join mi in db.Set<Mst_Inventory>() on bal.InvCode equals mi.InvCode
+                           select new { bal, mi };
+
+                // Inv_InventoryBalance.QtyTotalOK > 0 (gate 3628)
+                qBal = qBal.Where(x => (x.bal.QtyTotalOK ?? 0) > 0);
+
+                // Inv_InventoryBalance.ProductCode = productCodeBase (gate 3619-3622, case-insensitive)
+                if (!string.IsNullOrEmpty(productCodeBase))
+                {
+                    var pBase = PortQuery.Equal(productCodeBase.Trim().ToLowerInvariant());
+                    qBal = qBal.Where(x => EF.Functions.Like((x.bal.ProductCode ?? "").ToLower(), pBase, PortQuery.Esc));
+                }
+
+                // Mst_Inventory.InvBUPattern like InvBUPattern (gate 3623-3627)
+                if (!string.IsNullOrEmpty(invBUPattern))
+                {
+                    var pat = invBUPattern.Trim().ToLowerInvariant()
+                        .Replace("\\", "\\\\")
+                        .Replace("_", "\\_");
+                    qBal = qBal.Where(x => EF.Functions.Like((x.mi.InvBUPattern ?? "").ToLower(), pat, "\\"));
+                }
+
+                var lstInv_InventoryBalance = await qBal
+                    .OrderBy(x => x.bal.ProductCode).ThenBy(x => x.bal.InvCode)
+                    .Select(x => x.bal)
+                    .ToListAsync();
+
+                // Gate 3653-3657: tính lại tồn kho theo quy đổi
+                if (valConvert > 0)
+                {
+                    foreach (var it in lstInv_InventoryBalance)
+                    {
+                        it.QtyTotalOK = Math.Round((it.QtyTotalOK ?? 0) / valConvert, 2);
+                    }
+                }
+
+                // #2 Thông tin từ phiếu xuất (gate 3661-3693)
+                // Nguồn WhereClauseInvF_InventoryOut(objInvF_InventoryOut) chỉ áp IF_InvOutNo (gate 3663-3664)
+                var lst_InvF_InventoryOutDtl = new List<InvF_InventoryOutDtl>();
+                if (!string.IsNullOrEmpty(ifInvOutNo))
+                {
+                    // Lấy DTL theo phiếu xuất
+                    var pInv = PortQuery.Equal(ifInvOutNo.Trim().ToLowerInvariant());
+                    var dtls = await db.Set<InvF_InventoryOutDtl>()
+                        .Where(x => EF.Functions.Like((x.IF_InvOutNo ?? "").ToLower(), pInv, PortQuery.Esc))
+                        .ToListAsync();
+
+                    // Nguồn 3688-3691: lst_InvF_InventoryOutDtl = ...Where(x => x.ProductCodeRoot.Equals(productCode)).ToList()
+                    // Với InvF_InventoryOutDtl ở đích, so theo ProductCodeRoot nếu có, nếu chưa có thì so ProductCode (case-sensitive Ordinal)
+                    if (!string.IsNullOrEmpty(productCode))
+                    {
+                        lst_InvF_InventoryOutDtl = dtls
+                            .Where(x => string.Equals(x.ProductCode, productCode, StringComparison.Ordinal))
+                            .ToList();
+                    }
+                    else
+                    {
+                        lst_InvF_InventoryOutDtl = dtls;
+                    }
+                }
+
+                return Ok(new GetTonKhoResult
+                {
+                    Success = true,
+                    ViewName = "ShowTonKho",
+                    IF_InvOutNo = ifInvOutNo,
+                    ProductCode = productCode,
+                    ProductCodeBase = productCodeBase,
+                    ProductCodeUser = productCodeUser,
+                    ProductName = productName,
+                    ViewType = viewType,
+                    OnlyView = onlyView,
+                    Lst_Inv_InventoryBalance = lstInv_InventoryBalance,
+                    Lst_InvF_InventoryOutDtl = lst_InvF_InventoryOutDtl
+                });
+            }
+            catch (Exception ex)
+            {
+                return PortResult.Fail("InvF_InventoryOut_Get", "Exception", ex.Message);
+            }
+        }
+
         private static string CUtilsStrValue(object? val)
         {
             return val?.ToString() ?? string.Empty;
@@ -511,6 +631,36 @@ namespace MiniWMS.Controllers.Port
         public string? ProductCode { get; set; }
         public string? ProductCodeUser { get; set; }
         public string? ProductName { get; set; }
+        public List<InvF_InventoryOutDtl> Lst_InvF_InventoryOutDtl { get; set; } = new();
+    }
+
+    /// <summary>Body cho action GetTonKho (nguồn InvF_InventoryOutController.cs:3602 — 9 tham số).</summary>
+    public class GetTonKhoReq
+    {
+        public string? IF_InvOutNo { get; set; }
+        public string? ProductCode { get; set; }
+        public string? ProductCodeBase { get; set; }
+        public string? InvBUPattern { get; set; }
+        public string? ValConvert { get; set; }
+        public string? ProductCodeUser { get; set; }
+        public string? ProductName { get; set; }
+        public string? ViewType { get; set; }
+        public string? onlyView { get; set; }
+    }
+
+    /// <summary>Kết quả GetTonKho — thay ViewBag + JsonView("ShowTonKho", lstInv_InventoryBalance) của nguồn.</summary>
+    public class GetTonKhoResult
+    {
+        public bool Success { get; set; } = true;
+        public string? ViewName { get; set; } = "ShowTonKho";
+        public string? IF_InvOutNo { get; set; }
+        public string? ProductCode { get; set; }
+        public string? ProductCodeBase { get; set; }
+        public string? ProductCodeUser { get; set; }
+        public string? ProductName { get; set; }
+        public string? ViewType { get; set; }
+        public string? OnlyView { get; set; }
+        public List<Inv_InventoryBalance> Lst_Inv_InventoryBalance { get; set; } = new();
         public List<InvF_InventoryOutDtl> Lst_InvF_InventoryOutDtl { get; set; } = new();
     }
 }
